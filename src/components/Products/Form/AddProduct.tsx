@@ -490,8 +490,8 @@ export function AddProduct({ onBack }: AddProductProps) {
                       </SelectTrigger>
                       <SelectContent>
                         {business?.shops?.map((shop: any) => (
-                          <SelectItem key={shop.dataValues.id} value={shop.dataValues.id}>
-                            {shop.dataValues.name}
+                          <SelectItem key={shop.id} value={shop.id}>
+                            {shop.name}
                           </SelectItem>
                         ))}
                       </SelectContent>

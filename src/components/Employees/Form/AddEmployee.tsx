@@ -233,22 +233,22 @@ export function AddEditEmployee({ onBack, onSave, employee, isEdit }: AddEditEmp
                 <h3 className="font-medium">Assign to Shops</h3>
                 <div className="space-y-2">
                   {business?.shops?.map((shop: any) => (
-                    <div key={shop.dataValues.id} className="flex items-center space-x-2">
+                    <div key={shop.id} className="flex items-center space-x-2">
                       <Checkbox
-                        id={shop.dataValues.id}
-                        checked={formData.shopId === shop.dataValues.id}
+                        id={shop.id}
+                        checked={formData.shopId === shop.id}
                         onCheckedChange={(checked) => {
                           setFormData(prev => ({
                             ...prev,
-                            shopId: checked ? shop.dataValues.id : ''
+                            shopId: checked ? shop.id : ''
                           }));
                         }}
                       />
                       <label
-                        htmlFor={shop.dataValues.id}
+                        htmlFor={shop.id}
                         className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                       >
-                        {shop.dataValues.name || 'Unnamed Shop'}
+                        {shop.name || 'Unnamed Shop'}
                       </label>
                     </div>
                   ))}

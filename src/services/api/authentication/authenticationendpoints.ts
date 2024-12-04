@@ -92,6 +92,139 @@ export function registerAuthHandlers() {
 
       await t.commit();
       console.log(newUser)
+
+      // For shop owners, fetch the business with shops if it exists
+      if (newUser.role === 'shop_owner') {
+        const business = await BusinessInformation.findOne({
+          where: { ownerId: newUser.id },
+          include: [{
+            model: Shop,
+            as: 'shops',
+            include: [{
+              model: Location,
+              as: 'location',
+              attributes: ['address', 'city', 'country', 'region', 'postalCode']
+            }]
+          }]
+        });
+
+        if (business) {
+          const businessJSON = business.toJSON();
+          return {
+            success: true,
+            message: 'User registered successfully',
+            user: {
+              id: newUser.id,
+              username: newUser.username,
+              email: newUser.email,
+              role: newUser.role
+            },
+            business: {
+              id: businessJSON.id,
+              fullBusinessName: businessJSON.fullBusinessName,
+              shopLogo: businessJSON.shopLogo,
+              address: businessJSON.address,
+              businessType: businessJSON.businessType,
+              numberOfEmployees: businessJSON.numberOfEmployees,
+              taxIdNumber: businessJSON.taxIdNumber,
+              shops: businessJSON.shops?.map((shop: any) => ({
+                id: shop.id,
+                name: shop.name,
+                type: shop.type,
+                status: shop.status,
+                contactInfo: shop.contactInfo,
+                manager: shop.manager,
+                managerId: shop.managerId,
+                businessId: shop.businessId,
+                location: shop.location ? {
+                  address: shop.location.address,
+                  city: shop.location.city,
+                  country: shop.location.country,
+                  region: shop.location.region,
+                  postalCode: shop.location.postalCode
+                } : null,
+                operatingHours: shop.operatingHours
+              })) as Shop[] | undefined,
+            }
+          };
+        }
+      }
+
+      // For employees, fetch their assigned shop
+      if (userData.role !== 'shop_owner' && userData.shopId) {
+        const employee = await Employee.findOne({
+          where: { userId: newUser.id },
+          include: [{
+            model: Shop,
+            as: 'shop',
+            include: [{
+              model: Location,
+              as: 'location',
+              attributes: ['address', 'city', 'country', 'region', 'postalCode']
+            }]
+          }]
+        });
+
+        if (employee?.shop) {
+          const business = await BusinessInformation.findOne({
+            where: { id: employee.shop.businessId },
+            include: [{
+              model: Shop,
+              as: 'shops',
+              include: [{
+                model: Location,
+                as: 'location',
+                attributes: ['address', 'city', 'country', 'region', 'postalCode']
+              }]
+            }]
+          });
+
+          if (business) {
+            const businessJSON = business.toJSON();
+            const employeeJSON = employee.toJSON();
+            
+            return {
+              success: true,
+              message: 'User registered successfully',
+              user: {
+                id: newUser.id,
+                username: newUser.username,
+                email: newUser.email,
+                role: newUser.role
+              },
+              business: {
+                id: businessJSON.id,
+                fullBusinessName: businessJSON.fullBusinessName,
+                shopLogo: businessJSON.shopLogo,
+                address: businessJSON.address,
+                businessType: businessJSON.businessType,
+                numberOfEmployees: businessJSON.numberOfEmployees,
+                taxIdNumber: businessJSON.taxIdNumber,
+                shops: businessJSON.shops?.map((shop: any) => ({
+                  id: shop.id,
+                  name: shop.name,
+                  type: shop.type,
+                  status: shop.status,
+                  contactInfo: shop.contactInfo,
+                  manager: shop.manager,
+                  managerId: shop.managerId,
+                  businessId: shop.businessId,
+                  location: shop.location ? {
+                    address: shop.location.address,
+                    city: shop.location.city,
+                    country: shop.location.country,
+                    region: shop.location.region,
+                    postalCode: shop.location.postalCode
+                  } : null,
+                  operatingHours: shop.operatingHours
+                })) as Shop[] | undefined,
+              }
+            };
+          }
+        }
+      }
+
+      // Default response if no business/shop data is available
       return {
         success: true,
         message: 'User registered successfully',
@@ -159,14 +292,57 @@ export function registerAuthHandlers() {
       let isSetupComplete = true;  // Default to true for employees
 
       if (user.role === 'shop_owner') {
-        const business = await BusinessInformation.findOne({ where: { ownerId: user.id } });
+        const business = await BusinessInformation.findOne({
+          where: { ownerId: user.id },
+          include: [{
+            model: Shop,
+            as: 'shops',
+            include: [{
+              model: Location,
+              as: 'location',
+              attributes: ['address', 'city', 'country', 'region', 'postalCode']
+            }]
+          }]
+        });
         
         // Check if business setup is complete
         if (!business) {
           isSetupComplete = false;
         } else {
-          const shop = await Shop.findOne({ where: { businessId: business.id } });
-          shopId = shop?.id;
+          const businessJSON = business.toJSON();
+          return {
+            success: true,
+            message: 'Login successful',
+            user: safeUser,
+            business: {
+              id: businessJSON.id,
+              fullBusinessName: businessJSON.fullBusinessName,
+              shopLogo: businessJSON.shopLogo,
+              address: businessJSON.address,
+              businessType: businessJSON.businessType,
+              numberOfEmployees: businessJSON.numberOfEmployees,
+              taxIdNumber: businessJSON.taxIdNumber,
+              shops: businessJSON.shops?.map((shop: any) => ({
+                id: shop.id,
+                name: shop.name,
+                type: shop.type,
+                status: shop.status,
+                contactInfo: shop.contactInfo,
+                manager: shop.manager,
+                managerId: shop.managerId,
+                businessId: shop.businessId,
+                location: shop.location ? {
+                  address: shop.location.address,
+                  city: shop.location.city,
+                  country: shop.location.country,
+                  region: shop.location.region,
+                  postalCode: shop.location.postalCode
+                } : null,
+                operatingHours: shop.operatingHours
+              })) as Shop[] | undefined,
+            },
+            isSetupComplete
+          };
         }
       } else {
         // For non-owner users, get their shop through employee record
@@ -175,94 +351,66 @@ export function registerAuthHandlers() {
           include: [{
             model: Shop,
             as: 'shop',
-            attributes: ['id', 'name', 'businessId']
+            include: [{
+              model: Location,
+              as: 'location',
+              attributes: ['address', 'city', 'country', 'region', 'postalCode']
+            }]
           }]
         });
 
         if (employee?.shop) {
           const business = await BusinessInformation.findOne({
             where: { id: employee.shop.businessId },
-            attributes: ['id', 'fullBusinessName', 'shopLogo', 'address', 'businessType', 'numberOfEmployees', 'taxIdNumber']
-          });
-
-          return {
-            success: true,
-            message: 'Login successful',
-            user: safeUser,
-            business: business ? {
-              id: business.id,
-              fullBusinessName: business.fullBusinessName,
-              shopLogo: business.shopLogo,
-              address: business.address,
-              businessType: business.businessType,
-              numberOfEmployees: business.numberOfEmployees,
-              taxIdNumber: business.taxIdNumber
-            } : null,
-            shops: [employee.shop], // Include the user's assigned shop
-            shopId: employee.shopId,
-            isSetupComplete: true
-          };
-        }
-      }
-
-      let business = null;
-      let shop = null;
-      if (user.role === 'shop_owner') {
-        business = await BusinessInformation.findOne({ 
-          where: { ownerId: user.id },
-          include: [{
-            model: Shop,
-            as: 'shops',
-            attributes: ['id', 'name']
-          }],
-          attributes: ['id', 'fullBusinessName', 'shopLogo', 'address', 'businessType', 'numberOfEmployees', 'taxIdNumber']
-        });
-
-        if (business) {
-          shop = await Shop.findOne({ 
-            where: { businessId: business.id },
             include: [{
-              model: Location,
-              as: 'location',
-              attributes: ['address', 'city', 'region', 'postalCode', 'country']
-            }],
-            attributes: ['id', 'name', 'contactInfo']
+              model: Shop,
+              as: 'shops',
+              include: [{
+                model: Location,
+                as: 'location',
+                attributes: ['address', 'city', 'country', 'region', 'postalCode']
+              }]
+            }]
           });
 
-          // Serialize the shop and location data
-          const location = shop?.get('location') as Location | null;
-          const serializedShop = shop ? {
-            id: shop.id,
-            name: shop.name,
-            contactInfo: shop.contactInfo,
-            location: location ? {
-              address: location.address,
-              city: location.city,
-              region: location.region,
-              postalCode: location.postalCode,
-              country: location.country
-            } : null
-          } : null;
+          if (business) {
+            const businessJSON = business.toJSON();
+            const employeeJSON = employee.toJSON();
 
-          return {
-            success: true,
-            message: 'Login successful',
-            user: safeUser,
-            business: business ? {
-              id: business.id,
-              fullBusinessName: business.fullBusinessName,
-              shopLogo: business.shopLogo,
-              address: business.address,
-              businessType: business.businessType,
-              numberOfEmployees: business.numberOfEmployees,
-              taxIdNumber: business.taxIdNumber,
-              shops: business.shops
-            } : null,
-            shop: serializedShop,
-            shopId: shopId,
-            isSetupComplete: isSetupComplete,
-            token: 'jwt-token-here'
-          };
+            return {
+              success: true,
+              message: 'Login successful',
+              user: safeUser,
+              business: {
+                id: businessJSON.id,
+                fullBusinessName: businessJSON.fullBusinessName,
+                shopLogo: businessJSON.shopLogo,
+                address: businessJSON.address,
+                businessType: businessJSON.businessType,
+                numberOfEmployees: businessJSON.numberOfEmployees,
+                taxIdNumber: businessJSON.taxIdNumber,
+                shops: businessJSON.shops?.map((shop: any) => ({
+                  id: shop.id,
+                  name: shop.name,
+                  type: shop.type,
+                  status: shop.status,
+                  contactInfo: shop.contactInfo,
+                  manager: shop.manager,
+                  managerId: shop.managerId,
+                  businessId: shop.businessId,
+                  location: shop.location ? {
+                    address: shop.location.address,
+                    city: shop.location.city,
+                    country: shop.location.country,
+                    region: shop.location.region,
+                    postalCode: shop.location.postalCode
+                  } : null,
+                  operatingHours: shop.operatingHours
+                })) as Shop[] | undefined,
+              },
+              isSetupComplete
+            };
+          }
         }
       }
 
@@ -270,8 +418,8 @@ export function registerAuthHandlers() {
         success: true,
         message: 'Login successful',
         user: safeUser,
-        business: business, // Add business info to response
-        shop: shop, // Add shop info to response
+        business: null,
+        shop: null,
         shopId: shopId,
         isSetupComplete: isSetupComplete,
         token: 'jwt-token-here'

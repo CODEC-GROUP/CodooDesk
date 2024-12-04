@@ -11,6 +11,7 @@ import Image from 'next/image'
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
+import EmptyState from './Empty/EmptyState'
 
 // Define the Product interface
 interface Product {
@@ -377,8 +378,8 @@ export function Pos() {
         setLoading(true);
         // Get shop IDs directly
         const shopIds = business?.shops
-          ?.filter((shop: any) => shop?.dataValues?.id)
-          .map((shop: any) => shop.dataValues.id) || [];
+          ?.filter((shop: any) => shop?.id)
+          .map((shop: any) => shop.id) || [];
 
         // Proceed with API call
         const response = await safeIpcInvoke<{ success: boolean; products: Product[]; message?: string }>('inventory:product:get-all', {
@@ -469,11 +470,21 @@ export function Pos() {
   }, []);
 
   if (loading) {
-    return <div>Loading products...</div>;
+    return (
+      <div className="flex items-center justify-center h-[450px]">
+        <RefreshCcw className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   if (error) {
-    return <div>Error: {error}</div>;
+    return (
+      <div className="flex flex-col items-center justify-center h-[450px] text-center">
+        <AlertCircle className="w-12 h-12 text-destructive mb-4" />
+        <h3 className="text-lg font-semibold">Error Loading Products</h3>
+        <p className="text-sm text-muted-foreground">{error}</p>
+      </div>
+    );
   }
 
   return (
@@ -541,17 +552,21 @@ export function Pos() {
           </div>
 
           {/* Product Grid - 6x6 Layout */}
-          <div className="flex-1 overflow-y-auto min-h-0 pb-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-              {currentProducts.map(product => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  onAddToCart={addToCart}
-                />
-              ))}
+          {products.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div className="flex-1 overflow-y-auto min-h-0 pb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                {currentProducts.map(product => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onAddToCart={addToCart}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Pagination Footer */}
           <div className="pt-4 border-t mt-auto">

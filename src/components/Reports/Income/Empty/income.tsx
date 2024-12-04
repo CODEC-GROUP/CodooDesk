@@ -15,6 +15,7 @@ import { IncomeAttributes } from '@/models/Income';
 import { OhadaCodeAttributes } from '@/models/OhadaCode';
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
+import EmptyState from './EmptyState';
 
 // Income types based on OHADA accounting system
 export const incomeTypes = {
@@ -293,22 +294,189 @@ const Income = () => {
   }
 
   return (
-    <div className="container mx-auto py-10">
-      <Card className="mb-6">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-2xl font-bold">Income</CardTitle>
-          <div className="flex space-x-2">
-            <Button variant="outline">
-              <FileDown className="mr-2 h-4 w-4" />
-              Export
-            </Button>
-            <Button onClick={() => setIsAddDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Income
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+    <div className="flex-1 space-y-4">
+      <div className="flex items-center justify-between space-y-2">
+        <h2 className="text-3xl font-bold tracking-tight">Income</h2>
+        <div className="flex items-center space-x-2">
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Add Income
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add New Income</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="date" className="text-right">Date</Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={newItem.date || new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setNewItem({ ...newItem, date: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="description" className="text-right">Description</Label>
+                  <Input
+                    id="description"
+                    value={newItem.description || ""}
+                    onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="amount" className="text-right">Amount</Label>
+                  <Input
+                    id="amount"
+                    value={newItem.amount || ""}
+                    onChange={(e) => setNewItem({ ...newItem, amount: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="source" className="text-right">Source</Label>
+                  <div className="col-span-3">
+                    <Select 
+                      onValueChange={(value) => {
+                        if (value === "custom") {
+                          setIsCustomCategory(true)
+                        } else {
+                          setIsCustomCategory(false)
+                          setNewItem({ ...newItem, ohadaCodeId: value })
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select income source" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ohadaCodes.map((code) => (
+                          <SelectItem key={code.id} value={code.id || ''}>
+                            {code.code} - {code.name}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="custom">Add Custom Source</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {isCustomCategory ? (
+                  <>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="customName" className="text-right">Source Name</Label>
+                      <Input
+                        id="customName"
+                        value={customCategory.name}
+                        onChange={(e) => setCustomCategory(prev => ({ ...prev, name: e.target.value }))}
+                        className="col-span-3"
+                      />
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="ohadaCode" className="text-right">OHADA Code</Label>
+                      <div className="col-span-3">
+                        <Select
+                          onValueChange={(value) => {
+                            const selectedCode = ohadaCodes.find(code => code.id === value);
+                            setCustomCategory(prev => ({
+                              ...prev,
+                              code: value,
+                              description: selectedCode?.description || ''
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select OHADA code" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ohadaCodes.map((code) => (
+                               <SelectItem key={code.id} value={code.id || ''}>
+                                {code.code} - {code.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {customCategory.code && (
+                          <p className="text-sm text-gray-500 mt-1">
+                            {ohadaCodes.find(code => code.id === customCategory.code)?.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="category" className="text-right">Category</Label>
+                    <div className="col-span-3">
+                      <Select
+                        onValueChange={(value) => {
+                          if (value === "custom") {
+                            setIsCustomCategory(true);
+                          } else {
+                            const selectedCode = ohadaCodes.find(code => code.id === value);
+                            setNewItem(prev => ({ 
+                              ...prev, 
+                              ohadaCodeId: value,
+                              description: selectedCode?.description || ''
+                            }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ohadaCodes.map((code) => (
+                             <SelectItem key={code.id} value={code.id || ''}>
+                              {code.code} - {code.name}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="custom">Custom Category</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {newItem.ohadaCodeId && (
+                        <p className="text-sm text-gray-500 mt-1">
+                          {ohadaCodes.find(code => code.id === newItem.ohadaCodeId)?.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="paymentMethod" className="text-right">Payment Method</Label>
+                  <div className="col-span-3">
+                    <Select
+                      onValueChange={(value) => setNewItem({ ...newItem, paymentMethod: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select payment method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="bankTransfer">Bank Transfer</SelectItem>
+                        <SelectItem value="mobileMoney">Mobile Money</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+              <Button onClick={handleAddItem}>Add Income</Button>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div>Loading...</div>
+      ) : incomes.length === 0 ? (
+        <EmptyState onAddClick={() => setIsAddDialogOpen(true)} />
+      ) : (
+        <div className="space-y-4">
+          {/* Search and Filter Section */}
           <div className="flex items-center py-4">
             <Select>
               <SelectTrigger className="w-[180px]">
@@ -418,190 +586,8 @@ const Income = () => {
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Income</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="date" className="text-right">Date</Label>
-              <Input
-                id="date"
-                type="date"
-                value={newItem.date || new Date().toISOString().split('T')[0]}
-                onChange={(e) => setNewItem({ ...newItem, date: e.target.value })}
-                className="col-span-3"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="description" className="text-right">Description</Label>
-              <Input
-                id="description"
-                value={newItem.description || ""}
-                onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                className="col-span-3"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="amount" className="text-right">Amount</Label>
-              <Input
-                id="amount"
-                value={newItem.amount || ""}
-                onChange={(e) => setNewItem({ ...newItem, amount: e.target.value })}
-                className="col-span-3"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="source" className="text-right">Source</Label>
-              <div className="col-span-3">
-                <Select 
-                  onValueChange={(value) => {
-                    if (value === "custom") {
-                      setIsCustomCategory(true)
-                    } else {
-                      setIsCustomCategory(false)
-                      setNewItem({ ...newItem, ohadaCodeId: value })
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select income source" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ohadaCodes.map((code) => (
-                      <SelectItem key={code.id} value={code.id || ''}>
-                        {code.code} - {code.name}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="custom">Add Custom Source</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {isCustomCategory ? (
-              <>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="customName" className="text-right">Source Name</Label>
-                  <Input
-                    id="customName"
-                    value={customCategory.name}
-                    onChange={(e) => setCustomCategory(prev => ({ ...prev, name: e.target.value }))}
-                    className="col-span-3"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="ohadaCode" className="text-right">OHADA Code</Label>
-                  <div className="col-span-3">
-                    <Select
-                      onValueChange={(value) => {
-                        const selectedCode = ohadaCodes.find(code => code.id === value);
-                        setCustomCategory(prev => ({
-                          ...prev,
-                          code: value,
-                          description: selectedCode?.description || ''
-                        }));
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select OHADA code" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ohadaCodes.map((code) => (
-                           <SelectItem key={code.id} value={code.id || ''}>
-                            {code.code} - {code.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {customCategory.code && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        {ohadaCodes.find(code => code.id === customCategory.code)?.description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="category" className="text-right">Category</Label>
-                <div className="col-span-3">
-                  <Select
-                    onValueChange={(value) => {
-                      if (value === "custom") {
-                        setIsCustomCategory(true);
-                      } else {
-                        const selectedCode = ohadaCodes.find(code => code.id === value);
-                        setNewItem(prev => ({ 
-                          ...prev, 
-                          ohadaCodeId: value,
-                          description: selectedCode?.description || ''
-                        }));
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ohadaCodes.map((code) => (
-                         <SelectItem key={code.id} value={code.id || ''}>
-                          {code.code} - {code.name}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="custom">Custom Category</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {newItem.ohadaCodeId && (
-                    <p className="text-sm text-gray-500 mt-1">
-                      {ohadaCodes.find(code => code.id === newItem.ohadaCodeId)?.description}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="paymentMethod" className="text-right">Payment Method</Label>
-              <div className="col-span-3">
-                <Select
-                  onValueChange={(value) => setNewItem({ ...newItem, paymentMethod: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select payment method" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="bankTransfer">Bank Transfer</SelectItem>
-                    <SelectItem value="mobileMoney">Mobile Money</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <Button onClick={handleAddItem}>Add Income</Button>
-        </DialogContent>
-      </Dialog>
-
-      <div className="md:hidden space-y-4">
-        {currentItems.map((item) => (
-          <Card key={item.id} className="cursor-pointer">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-500">{new Date(item.date).toLocaleDateString()}</span>
-                <span className="font-semibold">{item.amount}</span>
-              </div>
-              <h3 className="font-medium">{item.description}</h3>
-              <div className="flex justify-between items-center mt-2 text-sm text-gray-500">
-                <span>{ohadaCodes.find(code => code.id === item.ohadaCodeId)?.name || 'Unknown'}</span>
-                <span>{item.paymentMethod}</span>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

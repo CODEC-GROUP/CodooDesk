@@ -53,9 +53,9 @@ export function ProductList({ onProductClick, onAddProduct }: ProductListProps) 
 
       try {
         // Get shop IDs directly
-        const shopIds = business.shops
-          ?.filter((shop: any) => shop?.dataValues?.id)
-          .map((shop: any) => shop.dataValues.id) || [];
+        const shopIds = business?.shops
+          ?.filter((shop: any) => shop?.id)
+          .map((shop: any) => shop.id) || [];
 
         // Proceed with API call
         const response = await safeIpcInvoke<ProductResponse>('inventory:product:get-all', {
@@ -256,17 +256,17 @@ export function ProductList({ onProductClick, onAddProduct }: ProductListProps) 
               <h3 className="font-medium">Filter by Shops</h3>
               <div className="space-y-2">
                 {business?.shops?.map((shop: any) => (
-                  <div key={shop.dataValues.id} className="flex items-center space-x-2">
+                  <div key={shop.id} className="flex items-center space-x-2">
                     <Checkbox
-                      id={`shop-${shop.dataValues.id}`}
-                      checked={selectedShops.includes(shop.dataValues.id)}
-                      onCheckedChange={(checked) => handleShopSelection(shop.dataValues.id, checked as boolean)}
+                      id={`shop-${shop.id}`}
+                      checked={selectedShops.includes(shop.id)}
+                      onCheckedChange={(checked) => handleShopSelection(shop.id, checked as boolean)}
                     />
                     <label
-                      htmlFor={`shop-${shop.dataValues.id}`}
+                      htmlFor={`shop-${shop.id}`}
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
-                      {shop.dataValues.name || 'Unnamed Shop'}
+                      {shop.name || 'Unnamed Shop'}
                     </label>
                   </div>
                 ))}

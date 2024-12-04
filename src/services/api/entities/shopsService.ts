@@ -27,7 +27,7 @@ export function registerShopHandlers() {
       }
 
       // Create location first
-      const location = await Location.create({
+      const shopLocation = await Location.create({
         address: locationData.address,
         city: locationData.city,
         country: locationData.country,
@@ -75,7 +75,7 @@ export function registerShopHandlers() {
         name: shopData.name,
         type: shopData.type,
         status: 'active',
-        locationId: location.id,
+        locationId: shopLocation.id,
         manager: managerName || shopData.manager,
         contactInfo: {
           email: shopData.contactInfo?.email,
@@ -89,12 +89,15 @@ export function registerShopHandlers() {
       });
 
       await t.commit();
+
+      const locationDetails = await Location.findByPk(shop.locationId);
+
       return { 
         success: true, 
         message: 'Shop created successfully', 
         shop: {
           ...shop.toJSON(),
-          location: location.toJSON()
+          location: locationDetails?.toJSON()
         }
       };
     } catch (error) {
@@ -108,38 +111,98 @@ export function registerShopHandlers() {
   });
 
   // Get all shops handler with proper includes and error handling
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_SHOPS, async (event, { businessId }) => {
-    try {
-      const shops = await Shop.findAll({
-        where: { businessId },
+// ... existing imports ...
+
+// Update the GET_ALL_SHOPS handler
+ipcMain.handle(IPC_CHANNELS.GET_ALL_SHOPS, async (event, { businessId, userId, role }) => {
+  try {
+    let whereClause = {};
+    
+    // If admin or shop owner, get all shops for the business
+    if (role === 'admin' || role === 'owner') {
+      whereClause = { businessId };
+    } else {
+      // For other roles, get shops associated with the user
+      const userShops = await Employee.findOne({
+        where: {
+          userId: userId 
+        },
         include: [{
-          model: Location,
-          as: 'location',
-          attributes: ['address', 'city', 'country', 'region', 'postalCode']
+          model: Shop,
+          as: 'shop',
+          include: [{
+            model: Location,
+            as: 'location',
+            attributes: ['address', 'city', 'country', 'region', 'postalCode']
+          }]
         }]
       });
 
-      return { 
-        success: true, 
-        shops: shops.map(shop => shop.toJSON())
-      };
-    } catch (error) {
-      console.error('Error fetching shops:', error);
-      return { 
-        success: false, 
-        message: 'Error fetching shops',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  });
+      if (!userShops) {
+        return { 
+          success: true, 
+          shops: [] 
+        };
+      }
 
-  // Update shop handler with transaction and location update
-  ipcMain.handle(IPC_CHANNELS.UPDATE_SHOP, async (event, { id, updates }) => {
+      // Return only the user's assigned shop
+      const shop = userShops.shop;
+      if (shop) {
+        const location = await Location.findByPk(shop.locationId);
+        return {
+          success: true,
+          shops: [{
+            ...shop.toJSON(),
+            location: location?.toJSON() ?? null
+          }]
+        };
+      } else {
+        return { 
+          success: true, 
+          shops: [] 
+        };
+      }
+    }
+
+    const shops = await Shop.findAll({
+      where: whereClause,
+      include: [{
+        model: Location,
+        as: 'location',
+        attributes: ['address', 'city', 'country', 'region', 'postalCode']
+      }]
+    });
+
+    return { 
+      success: true, 
+      shops: await Promise.all(shops.map(async shop => {
+        const shopData = shop.toJSON();
+        const location = await Location.findByPk(shopData.locationId);
+        return {
+          ...shopData,
+          location: location?.toJSON() ?? null
+        };
+      }))
+    };
+  } catch (error) {
+    console.error('Error fetching shops:', error);
+    return { 
+      success: false, 
+      message: 'Error fetching shops',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+  // Update shop handler
+  ipcMain.handle(IPC_CHANNELS.UPDATE_SHOP, async (event, { shopId, shopData, locationData }) => {
     const t = await sequelize.transaction();
     
     try {
-      const shop = await Shop.findByPk(id, {
-        include: ['location']
+      // Find the shop and its associated location
+      const shop = await Shop.findByPk(shopId, {
+        include: [{ model: Location }],
+        transaction: t
       });
 
       if (!shop) {
@@ -147,78 +210,64 @@ export function registerShopHandlers() {
       }
 
       // Update location if provided
-      if (updates.location) {
-        await Location.update(updates.location, {
+      if (locationData && shop.locationId) {
+        await Location.update({
+          address: locationData.address,
+          city: locationData.city,
+          country: locationData.country,
+          region: locationData.region || null,
+          postalCode: locationData.postalCode || null,
+        }, {
           where: { id: shop.locationId },
           transaction: t
         });
       }
 
       // Format operating hours if provided
-      if (updates.operatingHours) {
-        interface OperatingHours {
-          [key: string]: string;
-        }
-
-        const formattedHours: OperatingHours = {};
-        Object.entries(updates.operatingHours).forEach(([day, hours]) => {
+      let formattedHours: { [key: string]: string } = {};
+      if (shopData.operatingHours) {
+        Object.entries(shopData.operatingHours).forEach(([day, hours]) => {
           if (hours && typeof hours === 'string') {
             formattedHours[day] = hours;
           }
         });
-        updates.operatingHours = formattedHours;
-      }
-
-      // Update manager if provided
-      let managerName = updates.manager;
-      if (updates.managerId) {
-        const employee = await Employee.findByPk(updates.managerId, {
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['id', 'role']
-          }]
-        });
-        
-        if (employee && employee.get('user')) {
-          managerName = `${employee.firstName} ${employee.lastName}`.trim();
-          // Update employee role to manager
-          await employee.update({ role: 'manager' }, { transaction: t });
-          // Update associated user role if exists
-          const user = employee.get('user') as User;
-          await user.update({ role: 'manager' }, { transaction: t });
-        }
       }
 
       // Update shop
       await shop.update({
-        name: updates.name,
-        type: updates.type,
-        status: updates.status as 'active' | 'inactive',
-        manager: managerName,
-        contactInfo: updates.contactInfo || shop.contactInfo,
-        operatingHours: updates.operatingHours || shop.operatingHours
+        name: shopData.name,
+        type: shopData.type,
+        status: shopData.status,
+        contactInfo: shopData.contactInfo || shop.contactInfo,
+        operatingHours: formattedHours || shop.operatingHours,
+        manager: shopData.manager || shop.manager,
       }, { transaction: t });
 
       await t.commit();
 
-      // Fetch updated shop with location
-      const updatedShop = await Shop.findByPk(id, {
-        include: ['location']
-      });
+      const updatedLocation = await Location.findByPk(shop.locationId);
 
-      return { 
-        success: true, 
-        message: 'Shop updated successfully',
-        shop: updatedShop?.toJSON() || null
+      return {
+        success: true,
+        shop: {
+          ...shop.toJSON(),
+          location: updatedLocation?.toJSON()
+        }
       };
     } catch (error) {
       await t.rollback();
       console.error('Error updating shop:', error);
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Error updating shop'
-      };
+      if (error instanceof Error) {
+        return {
+          success: false,
+          message: error.message
+        };
+      } else {
+        return {
+          success: false,
+          message: 'Failed to update shop'
+        };
+      }
     }
   });
 

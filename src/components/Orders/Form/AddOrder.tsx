@@ -123,8 +123,8 @@ export function AddOrder({ onBack }: AddOrderProps) {
     try {
       setIsLoading(true);
       const shopIds = business?.shops
-      ?.filter((shop: any) => shop?.dataValues?.id)
-      .map((shop: any) => shop.dataValues.id) || [];
+      ?.filter((shop: any) => shop?.id)
+      .map((shop: any) => shop.id) || [];
 
       const response = await safeIpcInvoke<ProductResponse>('inventory:product:get-all', {
         shopIds,

@@ -209,19 +209,19 @@ export function AddCustomer({ onBack }: AddCustomerProps) {
               <h3 className="font-medium">Assign to Shops</h3>
               <div className="space-y-2">
                 {business?.shops?.map((shop: any) => (
-                  <div key={shop.dataValues?.id || shop.id} className="flex items-center space-x-2">
+                  <div key={shop.id} className="flex items-center space-x-2">
                     <Checkbox
-                      id={shop.dataValues?.id || shop.id}
-                      checked={formData.shopIds.includes(shop.dataValues?.id || shop.id)}
+                      id={shop.id}
+                      checked={formData.shopIds.includes(shop.id)}
                       onCheckedChange={(checked: boolean) => 
-                        handleShopSelection(shop.dataValues?.id || shop.id, checked)}
+                        handleShopSelection(shop.id, checked)}
                       disabled={user?.role !== 'admin' && user?.role !== 'shop_owner' && formData.shopIds.length > 0}
                     />
                     <label
-                      htmlFor={shop.dataValues?.id || shop.id}
+                      htmlFor={shop.id}
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
-                      {shop.dataValues?.name || shop.name || 'Unnamed Shop'}
+                      {shop.name || 'Unnamed Shop'}
                     </label>
                   </div>
                 ))}

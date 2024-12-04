@@ -27,7 +27,7 @@ interface Business {
   businessType: string;
   numberOfEmployees?: number;
   taxIdNumber?: string;
-  shops?: Array<{ id: string; name: string }>;
+  shops?: Array<any>;
 }
 
 interface AuthResponse {

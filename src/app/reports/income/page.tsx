@@ -1,4 +1,4 @@
-import Income from '@/components/Reports/income'
+import Income from '@/components/Reports/Income/Empty/income'
 import { DashboardLayout } from '@/components/Shared/Layout/DashboardLayout'
 
 export default function DashboardPage() {

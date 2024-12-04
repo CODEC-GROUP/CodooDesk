@@ -23,6 +23,7 @@ export interface BusinessInformationAttributes {
     front: string | null;
     back: string | null;
   } | null;
+  shops?: Shop[];
 }
 
 class BusinessInformation extends Model<BusinessInformationAttributes> implements BusinessInformationAttributes {
