@@ -1,4 +1,4 @@
-import { Sequelize, DataTypes } from 'sequelize';
+import { Sequelize, DataTypes, QueryInterface } from 'sequelize';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -70,6 +70,7 @@ export async function initDatabase(): Promise<boolean> {
     
     // Then handle CustomerShops table separately
     await createCustomerShopsTable();
+
     
     console.log('Database tables have been synchronized.');
 

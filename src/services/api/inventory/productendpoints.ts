@@ -24,32 +24,70 @@ export function registerProductHandlers() {
         return { success: false, message: 'Business ID is required' };
       }
 
-      // Create the product
-      const product = await Product.create({
-        ...data,
-        status: data.quantity <= data.reorderPoint ? 'low_stock' : 
+      // Sanitize the input data to ensure it's serializable
+      const sanitizedData = {
+        name: data.name,
+        sku: data.sku,
+        sellingPrice: Number(data.sellingPrice),
+        quantity: Number(data.quantity),
+        description: data.description,
+        category_id: data.category_id,
+        shop_id: data.shop_id,
+        status: (data.quantity <= data.reorderPoint ? 'low_stock' : 
                 data.quantity <= data.reorderPoint * 2 ? 'medium_stock' : 
-                'high_stock'
-      });
+                'high_stock') as 'low_stock' | 'medium_stock' | 'high_stock' | 'out_of_stock',
+        unitType: data.unitType,
+        purchasePrice: Number(data.purchasePrice),
+        featuredImage: data.featuredImage,
+        additionalImages: Array.isArray(data.additionalImages) ? data.additionalImages : [],
+        reorderPoint: Number(data.reorderPoint),
+        businessId: data.businessId
+      };
 
-      // If suppliers were provided, create the associations
-      if (data.suppliers && data.suppliers.length > 0) {
+      // Create the product with sanitized data
+      const product = await Product.create(sanitizedData);
+
+      // Handle supplier associations separately
+      if (data.suppliers && Array.isArray(data.suppliers)) {
         await product.addSuppliers(data.suppliers);
       }
 
-      // Fetch the product with its associations
+      // Fetch the product with associations, but sanitize the response
       const productWithAssociations = await Product.findByPk(product.id, {
-        include: ['category', 'shop', 'suppliers']
+        include: [
+          {
+            model: Category,
+            as: 'category',
+            attributes: ['id', 'name']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name']
+          },
+          {
+            model: Supplier,
+            as: 'suppliers',
+            through: { attributes: [] },
+            attributes: ['id', 'name']
+          }
+        ]
       });
+
+      // Convert to plain object and remove any circular references
+      const plainProduct = productWithAssociations?.get({ plain: true });
 
       return { 
         success: true, 
         message: 'Product created successfully', 
-        product: productWithAssociations 
+        product: plainProduct
       };
     } catch (error) {
       console.error('Error creating product:', error);
-      return { success: false, message: 'Error creating product', error };
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error creating product'
+      };
     }
   });
 

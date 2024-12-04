@@ -47,8 +47,8 @@ export function registerOrderManagementHandlers() {
         if (!product) {
           throw new Error(`Product not found: ${item.productId}`);
         }
-        const itemTotal = item.quantity * product.price;
-        const itemProfit = item.quantity * (product.price - product.purchasePrice);
+        const itemTotal = item.quantity * product.sellingPrice;
+        const itemProfit = item.quantity * (product.sellingPrice - product.purchasePrice);
         return {
           total: acc.total + itemTotal,
           profit: acc.profit + itemProfit

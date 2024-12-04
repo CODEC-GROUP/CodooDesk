@@ -241,7 +241,7 @@ export function ProductList({ onProductClick, onAddProduct }: ProductListProps) 
                   </TableCell>
                   <TableCell>{product.category_id ? categories[product.category_id] : 'Uncategorized'}</TableCell>
                   <TableCell>{product.quantity}</TableCell>
-                  <TableCell>${product.price.toFixed(2)}</TableCell>
+                  <TableCell>${product.purchasePrice.toFixed(2)}</TableCell>
                   <TableCell>
                     <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(product.status)}`}>
                       {product.status.replace('_', ' ')}
