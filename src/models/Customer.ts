@@ -82,8 +82,8 @@ class Customer extends Model<CustomerAttributes> implements CustomerAttributes {
   static associate(models: any) {
     this.belongsToMany(models.Shop, {
       through: 'CustomerShops',
-      foreignKey: 'customerId',
-      otherKey: 'shopId',
+      foreignKey: 'customer_id',
+      otherKey: 'shop_id',
       as: 'shops'
     });
 

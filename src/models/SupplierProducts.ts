@@ -5,10 +5,14 @@ class SupplierProducts extends Model {
   static initModel(sequelize: Sequelize): typeof SupplierProducts {
     return this.init(
       {
+        id: {
+          type: DataTypes.UUID,
+          defaultValue: DataTypes.UUIDV4,
+          primaryKey: true
+        },
         supplierId: {
           type: DataTypes.UUID,
           allowNull: false,
-          primaryKey: true,
           references: {
             model: 'Suppliers',
             key: 'id'
@@ -17,7 +21,6 @@ class SupplierProducts extends Model {
         productId: {
           type: DataTypes.UUID,
           allowNull: false,
-          primaryKey: true,
           references: {
             model: 'Products',
             key: 'id'

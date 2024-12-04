@@ -1,7 +1,7 @@
 import { Model, DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../services/database/index.js';
-import Category from './Category.js';
-import Shop from './Shop.js';
+import Category, { CategoryAttributes } from './Category.js';
+import Shop, { ShopAttributes } from './Shop.js';
 import Supplier from './Supplier.js';
 
 export interface ProductAttributes {
@@ -19,6 +19,12 @@ export interface ProductAttributes {
   featuredImage: string | null;
   additionalImages: string[] | null;
   reorderPoint?: number;
+}
+
+export interface ProductInstance extends Model<ProductAttributes>, ProductAttributes {
+  suppliers?: Array<{id: string, name: string}>;
+  category?: CategoryAttributes | null;
+  shop?: ShopAttributes | null;
 }
 
 class Product extends Model<ProductAttributes> implements ProductAttributes {

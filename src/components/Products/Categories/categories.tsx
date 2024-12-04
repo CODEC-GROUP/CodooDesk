@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useContext } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import { Label } from "@/components/Shared/ui/label"
@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/Shared/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/Shared/ui/dialog"
 import { Search, Plus, Edit, Trash2 } from "lucide-react"
 import Image from 'next/image'
-import { AuthLayoutContext } from "@/components/Shared/Layout/AuthLayout"
+import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 
 interface Category {
@@ -29,40 +29,28 @@ const Categories = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const authContext = useContext(AuthLayoutContext);
-  if (!authContext) {
-    throw new Error('Categories must be used within an AuthLayout');
-  }
-  const { checkSetupStatus } = authContext;
+  const { checkSetupStatus, business } = useAuthLayout();
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
   const [newCategory, setNewCategory] = useState<Partial<Category>>({ name: "", description: "", image: null })
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
-  const [businessData, setBusinessData] = useState<any>(null);
-
-  useEffect(() => {
-    const storedBusinessData = localStorage.getItem('businessData');
-    if (storedBusinessData) {
-      setBusinessData(JSON.parse(storedBusinessData));
-    }
-  }, []);
 
   useEffect(() => {
     const init = async () => {
       const isSetup = await checkSetupStatus();
-      if (isSetup && businessData?.id) {
+      if (isSetup && business?.id) {
         loadCategories();
       } else {
         setError('Business setup incomplete');
       }
     };
     init();
-  }, [businessData?.id, checkSetupStatus]);
+  }, [business?.id, checkSetupStatus]);
 
   const loadCategories = async () => {
     try {
       const result = await safeIpcInvoke('inventory:category:get-all', {
-        businessId: businessData?.id
+        businessId: business?.id
       }, { success: false, categories: [] });
 
       if (result?.success) {
@@ -80,14 +68,13 @@ const Categories = () => {
   };
 
   const filteredCategories = categories.filter(category =>
-    category.name.toLowerCase().includes(searchTerm.toLowerCase())
+    category?.name?.toLowerCase().includes(searchTerm?.toLowerCase() ?? '') ?? false
   )
 
   const handleAddCategory = async () => {
     try {
       let imagePath = null;
       if (newCategory.image instanceof File) {
-        // Convert File to Buffer
         const buffer = await newCategory.image.arrayBuffer();
         
         const uploadResult = await safeIpcInvoke('file:store', {
@@ -105,16 +92,17 @@ const Categories = () => {
         data: {
           ...newCategory,
           image: imagePath,
-          businessId: businessData?.id
+          businessId: business?.id
         }
       }, { success: false, category: null });
 
       if (result?.success && result.category) {
-        setCategories([...categories, result.category]);
+        setCategories(prev => [...prev, result.category] as Category[]);
         setIsAddCategoryOpen(false);
         setNewCategory({ name: "", description: "", image: null });
+        setEditingCategory(null);
       } else {
-        setError( 'Failed to create category');
+        setError('Failed to create category');
       }
     } catch (err) {
       setError('Failed to create category');
@@ -137,7 +125,6 @@ const Categories = () => {
         let imagePath = newCategory.image;
         
         if (newCategory.image instanceof File) {
-          // Convert File to Buffer
           const buffer = await newCategory.image.arrayBuffer();
           
           const uploadResult = await safeIpcInvoke('file:store', {
@@ -156,7 +143,7 @@ const Categories = () => {
           data: {
             ...newCategory,
             image: imagePath,
-            businessId: businessData?.id
+            businessId: business?.id
           }
         }, { success: false, category: null });
 
@@ -181,7 +168,7 @@ const Categories = () => {
     try {
       const result = await safeIpcInvoke<DeleteCategoryResult>('inventory:category:delete', {
         categoryId,
-        businessId: businessData?.id
+        businessId: business?.id
       }, { success: false });
 
       if (result?.success) {

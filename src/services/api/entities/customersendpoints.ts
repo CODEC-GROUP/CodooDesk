@@ -3,6 +3,7 @@ import Customer from '../../../models/Customer.js';
 import Sales from '../../../models/Sales.js';
 import Shop from '../../../models/Shop.js';
 import { sequelize } from '../../database/index.js';
+import { FindOptions, FindAttributeOptions, Includeable } from 'sequelize';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -52,13 +53,15 @@ export function registerCustomerHandlers() {
     try {
       let customers: CustomerWithAggregates[];
       
-      const baseQuery = {
+      const baseQuery: FindOptions = {
         include: [
           {
             model: Shop,
             as: 'shops',
             attributes: ['id', 'name'],
-            through: { attributes: [] },
+            through: { 
+              attributes: []
+            },
             where: shopId ? { id: shopId } : undefined,
           },
           {
@@ -72,9 +75,9 @@ export function registerCustomerHandlers() {
           'first_name',
           'last_name',
           'phone_number',
-          [sequelize.fn('COUNT', sequelize.col('sales.id')), 'orders'] as unknown as [string, string],
-          [sequelize.fn('SUM', sequelize.col('sales.netAmount')), 'spent'] as unknown as [string, string]
-        ],
+          [sequelize.fn('COUNT', sequelize.col('sales.id')), 'orders'],
+          [sequelize.fn('SUM', sequelize.col('sales.netAmount')), 'spent']
+        ] as FindAttributeOptions,
         group: ['Customer.id', 'shops.id'],
         raw: true,
         nest: true
@@ -87,10 +90,10 @@ export function registerCustomerHandlers() {
           ...baseQuery,
           include: [
             {
-              ...baseQuery.include[0],
+              ...(baseQuery.include as any[])[0],
               where: { id: shopId }
             },
-            baseQuery.include[1]
+            (baseQuery.include as Includeable[])[1]
           ]
         }) as unknown as CustomerWithAggregates[];
       }

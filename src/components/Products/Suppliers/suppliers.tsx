@@ -174,10 +174,6 @@ const Suppliers = () => {
             title: "Success",
             description: "Supplier updated successfully",
           });
-          setIsDialogOpen(false);
-          setIsEditing(false);
-          setEditingId(null);
-          resetNewSupplier();
         }
       } else {
         const response = await safeIpcInvoke<SupplierResponse>('entities:supplier:create', {
@@ -190,10 +186,14 @@ const Suppliers = () => {
             title: "Success",
             description: "Supplier added successfully",
           });
-          setIsDialogOpen(false);
-          resetNewSupplier();
         }
       }
+      
+      setIsDialogOpen(false);
+      setIsEditing(false);
+      setEditingId(null);
+      resetNewSupplier();
+      
     } catch (error) {
       console.error('Error adding/updating supplier:', error);
       toast({
@@ -265,6 +265,13 @@ const Suppliers = () => {
     return location.length > 30 ? `${location.slice(0, 30)}...` : location;
   };
 
+  const handleDialogClose = () => {
+    setIsDialogOpen(false);
+    setIsEditing(false);
+    setEditingId(null);
+    resetNewSupplier();
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -273,15 +280,123 @@ const Suppliers = () => {
     );
   }
 
-  if (!isLoading && suppliers.length === 0) {
+  if (!isLoading && (!suppliers || suppliers.length === 0)) {
     return (
-      <div className="h-full">
-        <EmptyState onAddSupplier={() => {
-          setIsDialogOpen(true);
-          setIsEditing(false);
-          resetNewSupplier();
-        }} />
-      </div>
+      <>
+        <div className="h-full">
+          <EmptyState onAddSupplier={() => {
+            setIsDialogOpen(true);
+            setIsEditing(false);
+            setNewSupplier({
+              name: "",
+              phoneNumber: "",
+              email: "",
+              address: "",
+              city: "",
+              region: "",
+              country: ""
+            });
+          }} />
+        </div>
+
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{isEditing ? 'Edit Supplier' : 'Add Supplier'}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleAddSupplier();
+            }}>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Name</Label>
+                  <Input
+                    id="name"
+                    required
+                    value={newSupplier.name}
+                    onChange={(e) => setNewSupplier({ ...newSupplier, name: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="phoneNumber">Phone Number</Label>
+                  <Input
+                    id="phoneNumber"
+                    required
+                    value={newSupplier.phoneNumber}
+                    onChange={(e) => setNewSupplier({ ...newSupplier, phoneNumber: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    required
+                    value={newSupplier.email}
+                    onChange={(e) => setNewSupplier({ ...newSupplier, email: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="country">Country</Label>
+                  <Select
+                    id="country"
+                    options={countryList().getData()}
+                    value={countryList().getData().find(option => option.value === newSupplier.country)}
+                    onChange={(option) => setNewSupplier(prev => ({ ...prev, country: option?.value || '' }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="region">Region</Label>
+                  {newSupplier.country ? (
+                    <Select
+                      id="region"
+                      options={State.getStatesOfCountry(newSupplier.country).map(state => ({
+                        value: state.isoCode,
+                        label: state.name
+                      }))}
+                      value={State.getStatesOfCountry(newSupplier.country)
+                        .map(state => ({ value: state.isoCode, label: state.name }))
+                        .find(option => option.value === newSupplier.region)}
+                      onChange={(option) => setNewSupplier(prev => ({ ...prev, region: option?.value || '' }))}
+                      isClearable
+                    />
+                  ) : (
+                    <Input
+                      id="region"
+                      value={newSupplier.region}
+                      onChange={(e) => setNewSupplier({ ...newSupplier, region: e.target.value })}
+                    />
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="city">City</Label>
+                  <Input
+                    id="city"
+                    required
+                    value={newSupplier.city}
+                    onChange={(e) => setNewSupplier({ ...newSupplier, city: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="address">Street Address</Label>
+                  <Input
+                    id="address"
+                    required
+                    value={newSupplier.address}
+                    onChange={(e) => setNewSupplier({ ...newSupplier, address: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit">
+                  {isEditing ? 'Update Supplier' : 'Add Supplier'}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
 
@@ -357,91 +472,101 @@ const Suppliers = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{isEditing ? 'Edit Supplier' : 'Add Supplier'}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={newSupplier.name}
-                onChange={(e) => setNewSupplier({ ...newSupplier, name: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input
-                id="phoneNumber"
-                value={newSupplier.phoneNumber}
-                onChange={(e) => setNewSupplier({ ...newSupplier, phoneNumber: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={newSupplier.email}
-                onChange={(e) => setNewSupplier({ ...newSupplier, email: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="country">Country</Label>
-              <Select
-                id="country"
-                options={countryList().getData()}
-                value={countryList().getData().find(option => option.value === newSupplier.country)}
-                onChange={(option) => setNewSupplier(prev => ({ ...prev, country: option?.value || '' }))}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="region">Region</Label>
-              {newSupplier.country ? (
-                <Select
-                  id="region"
-                  options={State.getStatesOfCountry(newSupplier.country).map(state => ({
-                    value: state.isoCode,
-                    label: state.name
-                  }))}
-                  value={State.getStatesOfCountry(newSupplier.country)
-                    .map(state => ({ value: state.isoCode, label: state.name }))
-                    .find(option => option.value === newSupplier.region)}
-                  onChange={(option) => setNewSupplier(prev => ({ ...prev, region: option?.value || '' }))}
-                  isClearable
-                />
-              ) : (
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            handleAddSupplier();
+          }}>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Name</Label>
                 <Input
-                  id="region"
-                  value={newSupplier.region}
-                  onChange={(e) => setNewSupplier({ ...newSupplier, region: e.target.value })}
+                  id="name"
+                  required
+                  value={newSupplier.name}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, name: e.target.value })}
                 />
-              )}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="phoneNumber">Phone Number</Label>
+                <Input
+                  id="phoneNumber"
+                  required
+                  value={newSupplier.phoneNumber}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, phoneNumber: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  required
+                  value={newSupplier.email}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, email: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="country">Country</Label>
+                <Select
+                  id="country"
+                  options={countryList().getData()}
+                  value={countryList().getData().find(option => option.value === newSupplier.country)}
+                  onChange={(option) => setNewSupplier(prev => ({ ...prev, country: option?.value || '' }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="region">Region</Label>
+                {newSupplier.country ? (
+                  <Select
+                    id="region"
+                    options={State.getStatesOfCountry(newSupplier.country).map(state => ({
+                      value: state.isoCode,
+                      label: state.name
+                    }))}
+                    value={State.getStatesOfCountry(newSupplier.country)
+                      .map(state => ({ value: state.isoCode, label: state.name }))
+                      .find(option => option.value === newSupplier.region)}
+                    onChange={(option) => setNewSupplier(prev => ({ ...prev, region: option?.value || '' }))}
+                    isClearable
+                  />
+                ) : (
+                  <Input
+                    id="region"
+                    value={newSupplier.region}
+                    onChange={(e) => setNewSupplier({ ...newSupplier, region: e.target.value })}
+                  />
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="city">City</Label>
+                <Input
+                  id="city"
+                  required
+                  value={newSupplier.city}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, city: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="address">Street Address</Label>
+                <Input
+                  id="address"
+                  required
+                  value={newSupplier.address}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, address: e.target.value })}
+                />
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="city">City</Label>
-              <Input
-                id="city"
-                value={newSupplier.city}
-                onChange={(e) => setNewSupplier({ ...newSupplier, city: e.target.value })}
-              />
+            <div className="flex justify-end">
+              <Button type="submit">
+                {isEditing ? 'Update Supplier' : 'Add Supplier'}
+              </Button>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="address">Street Address</Label>
-              <Input
-                id="address"
-                value={newSupplier.address}
-                onChange={(e) => setNewSupplier({ ...newSupplier, address: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button onClick={handleAddSupplier}>
-              {isEditing ? 'Update Supplier' : 'Add Supplier'}
-            </Button>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
 

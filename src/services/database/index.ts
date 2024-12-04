@@ -19,64 +19,17 @@ const sequelize = new Sequelize({
 
 const models = initializeModels(sequelize);
 
-async function createCustomerShopsTable() {
-  const queryInterface = sequelize.getQueryInterface();
-  const tables = await queryInterface.showAllTables();
-  
-  if (!tables.includes('CustomerShops')) {
-    await queryInterface.createTable('CustomerShops', {
-      customerId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-          model: 'Customers',
-          key: 'id'
-        }
-      },
-      shopId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        references: {
-          model: 'Shops',
-          key: 'id'
-        }
-      },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false
-      },
-      updatedAt: {
-        type: DataTypes.DATE,
-        allowNull: false
-      }
-    });
 
-    // Add composite primary key after table creation
-    await queryInterface.addConstraint('CustomerShops', {
-      fields: ['customerId', 'shopId'],
-      type: 'primary key',
-      name: 'CustomerShops_pkey'
-    });
-  }
-}
+
 
 export async function initDatabase(): Promise<boolean> {
   try {
     await sequelize.authenticate();
     console.log('Connection has been established successfully.');
 
-    // First sync all tables except CustomerShops
-    await sequelize.sync();
+    // First sync all tables except junction tables
+    await sequelize.sync({alter: true});
     
-    // Then handle CustomerShops table separately
-    await createCustomerShopsTable();
-
-    
-    console.log('Database tables have been synchronized.');
-
-    // Display all tables created
-    const tables = await sequelize.getQueryInterface().showAllTables();
-    console.log('Tables in the database:', tables);
 
     return true;
   } catch (error) {

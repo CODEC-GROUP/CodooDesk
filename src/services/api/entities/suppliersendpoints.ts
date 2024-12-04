@@ -20,7 +20,7 @@ export function registerSupplierHandlers() {
       const supplier = await Supplier.create({
         name: supplierData.name,
         email: supplierData.email,
-        phone: supplierData.phone,
+        phone: supplierData.phoneNumber,
         address: supplierData.address,
         city: supplierData.city,
         region: supplierData.region,

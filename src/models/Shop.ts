@@ -81,7 +81,7 @@ class Shop extends Model<ShopAttributes> implements ShopAttributes {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-          model: 'Location',
+          model: 'locations',
           key: 'id',
         },
       },
@@ -139,8 +139,8 @@ class Shop extends Model<ShopAttributes> implements ShopAttributes {
     });
     this.belongsToMany(models.Customer, {
       through: 'CustomerShops',
-      foreignKey: 'shopId',
-      otherKey: 'customerId',
+      foreignKey: 'shop_id',
+      otherKey: 'customer_id',
       as: 'customers'
     });
     this.belongsToMany(models.Product, { through: 'ShopProducts', foreignKey: 'shopId', as: 'products' });

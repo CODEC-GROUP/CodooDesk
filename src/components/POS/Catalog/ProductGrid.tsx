@@ -10,13 +10,14 @@ import { Edit, Minus, Plus, X, RefreshCcw, AlertCircle } from "lucide-react"
 import Image from 'next/image'
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
+import { toast } from '@/hooks/use-toast';
 
 // Define the Product interface
 interface Product {
   id: string;
   name: string;
-  price: number;
-  image: string | null;
+  sellingPrice: number;
+  featuredImage: string | null;
   status: 'high_stock' | 'medium_stock' | 'low_stock' | 'out_of_stock';
   quantity: number;
   category_id: string;
@@ -72,7 +73,7 @@ interface ProductCardProps {
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => (
-  <Card 
+  <Card
     className="w-full cursor-pointer hover:shadow-md transition-shadow"
     onClick={() => onAddToCart(product)}
   >
@@ -81,27 +82,27 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => (
         whitespace-nowrap z-10 shadow-sm
         ${product.status === 'high_stock' ? 'bg-green-100 text-green-800' :
           product.status === 'medium_stock' ? 'bg-yellow-100 text-yellow-800' :
-          'bg-red-100 text-red-800'}`}
+            'bg-red-100 text-red-800'}`}
       >
-        {product.quantity} in stock
+        in stock
       </span>
 
       <div className="flex justify-center mb-2">
-        <Image 
-          src={product.image || '/placeholder-product.png'} 
-          alt={product.name} 
-          className="w-full h-16 object-contain" 
-          width={64} 
-          height={64} 
+        <Image
+          src={product.featuredImage || '/assets/images/box.png'}
+          alt={product.name}
+          className="w-full h-16 object-contain"
+          width={64}
+          height={64}
         />
       </div>
-      
+
       <div className="flex flex-col gap-0.5">
         <h3 className="text-xs font-medium truncate">
           {product.name}
         </h3>
         <p className="text-xs font-semibold">
-          {product.price} XAF
+          {product.sellingPrice} XAF
         </p>
       </div>
     </CardContent>
@@ -115,11 +116,11 @@ interface CartItemProps {
   onUpdatePrice: (id: string, price: number) => void;
 }
 
-const CartItem: React.FC<CartItemProps> = ({ 
-  item, 
-  onUpdateQuantity, 
+const CartItem: React.FC<CartItemProps> = ({
+  item,
+  onUpdateQuantity,
   onRemove,
-  onUpdatePrice 
+  onUpdatePrice
 }) => (
   <div className="flex flex-col py-2 border-b">
     <div className="flex justify-between items-start">
@@ -140,28 +141,28 @@ const CartItem: React.FC<CartItemProps> = ({
           <span className="text-xs text-gray-500">XAF</span>
         </div>
       </div>
-      
+
       <div className="flex items-center gap-1">
-        <Button 
-          variant="outline" 
-          size="icon" 
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
           className="h-7 w-7"
         >
           <Minus className="h-3 w-3" />
         </Button>
         <span className="w-8 text-center text-sm">{item.quantity}</span>
-        <Button 
-          variant="outline" 
-          size="icon" 
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
           className="h-7 w-7"
         >
           <Plus className="h-3 w-3" />
         </Button>
-        <Button 
-          variant="ghost" 
-          size="icon" 
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => onRemove(item.id)}
           className="h-7 w-7 ml-1"
         >
@@ -173,7 +174,7 @@ const CartItem: React.FC<CartItemProps> = ({
 )
 
 export function Pos() {
-  const { user } = useAuthLayout();
+  const { user, business } = useAuthLayout();
   const [shopId, setShopId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -214,14 +215,14 @@ export function Pos() {
     }
     const existingItem = cartItems.find(item => item.id === product.id)
     if (existingItem) {
-      setCartItems(cartItems.map(item => 
+      setCartItems(cartItems.map(item =>
         item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
       ))
     } else {
-      setCartItems([...cartItems, { 
-        ...product, 
-        quantity: 1, 
-        actualPrice: product.price
+      setCartItems([...cartItems, {
+        ...product,
+        quantity: 1,
+        actualPrice: product.sellingPrice
       }])
     }
   }
@@ -230,7 +231,7 @@ export function Pos() {
     if (newQuantity === 0) {
       setCartItems(cartItems.filter(item => item.id !== id));
     } else {
-      setCartItems(cartItems.map(item => 
+      setCartItems(cartItems.map(item =>
         item.id === id ? { ...item, quantity: newQuantity } : item
       ));
     }
@@ -332,8 +333,8 @@ export function Pos() {
                     <tr>
                       <td>${item.name}</td>
                       <td>${item.quantity}</td>
-                      <td>${item.price} XAF</td>
-                      <td>${item.price * item.quantity} XAF</td>
+                      <td>${item.sellingPrice} XAF</td>
+                      <td>${item.sellingPrice * item.quantity} XAF</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -357,7 +358,7 @@ export function Pos() {
   }
 
   const updatePrice = (id: string, newPrice: number) => {
-    setCartItems(cartItems.map(item => 
+    setCartItems(cartItems.map(item =>
       item.id === id ? { ...item, actualPrice: newPrice } : item
     ));
   };
@@ -366,129 +367,102 @@ export function Pos() {
     setChangeAmount(amountPaid - calculateTotal());
   }, [amountPaid, cartItems]);
 
-  // Fetch products on component mount
   useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  // Fetch products when category changes
-  useEffect(() => {
-    if (selectedCategory) {
-      fetchProductsByCategory(selectedCategory);
-    } else {
-      fetchProducts();
-    }
-  }, [selectedCategory]);
-
-  const fetchProducts = async () => {
-    setLoading(true);
-    try {
-      const result = await safeIpcInvoke<{ success: boolean; products: Product[]; total: number; message: string }>(
-        'pos:products:get',
-        { shop_id: shopId },
-        { success: false, products: [], total: 0, message: '' }
-      );
-
-      if (result?.success) {
-        setProducts(result.products);
-      } else {
-        setError(result?.message || 'Failed to fetch products');
+    const initializeData = async () => {
+      if (!user) {
+        return; // Wait for user to be loaded
       }
-    } catch (error) {
-      setError('Failed to fetch products');
-      console.error('Error fetching products:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const fetchProductsByCategory = async (categoryId: string) => {
-    setLoading(true);
-    try {
-      const result = await safeIpcInvoke(
-        'pos:products:get-by-category',
-        {
-          shop_id: shopId,
-          category_id: categoryId
-        },
-        { success: false, products: [], total: 0, message: '' }
-      );
-
-      if (result?.success) {
-        setProducts(result.products);
-      } else {
-        setError(result?.message || 'Failed to fetch products by category');
-      }
-    } catch (error) {
-      setError('Failed to fetch products');
-      console.error('Error fetching products by category:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSearch = async (searchTerm: string) => {
-    if (!searchTerm.trim()) {
-      fetchProducts();
-      return;
-    }
-
-    try {
-      const result = await safeIpcInvoke<{ success: boolean; products: Product[]; total: number; message: string }>(
-        'pos:products:search',
-        {
-          shop_id: shopId,
-          searchTerm: searchTerm.trim()
-        },
-        { success: false, products: [], total: 0, message: '' }
-      );
-
-      if (result?.success) {
-        setProducts(result.products);
-      } else {
-        setError(result?.message || 'Failed to search products');
-      }
-    } catch (error) {
-      setError('Failed to search products');
-      console.error('Error searching products:', error);
-    }
-  };
-
-  useEffect(() => {
-    const fetchCategories = async () => {
       try {
-        const result = await safeIpcInvoke('inventory:category:get-all', {
-          shop_id: shopId // Use shop from context
-        }, { success: false, categories: [] });
+        setLoading(true);
+        // Get shop IDs directly
+        const shopIds = business?.shops
+          ?.filter((shop: any) => shop?.dataValues?.id)
+          .map((shop: any) => shop.dataValues.id) || [];
 
-        if (result?.success) {
-          setCategories(result.categories);
+        // Proceed with API call
+        const response = await safeIpcInvoke<{ success: boolean; products: Product[]; message?: string }>('inventory:product:get-all', {
+          shopIds,
+          businessId: business?.id
+        }, {
+          success: false,
+          products: [],
+          message: ''
+        });
+
+        if (!response?.success) {
+          throw new Error(response?.message || 'Failed to fetch products');
         }
+
+        setProducts(response.products || []);
+
+        // Fetch categories
+        const categoryResponse = await safeIpcInvoke<{ success: boolean; categories?: Category[] }>('inventory:category:get-all', {
+          businessId: business?.id
+        }, {
+          success: false,
+          categories: []
+        });
+
+        if (categoryResponse?.success && categoryResponse.categories) {
+          setCategories(categoryResponse.categories);
+        }
+
       } catch (error) {
-        console.error('Error fetching categories:', error);
+        console.error('Error initializing data:', error);
+        setError(error instanceof Error ? error.message : 'Failed to initialize product data');
+        toast({
+          title: "Error",
+          description: "Failed to load products. Please try refreshing the page.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchCategories();
-  }, []);
+    initializeData();
+  }, [user, shopId]);
+
+  // ... existing code ...
 
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        const result = await safeIpcInvoke('entities:customer:get-all', {
-          shop_id: shopId // Use shop from context
-        }, { success: false, customers: [] });
+        const currentShopId = business?.shops?.[0]?.id || localStorage.getItem('currentShopId');
 
-        if (result?.success) {
-          setCustomers(result.customers);
+        const response = await safeIpcInvoke('entities:customer:get-all', {
+          userId: user?.id,
+          role: user?.role,
+          shopId: currentShopId
+        }, {
+          success: false,
+          customers: []
+        });
+
+        if (response?.success) {
+          setCustomers(response.customers);
+        } else {
+          toast({
+            title: "Error",
+            description: "Failed to load customers",
+            variant: "destructive",
+          });
         }
       } catch (error) {
         console.error('Error fetching customers:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load customers",
+          variant: "destructive",
+        });
       }
     };
 
     fetchCustomers();
-  }, []);
+  }, [user?.id, user?.role, business?.id]);
+
+
 
   useEffect(() => {
     setShopId(localStorage.getItem('currentShopId'));
@@ -510,9 +484,9 @@ export function Pos() {
           {/* Alert Message */}
           {alertMessage && (
             <div className="flex items-center bg-red-100 text-red-800 p-2 rounded mb-4">
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => setAlertMessage(null)}
                 className="h-5 w-5 mr-2"
               >
@@ -525,7 +499,7 @@ export function Pos() {
 
           {/* Filter and Search Header */}
           <div className="flex gap-3 mb-4">
-            <Select 
+            <Select
               value={selectedCategory}
               onValueChange={setSelectedCategory}
             >
@@ -543,9 +517,9 @@ export function Pos() {
             </Select>
 
             <div className="relative flex-1">
-              <Input 
-                type="text" 
-                placeholder="Search products..." 
+              <Input
+                type="text"
+                placeholder="Search products..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10"
@@ -570,10 +544,10 @@ export function Pos() {
           <div className="flex-1 overflow-y-auto min-h-0 pb-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {currentProducts.map(product => (
-                <ProductCard 
-                  key={product.id} 
-                  product={product} 
-                  onAddToCart={addToCart} 
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onAddToCart={addToCart}
                 />
               ))}
             </div>
@@ -582,8 +556,8 @@ export function Pos() {
           {/* Pagination Footer */}
           <div className="pt-4 border-t mt-auto">
             <div className="flex justify-between items-center">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
               >
@@ -592,7 +566,7 @@ export function Pos() {
               <span className="text-sm font-medium">
                 Page {currentPage} of {totalPages}
               </span>
-              <Button 
+              <Button
                 variant="outline"
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}
@@ -639,9 +613,9 @@ export function Pos() {
               {/* Scrollable Cart Items */}
               <div className="flex-1 overflow-y-auto min-h-0 border-y">
                 {cartItems.map(item => (
-                  <CartItem 
-                    key={item.id} 
-                    item={item} 
+                  <CartItem
+                    key={item.id}
+                    item={item}
                     onUpdateQuantity={updateQuantity}
                     onRemove={removeFromCart}
                     onUpdatePrice={updatePrice}
@@ -726,10 +700,10 @@ export function Pos() {
                   />
                 </div>
 
-                <Button 
-                  className="w-full" 
+                <Button
+                  className="w-full"
                   onClick={handlePayment}
-                  disabled={ amountPaid < calculateTotal()}
+                  disabled={amountPaid < calculateTotal()}
                 >
                   PAY
                 </Button>

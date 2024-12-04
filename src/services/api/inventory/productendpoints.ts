@@ -1,9 +1,9 @@
-import { ipcMain } from 'electron';
-import Product, { ProductAttributes } from '../../../models/Product.js';
+import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import { Op } from 'sequelize';
+import Product, { ProductAttributes, ProductInstance } from '../../../models/Product.js';
 import Shop from '../../../models/Shop.js';
 import Category from '../../../models/Category.js';
 import Supplier from '../../../models/Supplier.js';
-import { Op } from 'sequelize';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -15,10 +15,72 @@ const IPC_CHANNELS = {
   GET_BY_CATEGORY: 'inventory:product:get-by-category'
 };
 
+// Types for sanitized data
+interface SanitizedSupplier {
+  id: string;
+  name: string;
+}
+
+interface SanitizedCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  image: string | null;
+  businessId: string;
+}
+
+interface SanitizedShop {
+  id: string;
+  name: string;
+  businessId: string;
+  locationId: string;
+  status: string;
+  type: string;
+  contactInfo: {
+    email: string;
+    [key: string]: any;
+  };
+}
+
+interface SanitizedProduct extends Omit<ProductAttributes, 'category' | 'shop' | 'suppliers'> {
+  suppliers: SanitizedSupplier[];
+  category: SanitizedCategory | null;
+  shop: SanitizedShop | null;
+}
+
+// Helper function to sanitize a product
+function sanitizeProduct(product: any): SanitizedProduct {
+  const plain = product?.get?.({ plain: true }) ?? product;
+  
+  return {
+    ...plain,
+    suppliers: plain?.suppliers?.map((supplier: any) => ({
+      id: supplier.id,
+      name: supplier.name
+    })) || [],
+    category: plain?.category ? {
+      id: plain.category.id,
+      name: plain.category.name,
+      description: plain.category.description ?? null,
+      image: plain.category.image ?? null,
+      businessId: plain.category.businessId
+    } : null,
+    shop: plain?.shop ? {
+      id: plain.shop.id,
+      name: plain.shop.name,
+      businessId: plain.shop.businessId ?? '',
+      locationId: plain.shop.locationId ?? '',
+      status: plain.shop.status ?? 'inactive',
+      type: plain.shop.type ?? '',
+      contactInfo: plain.shop.contactInfo ?? { email: '' }
+    } : null
+  };
+}
+
 // Register IPC handlers
 export function registerProductHandlers() {
   // Create product handler
-  ipcMain.handle(IPC_CHANNELS.CREATE_PRODUCT, async (event, { data }) => {
+  ipcMain.handle(IPC_CHANNELS.CREATE_PRODUCT, async (event: IpcMainInvokeEvent, { data }) => {
     try {
       if (!data.businessId) {
         return { success: false, message: 'Business ID is required' };
@@ -58,12 +120,12 @@ export function registerProductHandlers() {
           {
             model: Category,
             as: 'category',
-            attributes: ['id', 'name']
+            attributes: ['id', 'name', 'description', 'image', 'businessId']
           },
           {
             model: Shop,
             as: 'shop',
-            attributes: ['id', 'name']
+            attributes: ['id', 'name', 'businessId', 'locationId', 'status', 'type', 'contactInfo']
           },
           {
             model: Supplier,
@@ -74,13 +136,13 @@ export function registerProductHandlers() {
         ]
       });
 
-      // Convert to plain object and remove any circular references
-      const plainProduct = productWithAssociations?.get({ plain: true });
+      // Sanitize the response to ensure it's serializable
+      const sanitizedProduct = sanitizeProduct(productWithAssociations);
 
       return { 
         success: true, 
         message: 'Product created successfully', 
-        product: plainProduct
+        product: sanitizedProduct
       };
     } catch (error) {
       console.error('Error creating product:', error);
@@ -92,52 +154,85 @@ export function registerProductHandlers() {
   });
 
   // Get all products handler
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_PRODUCTS, async (event, { shopId, shopIds }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_PRODUCTS, async (event: IpcMainInvokeEvent, { shopId, shopIds, businessId }) => {
+    console.log('=== GET_ALL_PRODUCTS START ===');
+    console.log('Params:', { shopId, shopIds, businessId });
+    
     try {
-      // Only create whereClause if we have valid shop identifiers
-      let whereClause = {};
-      
-      if (shopIds && shopIds.length > 0) {
-        whereClause = { shop_id: { [Op.in]: shopIds } };
-      } else if (shopId) {
-        whereClause = { shop_id: shopId };
-      } else {
-        throw new Error('No valid shop identifier provided');
+      if (!businessId) {
+        console.log('Error: Business ID is missing');
+        throw new Error('Business ID is required');
       }
 
+      // Create where clause with business ID
+      let whereClause: any = {};
+      
+      // Handle shop IDs
+      if (shopIds?.length > 0) {
+        whereClause = {
+          shop_id: { [Op.in]: shopIds },
+          '$shop.businessId$': businessId
+        };
+      } else if (shopId) {
+        whereClause = {
+          shop_id: shopId,
+          '$shop.businessId$': businessId
+        };
+      } else {
+        throw new Error('Either shopId or shopIds is required');
+      }
+
+      console.log('Final where clause:', JSON.stringify(whereClause, null, 2));
+
+      console.log('Executing Product.findAll...');
       const products = await Product.findAll({
         where: whereClause,
         include: [
           {
             model: Category,
-            as: 'category'
+            as: 'category',
+            attributes: ['id', 'name', 'description', 'image', 'businessId']
           },
           {
             model: Shop,
-            as: 'shop'
+            as: 'shop',
+            required: true,
+            attributes: ['id', 'name', 'businessId', 'locationId', 'status', 'type', 'contactInfo'],
+            where: { businessId } // Additional filter on shop level
           },
           {
             model: Supplier,
             as: 'suppliers',
-            through: { attributes: [] }
+            through: { attributes: [] },
+            attributes: ['id', 'name']
           }
         ],
+        logging: (sql) => console.log('Executing SQL:', sql),
         order: [['createdAt', 'DESC']]
       });
 
-      return { success: true, products };
+      console.log(`Found ${products.length} products`);
+      if (products.length > 0) {
+        console.log('First product sample:', JSON.stringify(products[0].get({ plain: true }), null, 2));
+      }
+
+      // Convert to plain objects and sanitize the response
+      const sanitizedProducts = products.map(product => sanitizeProduct(product));
+      console.log(`Sanitized ${sanitizedProducts.length} products`);
+
+      console.log('=== GET_ALL_PRODUCTS END ===');
+      return { success: true, products: sanitizedProducts };
     } catch (error) {
-      console.error('Error fetching products:', error);
+      console.error('Error in GET_ALL_PRODUCTS:', error);
       return { 
         success: false, 
-        message: 'Error fetching products',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        message: error instanceof Error ? error.message : 'Error fetching products'
       };
     }
   });
 
   // Get product by ID handler
-  ipcMain.handle(IPC_CHANNELS.GET_PRODUCT, async (event, { id }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_PRODUCT, async (event: IpcMainInvokeEvent, { id }) => {
     try {
       const product = await Product.findByPk(id, {
         include: ['category']
@@ -145,14 +240,14 @@ export function registerProductHandlers() {
       if (!product) {
         return { success: false, message: 'Product not found' };
       }
-      return { success: true, product };
+      return { success: true, product: sanitizeProduct(product) };
     } catch (error) {
       return { success: false, message: 'Error retrieving product', error };
     }
   });
 
   // Update product handler
-  ipcMain.handle(IPC_CHANNELS.UPDATE_PRODUCT, async (event, { id, updates }) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATE_PRODUCT, async (event: IpcMainInvokeEvent, { id, updates }) => {
     try {
       const product = await Product.findByPk(id);
       if (!product) {
@@ -167,14 +262,14 @@ export function registerProductHandlers() {
       }
       
       await product.update(updates);
-      return { success: true, message: 'Product updated successfully', product };
+      return { success: true, message: 'Product updated successfully', product: sanitizeProduct(product) };
     } catch (error) {
       return { success: false, message: 'Error updating product', error };
     }
   });
 
   // Get products by category handler
-  ipcMain.handle(IPC_CHANNELS.GET_BY_CATEGORY, async (event, { categoryId, shop_id }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_BY_CATEGORY, async (event: IpcMainInvokeEvent, { categoryId, shop_id }) => {
     try {
       const products = await Product.findAll({
         where: { 
@@ -184,14 +279,14 @@ export function registerProductHandlers() {
         include: ['category'],
         order: [['createdAt', 'DESC']]
       });
-      return { success: true, products };
+      return { success: true, products: products.map(product => sanitizeProduct(product)) };
     } catch (error) {
       return { success: false, message: 'Error fetching products by category', error };
     }
   });
 
   // Delete product handler
-  ipcMain.handle(IPC_CHANNELS.DELETE_PRODUCT, async (event, { id }) => {
+  ipcMain.handle(IPC_CHANNELS.DELETE_PRODUCT, async (event: IpcMainInvokeEvent, { id }) => {
     try {
       const product = await Product.findByPk(id);
       if (!product) {

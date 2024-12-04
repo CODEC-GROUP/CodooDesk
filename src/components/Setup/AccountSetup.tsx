@@ -156,11 +156,11 @@ const AccountSetup = () => {
         fileUploadPromises.push(
           formData.shopLogo.arrayBuffer().then(async (buffer) => {
             try {
-              const response = await safeIpcInvoke('file:store', {
-                buffer: Array.from(new Uint8Array(buffer)),
-                fileName: formData.shopLogo!.name,
+              const response = await safeIpcInvoke<FileStoreResponse>('file:store', {
+                buffer: Buffer.from(buffer),
+                fileName: `${Date.now()}-${formData.shopLogo!.name}`,
                 category: 'shop'
-              }, { success: false, path: '', fullPath: '' });
+              }, { success: false });
               
               if (response?.success && response.fullPath) {
                 fileResults.logoPath = response.fullPath;
@@ -177,11 +177,11 @@ const AccountSetup = () => {
         fileUploadPromises.push(
           formData.taxationDocuments.arrayBuffer().then(async (buffer) => {
             try {
-              const response = await safeIpcInvoke('file:store', {
-                buffer: Array.from(new Uint8Array(buffer)),
-                fileName: formData.taxationDocuments!.name,
+              const response = await safeIpcInvoke<FileStoreResponse>('file:store', {
+                buffer: Buffer.from(buffer),
+                fileName: `${Date.now()}-${formData.taxationDocuments!.name}`,
                 category: 'shop'
-              }, { success: false, path: '', fullPath: '' });
+              }, { success: false });
               
               if (response?.success && response.fullPath) {
                 fileResults.taxDocsPath = response.fullPath;
@@ -198,11 +198,11 @@ const AccountSetup = () => {
         fileUploadPromises.push(
           formData.nationalIdCardFront.arrayBuffer().then(async (buffer) => {
             try {
-              const response = await safeIpcInvoke('file:store', {
-                buffer: Array.from(new Uint8Array(buffer)),
-                fileName: formData.nationalIdCardFront!.name,
+              const response = await safeIpcInvoke<FileStoreResponse>('file:store', {
+                buffer: Buffer.from(buffer),
+                fileName: `${Date.now()}-${formData.nationalIdCardFront!.name}`,
                 category: 'shop'
-              }, { success: false, path: '', fullPath: '' });
+              }, { success: false });
               
               if (response?.success && response.fullPath) {
                 fileResults.frontIdPath = response.fullPath;
@@ -218,11 +218,11 @@ const AccountSetup = () => {
         fileUploadPromises.push(
           formData.nationalIdCardBack.arrayBuffer().then(async (buffer) => {
             try {
-              const response = await safeIpcInvoke('file:store', {
-                buffer: Array.from(new Uint8Array(buffer)),
-                fileName: formData.nationalIdCardBack!.name,
+              const response = await safeIpcInvoke<FileStoreResponse>('file:store', {
+                buffer: Buffer.from(buffer),
+                fileName: `${Date.now()}-${formData.nationalIdCardBack!.name}`,
                 category: 'shop'
-              }, { success: false, path: '', fullPath: '' });
+              }, { success: false });
               
               if (response?.success && response.fullPath) {
                 fileResults.backIdPath = response.fullPath;

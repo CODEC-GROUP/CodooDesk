@@ -117,9 +117,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     window.location.href = href
   }
 
-  const logoPath = business?.shopLogo 
-    ? business.shopLogo
-    : "/assets/images/logo.svg"
+  const logoPath = business?.shopLogo || "/assets/images/logo.svg"
   
   const businessName = business?.fullBusinessName || "SalesBox"
 
@@ -147,8 +145,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 <Image 
                   src={logoPath} 
                   alt={`${businessName} Logo`} 
-                  width={30} 
-                  height={30}
+                  width={60} 
+                  height={60}
                   className="object-contain"
                 />
                 <span className="text-lg font-bold">{businessName}</span>

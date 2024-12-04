@@ -69,9 +69,8 @@ interface AddOrderProps {
 }
 
 export function AddOrder({ onBack }: AddOrderProps) {
-  const { user } = useAuthLayout();
+  const { user, business } = useAuthLayout();
   const shop_id = localStorage.getItem('currentShopId');
-
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<string>("")
@@ -123,27 +122,28 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const fetchProducts = async () => {
     try {
       setIsLoading(true);
-      const response = await safeIpcInvoke<ProductResponse>('pos:products:get', {
-        shop_id: shop_id
+      const shopIds = business?.shops
+      ?.filter((shop: any) => shop?.dataValues?.id)
+      .map((shop: any) => shop.dataValues.id) || [];
+
+      const response = await safeIpcInvoke<ProductResponse>('inventory:product:get-all', {
+        shopIds,
+        businessId: business?.id
       }, {
         success: false,
         products: []
       });
 
-      if (response?.success && response.products) {
-        setProducts(response.products);
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to load products",
-          variant: "destructive",
-        });
+      if (!response?.success) {
+        throw new Error(response?.message || 'Failed to fetch products');
       }
+
+      setProducts(response.products || []);
     } catch (error) {
       console.error('Error fetching products:', error);
       toast({
         title: "Error",
-        description: "Failed to load products",
+        description: "Failed to load products. Please try refreshing the page.",
         variant: "destructive",
       });
     } finally {
