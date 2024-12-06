@@ -28,6 +28,8 @@ import { registerPOSHandlers } from '../dist/src/services/api/sales/posService.j
 import { registerAuthHandlers } from '../dist/src/services/api/authentication/authenticationendpoints.js';
 import { registerEmployeeHandlers } from '../dist/src/services/api/entities/EmployeeService.js';
 import { registerCustomerHandlers } from '../dist/src/services/api/entities/customersendpoints.js';
+import { registerOhadaCodeHandlers } from '../dist/src/services/api/finance/ohadacodeendpoints.js';
+import { registerPrinterHandlers } from '../dist/src/services/api/printer/printerManagement.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -89,6 +91,8 @@ async function createWindow() {
     registerAuthHandlers();
     registerEmployeeHandlers();
     registerCustomerHandlers();
+    registerOhadaCodeHandlers();
+    registerPrinterHandlers();
 
     ipcMain.handle('navigate', async (event, path) => {
       console.log('Navigation requested to:', path);

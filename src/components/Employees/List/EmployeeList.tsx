@@ -61,8 +61,15 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
         message: ''
       });
 
-      if (response?.success) {
-        setEmployees(response.employees);
+      if (response?.success && response.employees) {
+        // Format employee data before setting state
+        const formattedEmployees = response.employees.map((employee: Employee) => ({
+          ...employee,
+          createdAt: new Date(employee.createdAt),
+          updatedAt: new Date(employee.updatedAt),
+          // Add any other date fields that need formatting
+        }));
+        setEmployees(formattedEmployees);
       } else {
         setError(response?.message || 'Failed to load employees');
         toast({

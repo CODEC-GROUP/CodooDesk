@@ -1,5 +1,5 @@
 import { DollarSign, PlusCircle, TrendingUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/Shared/ui/button";
 
 interface EmptyStateProps {
   onAddClick: () => void;

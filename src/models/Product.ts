@@ -3,6 +3,7 @@ import { sequelize } from '../services/database/index.js';
 import Category, { CategoryAttributes } from './Category.js';
 import Shop, { ShopAttributes } from './Shop.js';
 import Supplier from './Supplier.js';
+import Order from './Order.js';
 
 export interface ProductAttributes {
   id?: string;
@@ -25,6 +26,7 @@ export interface ProductInstance extends Model<ProductAttributes>, ProductAttrib
   suppliers?: Array<{id: string, name: string}>;
   category?: CategoryAttributes | null;
   shop?: ShopAttributes | null;
+  orders?: Order[];
 }
 
 class Product extends Model<ProductAttributes> implements ProductAttributes {
@@ -150,6 +152,7 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
       otherKey: 'supplierId',
       as: 'suppliers'
     });
+    this.hasMany(models.Order, { foreignKey: 'product_id', as: 'orders' });
   }
 }
 

@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron';
+import { Op } from 'sequelize';
 import Expense from '../../../models/Expense.js';
 import OhadaCode from '../../../models/OhadaCode.js';
+import Shop from '../../../models/Shop.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -17,24 +19,66 @@ export function registerExpenseHandlers() {
   ipcMain.handle(IPC_CHANNELS.CREATE_EXPENSE, async (event, { data }) => {
     try {
       const expense = await Expense.create(data);
-      return { success: true, message: 'Expense created successfully', expense };
+      // Fetch the created expense with relations
+      const expenseWithRelations = await Expense.findByPk(expense.id, {
+        include: [
+          {
+            model: OhadaCode,
+            as: 'ohadaCode',
+            attributes: ['id', 'code', 'name', 'description']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name']
+          }
+        ]
+      });
+      
+      // Convert to plain object to match fetch endpoint format
+      const plainExpense = expenseWithRelations?.get({ plain: true });
+      return { success: true, message: 'Expense created successfully', expense: plainExpense };
     } catch (error) {
       return { success: false, message: 'Error creating expense', error };
     }
   });
 
   // Get all expenses handler with OHADA code info
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_EXPENSES, async () => {
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_EXPENSES, async (event, { userId, userRole, shopIds }) => {
     try {
+      let whereClause = {};
+      
+      // If shopIds are provided, filter by those shops
+      if (shopIds && shopIds.length > 0) {
+        whereClause = {
+          ...whereClause,
+          shopId: {
+            [Op.in]: shopIds
+          }
+        };
+      }
+
       const expenses = await Expense.findAll({
-        include: [{
-          model: OhadaCode,
-          as: 'ohadaCode',
-          attributes: ['id', 'code', 'name', 'description']
-        }],
+        where: whereClause,
+        include: [
+          {
+            model: OhadaCode,
+            as: 'ohadaCode',
+            attributes: ['id', 'code', 'name', 'description']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name']
+          }
+        ],
         order: [['date', 'DESC']]
       });
-      return { success: true, expenses };
+
+      // Ensure the data is serializable
+      const serializableExpenses = expenses.map(expense => expense.get({ plain: true }));
+
+      return { success: true, expenses: serializableExpenses };
     } catch (error) {
       return { success: false, message: 'Error fetching expenses', error };
     }
@@ -44,29 +88,33 @@ export function registerExpenseHandlers() {
   ipcMain.handle(IPC_CHANNELS.GET_EXPENSE, async (event, { id }) => {
     try {
       const expense = await Expense.findByPk(id, {
-        include: [{
-          model: OhadaCode,
-          as: 'ohadaCode',
-          attributes: ['id', 'code', 'name', 'description']
-        }]
+        include: [
+          {
+            model: OhadaCode,
+            as: 'ohadaCode',
+            attributes: ['id', 'code', 'name', 'description']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name']
+          }
+        ]
       });
-      if (!expense) {
-        return { success: false, message: 'Expense not found' };
-      }
       return { success: true, expense };
     } catch (error) {
-      return { success: false, message: 'Error retrieving expense', error };
+      return { success: false, message: 'Error fetching expense', error };
     }
   });
 
   // Update expense handler
-  ipcMain.handle(IPC_CHANNELS.UPDATE_EXPENSE, async (event, { id, updates }) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATE_EXPENSE, async (event, { id, data }) => {
     try {
       const expense = await Expense.findByPk(id);
       if (!expense) {
         return { success: false, message: 'Expense not found' };
       }
-      await expense.update(updates);
+      await expense.update(data);
       return { success: true, message: 'Expense updated successfully', expense };
     } catch (error) {
       return { success: false, message: 'Error updating expense', error };

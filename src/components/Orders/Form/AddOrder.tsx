@@ -15,6 +15,7 @@ import {
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
+import PrinterService from "@/services/printerService";
 
 interface OrderItem {
   id: string;
@@ -80,8 +81,12 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const [quantity, setQuantity] = useState<number>(1)
   const [deliveryStatus, setDeliveryStatus] = useState<'pending' | 'delivered'>('pending')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'mobile_money' | 'bank_transfer'>('cash')
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'unpaid' | 'partially_paid'>('paid')
+  const [deliveryFee, setDeliveryFee] = useState<number>(0)
   const [discount, setDiscount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+
+  const printerService = new PrinterService();
 
   useEffect(() => {
     fetchCustomers();
@@ -172,25 +177,105 @@ export function AddOrder({ onBack }: AddOrderProps) {
     setOrderItems(orderItems.filter(item => item.id !== id))
   }
 
+  const handleUpdatePrice = (itemId: string, newPrice: number) => {
+    setOrderItems(orderItems.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          unitPrice: newPrice,
+          total: newPrice * item.quantity
+        };
+      }
+      return item;
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const customer = customers.find(c => c.id === selectedCustomer);
-      const result = await safeIpcInvoke<OrderResponse>('order-management:create-sale', {
-        orderItems,
-        customer,
+      setIsLoading(true);
+      
+      const selectedCustomerData = customers.find(c => c.id === selectedCustomer);
+      
+      const response = await safeIpcInvoke<OrderResponse>('order-management:create-sale', {
+        orderItems: orderItems.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          sellingPrice: item.unitPrice
+        })),
+        customer: selectedCustomerData || null,
         paymentMethod,
+        paymentStatus,
         deliveryStatus,
-        amountPaid: totalOrderAmount - discount,
+        amountPaid: calculateTotal(),
         changeGiven: 0,
         shopId: shop_id,
-        created_by: user?.id,
-        employee_name: user?.username,
         discount,
-        deliveryFee: 0
+        deliveryFee,
+        user: {
+          id: user?.id
+        }
       }, { success: false });
 
-      if (result?.success && result.order) {
+      if (response?.success && response.order) {
+        // Prepare receipt/invoice data
+        const receiptData = {
+          saleId: response.order.id,
+          receiptId: response.order.id, // You might want to generate a separate receipt ID
+          customerName: selectedCustomerData?.name,
+          customerPhone: selectedCustomerData?.phone,
+          customerEmail: selectedCustomerData?.email,
+          items: orderItems.map(item => ({
+            name: item.productName,
+            quantity: item.quantity,
+            sellingPrice: item.unitPrice
+          })),
+          subtotal: calculateTotal() + (discount || 0),
+          discount: discount || 0,
+          total: calculateTotal(),
+          amountPaid: calculateTotal(),
+          change: 0,
+          date: new Date(),
+          paymentMethod: paymentMethod,
+          salesPersonId: user?.id || '',
+          paymentStatus: paymentStatus
+        };
+
+        // Get business info from settings or environment
+        const businessInfo = {
+          fullBusinessName: process.env.BUSINESS_NAME || "Your Business Name",
+          address: {
+            street: process.env.BUSINESS_STREET || "Business Street",
+            city: process.env.BUSINESS_CITY || "Business City",
+            state: process.env.BUSINESS_STATE || "Business State",
+            country: process.env.BUSINESS_COUNTRY || "Business Country"
+          },
+          taxIdNumber: process.env.TAX_ID || "",
+          shop: {
+            id: shop_id || "",
+            name: process.env.SHOP_NAME || "Your Shop Name"
+          }
+        };
+
+        // Print receipt or invoice based on payment status
+        try {
+          const printResult = await printerService.printReceipt(businessInfo, receiptData);
+          if (!printResult) {
+            toast({
+              title: "Warning",
+              description: `Failed to print ${paymentStatus === 'paid' ? 'receipt' : 'invoice'}`,
+              variant: "destructive",
+            });
+          }
+        } catch (printError) {
+          console.error('Error printing:', printError);
+          toast({
+            title: "Warning",
+            description: `Failed to print ${paymentStatus === 'paid' ? 'receipt' : 'invoice'}`,
+            variant: "destructive",
+          });
+        }
+
         toast({
           title: "Success",
           description: "Order created successfully",
@@ -210,10 +295,16 @@ export function AddOrder({ onBack }: AddOrderProps) {
         description: "Failed to create order",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
-  }
+  };
 
-  const totalOrderAmount = orderItems.reduce((sum, item) => sum + item.total, 0)
+  const calculateTotal = () => {
+    return orderItems.reduce((total, item) => total + (item.quantity * item.unitPrice), 0) + (deliveryFee || 0) - (discount || 0);
+  };
+
+  const totalOrderAmount = calculateTotal()
 
   const filteredProducts = searchTerm
     ? products.filter(p => 
@@ -223,7 +314,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
     : [];
 
   return (
-    <>
+    <div className="space-y-4 p-4">
       <Button variant="ghost" onClick={onBack} className="mb-4">
         <ChevronLeft className="h-4 w-4 mr-2" />
         Back to Orders
@@ -295,81 +386,103 @@ export function AddOrder({ onBack }: AddOrderProps) {
             </div>
           </div>
 
+          {/* Payment and Delivery Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Payment & Delivery Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Select value={paymentMethod} onValueChange={(value: any) => setPaymentMethod(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select payment method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={paymentStatus} onValueChange={(value: any) => setPaymentStatus(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select payment status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                    <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={deliveryStatus} onValueChange={(value: any) => setDeliveryStatus(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select delivery status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Input
+                  type="number"
+                  placeholder="Delivery Fee"
+                  value={deliveryFee}
+                  onChange={(e) => setDeliveryFee(Number(e.target.value))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Order Items Table */}
-          <div className="border rounded-lg overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2 text-left">Product</th>
-                  <th className="px-4 py-2 text-right">Unit Price</th>
-                  <th className="px-4 py-2 text-right">Quantity</th>
-                  <th className="px-4 py-2 text-right">Total</th>
-                  <th className="px-4 py-2"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {orderItems.map(item => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-2">{item.productName}</td>
-                    <td className="px-4 py-2 text-right">{item.unitPrice} XAF</td>
-                    <td className="px-4 py-2 text-right">{item.quantity}</td>
-                    <td className="px-4 py-2 text-right">{item.total} XAF</td>
-                    <td className="px-4 py-2 text-right">
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => handleRemoveItem(item.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </td>
+          <Card>
+            <CardContent className="space-y-4">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Product</th>
+                    <th className="px-4 py-2 text-right">Quantity</th>
+                    <th className="px-4 py-2 text-right">Unit Price</th>
+                    <th className="px-4 py-2 text-right">Total</th>
+                    <th className="px-4 py-2"></th>
                   </tr>
-                ))}
-                <tr className="font-medium">
-                  <td colSpan={3} className="px-4 py-2 text-right">Total Amount:</td>
-                  <td className="px-4 py-2 text-right">{totalOrderAmount} XAF</td>
-                  <td></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Order Details */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Payment Method</label>
-              <Select 
-                value={paymentMethod} 
-                onValueChange={(value: 'cash' | 'card' | 'mobile_money' | 'bank_transfer') => setPaymentMethod(value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select payment method" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="mobile_money">Mobile Money</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Delivery Status</label>
-              <Select 
-                value={deliveryStatus} 
-                onValueChange={(value: 'pending' | 'delivered') => setDeliveryStatus(value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="delivered">Delivered</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {orderItems.map(item => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-2">{item.productName}</td>
+                      <td className="px-4 py-2 text-right">{item.quantity}</td>
+                      <td className="px-4 py-2 text-right">
+                        <Input
+                          type="number"
+                          value={item.unitPrice}
+                          onChange={(e) => handleUpdatePrice(item.id, Number(e.target.value))}
+                          className="w-24"
+                        />
+                      </td>
+                      <td className="px-4 py-2 text-right">{item.total}</td>
+                      <td className="px-4 py-2 text-right">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => handleRemoveItem(item.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="font-medium">
+                    <td colSpan={3} className="px-4 py-2 text-right">Total Amount:</td>
+                    <td className="px-4 py-2 text-right">{totalOrderAmount}</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
 
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={onBack}>Cancel</Button>
@@ -382,6 +495,6 @@ export function AddOrder({ onBack }: AddOrderProps) {
           </div>
         </CardContent>
       </Card>
-    </>
+    </div>
   )
 }

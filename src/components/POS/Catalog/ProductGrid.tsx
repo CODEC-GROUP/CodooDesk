@@ -12,6 +12,7 @@ import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import EmptyState from './Empty/EmptyState'
+import { PrinterService } from "@/services/printerService";
 
 // Define the Product interface
 interface Product {
@@ -255,33 +256,166 @@ export function Pos() {
 
   const handlePayment = async () => {
     try {
-      const response = await safeIpcInvoke<{ success: boolean; message?: string }>('pos:sale:create', {
+      if (!user) {
+        toast({
+          title: "Error",
+          description: "User not authenticated",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const currentShopId = shopId || business?.shops?.[0]?.id;
+      if (!currentShopId) {
+        toast({
+          title: "Error",
+          description: "Shop information not found",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await safeIpcInvoke<{ 
+        success: boolean; 
+        message?: string;
+        sale?: any;
+        receipt?: {
+          saleId: string;
+          receiptId: string;
+          date: Date;
+          items: Array<{ name: string; quantity: number; sellingPrice: number; }>;
+          customerName?: string;
+          customerPhone?: string;
+          subtotal: number;
+          discount: number;
+          total: number;
+          amountPaid: number;
+          change: number;
+          paymentMethod: string;
+          salesPersonId: string;
+        };
+      }>('pos:sale:create', {
         cartItems: cartItems.map(item => ({
           id: item.id,
           name: item.name,
+          actualPrice: item.actualPrice,
           price: item.actualPrice,
           quantity: item.quantity
         })),
+        subtotal: calculateTotal(), 
         customer: selectedCustomer,
         paymentMethod: paymentType,
         amountPaid: amountPaid,
         changeGiven: changeAmount,
-        shopId: shopId,
+        shopId: currentShopId,
+        salesPersonId: user.id,
         discount: discount || 0
-      }, { success: false });
+      });
 
       if (response?.success) {
         setPaymentSuccess(true);
+        
+        // Print receipt if sale was successful
+        if (response.receipt) {
+          await handlePrintReceipt(response);
+        }
+
         clearCart();
         setAmountPaid(0);
         setChangeAmount(0);
         setSelectedCustomer(null);
+        
+        toast({
+          title: "Success",
+          description: "Payment processed successfully",
+        });
       } else {
         setAlertMessage(response?.message || 'Payment failed');
+        toast({
+          title: "Error",
+          description: response?.message || "Payment failed",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Payment error:', error);
       setAlertMessage('An error occurred while processing payment');
+      toast({
+        title: "Error",
+        description: "An error occurred while processing payment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handlePrintReceipt = async (saleResponse: any) => {
+    if (!business || !user) {
+      toast({
+        title: "Error",
+        description: "Business or user information not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const currentShopId = shopId || business.shops?.[0]?.id;
+    const currentShop = business.shops?.find(shop => shop.id === currentShopId);
+
+    if (!currentShop) {
+      toast({
+        title: "Error",
+        description: "Shop information not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const printerService = new PrinterService();
+      
+      // Check if printer is available
+      const hasPrinter = await printerService.detectPrinter();
+      if (!hasPrinter) {
+        toast({
+          title: "Error",
+          description: "Printer not found",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const businessInfo = {
+        fullBusinessName: business.fullBusinessName,
+        shopLogo: business.shopLogo,
+        address: business.address,
+        taxIdNumber: business.taxIdNumber,
+        shop: {
+          id: currentShop.id,
+          name: currentShop.name
+        }
+      };
+
+      // Create receipt data from sale response
+      const receiptData = printerService.createReceiptFromSaleResponse(saleResponse);
+      
+      // Print receipt
+      const success = await printerService.printReceipt(businessInfo, receiptData);
+      
+      if (success) {
+        toast({
+          title: "Success",
+          description: "Receipt printed successfully",
+        });
+      } else {
+        throw new Error('Failed to print receipt');
+      }
+    } catch (error) {
+      console.error('Error printing receipt:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to print receipt",
+        variant: "destructive",
+      });
     }
   };
 
@@ -289,73 +423,6 @@ export function Pos() {
     setCartItems([])
     setPaymentSuccess(false)
     setPaymentType("CASH")
-  }
-
-  const handlePrintReceipt = () => {
-    const orderId = Math.floor(Math.random() * 1000000).toString();
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Print Receipt #${orderId}</title>
-            <style>
-              body { font-family: Arial, sans-serif; margin: 20px; }
-              .header, .footer { text-align: center; }
-              .content { margin-top: 20px; }
-              .table { width: 100%; border-collapse: collapse; }
-              .table th, .table td { border: 1px solid #ddd; padding: 8px; }
-              .table th { background-color: #f2f2f2; }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <img src="/assets/images/new-logo.jpeg" alt="Business Logo" style="height: 50px; width: 50px;"/>
-              <h1>PlayStore</h1>
-              <p>123 Business Street</p>
-              <p>City, State 12345</p>
-              <p>Phone: (123) 456-7890</p>
-              <h2>Invoice #${orderId}</h2>
-            </div>
-            <div class="content">
-              <p>Customer: ${selectedCustomer?.name}</p>
-              <p>Order Date: ${new Date().toLocaleDateString()}</p>
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Item Name</th>
-                    <th>Quantity</th>
-                    <th>Price Per Item</th>
-                    <th>Total Price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${cartItems.map(item => `
-                    <tr>
-                      <td>${item.name}</td>
-                      <td>${item.quantity}</td>
-                      <td>${item.sellingPrice} XAF</td>
-                      <td>${item.sellingPrice * item.quantity} XAF</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-              <p>Subtotal: ${calculateTotal()} XAF</p>
-              <p>Change Given: 0 XAF</p>
-              <p>Net Amount Paid: ${calculateTotal()} XAF</p>
-            </div>
-            <div class="footer">
-              <p>Thank you for your business!</p>
-            </div>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.print();
-      printWindow.onafterprint = () => {
-        printWindow.close();
-      };
-    }
   }
 
   const updatePrice = (id: string, newPrice: number) => {

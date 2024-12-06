@@ -2,6 +2,7 @@ import { Model, DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../services/database/index.js';
 import Location from './Location.js';
 import Employee from './Employee.js';
+import Sales from './Sales.js'; // Add this import
 
 export interface UserAttributes {
   id?: string;
@@ -11,7 +12,7 @@ export interface UserAttributes {
   is_staff?: boolean;
   role?: 'shop_owner' | 'manager' | 'seller' | 'admin';
   locationId?: string;
-  shopId?: string;  // Add this field
+  shopId?: string;  
 }
 
 class User extends Model<UserAttributes> implements UserAttributes {
@@ -22,7 +23,7 @@ class User extends Model<UserAttributes> implements UserAttributes {
   public is_staff!: boolean;
   public role!: 'shop_owner' | 'manager' | 'seller' | 'admin';
   public locationId!: string;
-  public shopId!: string;  // Add this property
+  public shopId!: string;  
 
   static initModel(sequelize: Sequelize): typeof User {
     return this.init(
@@ -62,7 +63,7 @@ class User extends Model<UserAttributes> implements UserAttributes {
         },
         shopId: {
           type: DataTypes.UUID,
-          allowNull: true,  // Make it nullable since shop owners might not have a shopId initially
+          allowNull: true,  
           references: {
             model: 'Shops',
             key: 'id',
@@ -80,7 +81,8 @@ class User extends Model<UserAttributes> implements UserAttributes {
   static associate(models: any) {
     this.belongsTo(models.Location, { foreignKey: 'locationId', as: 'location' });
     this.hasMany(models.Employee, { foreignKey: 'user_id', as: 'employee' });
-    this.belongsTo(models.Shop, { foreignKey: 'shopId', as: 'shop' });  // Add this association
+    this.belongsTo(models.Shop, { foreignKey: 'shopId', as: 'shop' });  
+    this.hasMany(models.Sales, { foreignKey: 'salesPersonId', as: 'sales' }); 
   }
 }
 

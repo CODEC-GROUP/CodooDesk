@@ -11,7 +11,11 @@ export interface ExpenseAttributes {
   paymentMethod: string;
   ohadaCodeId: string;
   shopId?: string;
+  userId?: string;
   status?: 'pending' | 'completed' | 'cancelled';
+  ohadaCode?: {
+    name: string;
+  };
 }
 
 class Expense extends Model<ExpenseAttributes> implements ExpenseAttributes {
@@ -22,7 +26,11 @@ class Expense extends Model<ExpenseAttributes> implements ExpenseAttributes {
   public paymentMethod!: string;
   public ohadaCodeId!: string;
   public shopId?: string;
+  public userId?: string;
   public status?: 'pending' | 'completed' | 'cancelled';
+  public ohadaCode?: {
+    name: string;
+  };
 
   static initModel(sequelize: Sequelize) {
     return this.init({
@@ -52,6 +60,10 @@ class Expense extends Model<ExpenseAttributes> implements ExpenseAttributes {
         allowNull: false,
       },
       shopId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+      },
+      userId: {
         type: DataTypes.UUID,
         allowNull: true,
       },

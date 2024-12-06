@@ -6,6 +6,8 @@ export interface Employee {
   lastName: string;
   phone: string;
   role: string;
+  createdAt: Date;
+  updatedAt: Date;
   hireDate: Date;
   status: 'active' | 'inactive' | 'terminated';
   description?: string;

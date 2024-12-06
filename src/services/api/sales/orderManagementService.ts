@@ -17,6 +17,7 @@ const IPC_CHANNELS = {
 interface OrderItem {
   productId: string;
   quantity: number;
+  sellingPrice: number;
 }
 
 interface OrderTotals {
@@ -30,6 +31,7 @@ export function registerOrderManagementHandlers() {
     orderItems,
     customer,
     paymentMethod,
+    paymentStatus,
     deliveryStatus,
     amountPaid,
     changeGiven,
@@ -48,8 +50,8 @@ export function registerOrderManagementHandlers() {
         if (!product) {
           throw new Error(`Product not found: ${item.productId}`);
         }
-        const itemTotal = item.quantity * product.sellingPrice;
-        const itemProfit = item.quantity * (product.sellingPrice - product.purchasePrice);
+        const itemTotal = item.quantity * item.sellingPrice;
+        const itemProfit = item.quantity * (item.sellingPrice - product.purchasePrice);
         return {
           total: acc.total + itemTotal,
           profit: acc.profit + itemProfit
@@ -101,7 +103,8 @@ export function registerOrderManagementHandlers() {
           saleId: sale.id,
           product_id: item.productId,
           quantity: item.quantity,
-          paymentStatus: 'paid',
+          sellingPrice: item.sellingPrice,
+          paymentStatus: item.paymentStatus
         }, { transaction: t });
 
         // Update product quantity

@@ -17,10 +17,14 @@ export function registerSupplierHandlers() {
   // Create supplier handler
   ipcMain.handle(IPC_CHANNELS.CREATE_SUPPLIER, async (event, { supplierData }) => {
     try {
+      if (!supplierData) {
+        throw new Error('Supplier data is required');
+      }
+
       const supplier = await Supplier.create({
         name: supplierData.name,
         email: supplierData.email,
-        phone: supplierData.phoneNumber,
+        phone: supplierData.phone,
         address: supplierData.address,
         city: supplierData.city,
         region: supplierData.region,
@@ -98,7 +102,7 @@ export function registerSupplierHandlers() {
       await supplier.update({
         name: updates.name,
         email: updates.email,
-        phone: updates.phoneNumber,
+        phone: updates.phone,
         address: updates.address,
         city: updates.city,
         region: updates.region,

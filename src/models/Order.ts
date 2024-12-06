@@ -3,12 +3,14 @@ import { sequelize } from '../services/database/index.js';
 import Sales from './Sales.js';
 import Return from './Return.js';
 import Inventory from './Inventory.js';
+import Product from './Product.js';
 
 export interface OrderAttributes {
   id?: string;
   saleId: string;
   product_id: string;
   quantity: number;
+  sellingPrice: number;
   paymentStatus: 'unpaid' | 'paid' | 'refunded';
 }
 
@@ -17,6 +19,7 @@ class Order extends Model<OrderAttributes> implements OrderAttributes {
   public saleId!: string;
   public product_id!: string;
   public quantity!: number;
+  public sellingPrice!: number;
   public paymentStatus!: 'unpaid' | 'paid' | 'refunded';
 
   static initModel(sequelize: Sequelize): typeof Order {
@@ -43,6 +46,10 @@ class Order extends Model<OrderAttributes> implements OrderAttributes {
           type: DataTypes.INTEGER,
           allowNull: false,
         },
+        sellingPrice: {
+          type: DataTypes.DECIMAL(10, 2),
+          allowNull: false,
+        },
         paymentStatus: {
           type: DataTypes.ENUM('unpaid', 'paid', 'refunded'),
           defaultValue: 'unpaid',
@@ -60,7 +67,7 @@ class Order extends Model<OrderAttributes> implements OrderAttributes {
     this.belongsTo(models.Sales, { foreignKey: 'saleId', as: 'sale' });
     this.hasOne(models.Return, { foreignKey: 'orderId', as: 'return' });
     this.belongsTo(models.Inventory, { foreignKey: 'inventoryId', as: 'inventory' });
-    // Add other associations here if needed
+    this.belongsTo(models.Product, { foreignKey: 'product_id', as: 'product' });
   }
 }
 

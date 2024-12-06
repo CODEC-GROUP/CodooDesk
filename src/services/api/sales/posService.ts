@@ -4,6 +4,7 @@ import Sales, { SalesAttributes } from '../../../models/Sales.js';
 import Order, { OrderAttributes } from '../../../models/Order.js';
 import Product from '../../../models/Product.js';
 import Income from '../../../models/Income.js';
+import Receipt from '../../../models/Receipt.js';
 import { sequelize } from '../../database/index.js';
 import OhadaCode from '../../../models/OhadaCode.js';
 
@@ -22,10 +23,12 @@ interface POSSaleRequest {
     name: string;
     phone: string;
   } | null;
+  subtotal: number;
   paymentMethod: 'cash' | 'card' | 'mobile_money' | 'bank_transfer';
   amountPaid: number;
   changeGiven: number;
   shopId: string;
+  salesPersonId: string;
   discount?: number;
 }
 
@@ -39,38 +42,42 @@ const IPC_CHANNELS = {
 export function registerPOSHandlers() {
   ipcMain.handle(IPC_CHANNELS.CREATE_POS_SALE, async (event, request: POSSaleRequest) => {
     const t = await sequelize.transaction();
+    console.log(request)
 
     try {
-      // Calculate totals and profit
-      const totals = await request.cartItems.reduce(async (promise, item) => {
-        const acc = await promise;
+      // Calculate profit only
+      let totalProfit = 0;
+
+      // Process cart items sequentially to calculate profit
+      for (const item of request.cartItems) {
         const product = await Product.findByPk(item.id);
         if (!product) {
           throw new Error(`Product not found: ${item.id}`);
         }
-        const itemTotal = item.actualPrice * item.quantity;
         const itemProfit = (item.actualPrice - product.purchasePrice) * item.quantity;
-        return {
-          subtotal: acc.subtotal + itemTotal,
-          profit: acc.profit + itemProfit
-        };
-      }, Promise.resolve({ subtotal: 0, profit: 0 }));
+        totalProfit += itemProfit;
+      }
 
-      const netAmount = totals.subtotal - (request.discount || 0);
+      const netAmount = request.subtotal - (request.discount || 0);
       
+      if (netAmount < 0) {
+        throw new Error('Net amount cannot be negative');
+      }
+
       // Create the sale
       const saleData: SalesAttributes = {
         shopId: request.shopId,
         status: 'completed',
         customer_id: request.customer?.id || null,
         deliveryStatus: 'delivered',
-        netAmount,
+        netAmount: request.subtotal,
         amountPaid: request.amountPaid,
         changeGiven: request.changeGiven,
         deliveryFee: 0,
         discount: request.discount || 0,
-        profit: totals.profit,
+        profit: totalProfit,
         paymentMethod: request.paymentMethod,
+        salesPersonId: request.salesPersonId,
       };
 
       const sale = await Sales.create(saleData, { transaction: t });
@@ -82,6 +89,7 @@ export function registerPOSHandlers() {
           saleId: sale.id,
           product_id: item.id,
           quantity: item.quantity,
+          sellingPrice: item.actualPrice,
           paymentStatus: 'paid',
         }, { transaction: t });
 
@@ -128,8 +136,59 @@ export function registerPOSHandlers() {
         shopId: request.shopId,
       }, { transaction: t });
 
+      // Create receipt for the sale
+      const receipt = await Receipt.create({
+        sale_id: sale.id,
+        amount: netAmount,
+        status: 'paid'
+      }, { transaction: t });
+
+      // Fetch the complete sale information with related data
+      const completeSale = await Sales.findOne({
+        where: { id: sale.id },
+        include: [
+          {
+            model: Order,
+            as: 'orders',  // Ensure this matches the alias in your association
+            include: [
+              { 
+                model: Product, 
+                as: 'product',  // Add the alias here
+                attributes: ['name'] 
+              }
+            ]
+          }
+        ],
+        transaction: t
+      });
+
+      const receiptData = {
+        saleId: sale.id,
+        receiptId: receipt.id,
+        date: sale.createdAt,
+        items: request.cartItems.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          sellingPrice: item.actualPrice
+        })),
+        customerName: request.customer?.name,
+        customerPhone: request.customer?.phone,
+        subtotal: request.subtotal,
+        discount: request.discount || 0,
+        total: netAmount,
+        amountPaid: request.amountPaid,
+        change: request.changeGiven,
+        paymentMethod: request.paymentMethod,
+        salesPersonId: request.salesPersonId
+      };
+
       await t.commit();
-      return { success: true, message: 'Sale completed successfully', sale };
+      return { 
+        success: true, 
+        message: 'Sale completed successfully', 
+        sale: completeSale,
+        receipt: receiptData 
+      };
     } catch (error) {
       await t.rollback();
       console.error('POS Sale Error:', error);

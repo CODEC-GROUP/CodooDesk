@@ -2,6 +2,7 @@ import { Model, DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../services/database/index.js';
 import OhadaCode from './OhadaCode.js';
 import Shop from './Shop.js';
+import Sales from './Sales.js';
 
 export interface IncomeAttributes {
   id?: string;
@@ -11,6 +12,11 @@ export interface IncomeAttributes {
   paymentMethod: string;
   ohadaCodeId: string;
   shopId?: string;
+  saleId?: string;
+  userId?: string;
+  ohadaCode?: {
+    name: string;
+  };
 }
 
 class Income extends Model<IncomeAttributes> implements IncomeAttributes {
@@ -21,6 +27,7 @@ class Income extends Model<IncomeAttributes> implements IncomeAttributes {
   public paymentMethod!: string;
   public ohadaCodeId!: string;
   public shopId?: string;
+  public saleId?: string;
 
   static initModel(sequelize: Sequelize) {
     return this.init({
@@ -56,6 +63,21 @@ class Income extends Model<IncomeAttributes> implements IncomeAttributes {
     }, {
       sequelize,
       modelName: 'Income'
+    });
+  }
+
+  static associate(models: any) {
+    this.belongsTo(models.Shop, {
+      foreignKey: 'shopId',
+      as: 'shop',
+    });
+    this.belongsTo(models.Sales, {
+      foreignKey: 'saleId',
+      as: 'sale',
+    });
+    this.belongsTo(models.OhadaCode, {
+      foreignKey: 'ohadaCodeId',
+      as: 'ohadaCode'
     });
   }
 }

@@ -15,6 +15,7 @@ import { ExpenseAttributes } from '@/models/Expense';
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import EmptyState from './EmptyState';
+import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout';
 
 // Expense types based on OHADA accounting system
 export const expenseTypes = {
@@ -98,40 +99,40 @@ interface Supplier {
 // Add this interface near the top with other interfaces
 // interface Expense {...}
 
+interface NewExpenseItem {
+  date?: string;
+  description?: string;
+  amount?: string;
+  paymentMethod?: string;
+  ohadaCodeId?: string;
+  isCustom?: boolean;
+}
+
 const Expenses = () => {
+  const { user, business } = useAuthLayout();
   const [expenses, setExpenses] = useState<ExpenseAttributes[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [currentPage, setCurrentPage] = useState(1)
-  const [selectedItems, setSelectedItems] = useState<string[]>([])
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [newItem, setNewItem] = useState<{
-    expenseType?: keyof typeof expenseTypes;
-    [key: string]: any;
-  }>({})
-  const [isCustomCategory, setIsCustomCategory] = useState(false)
-  const [customCategory, setCustomCategory] = useState({ 
-    name: "", 
-    code: "", 
-    description: "" 
-  });
-  const [searchSupplier, setSearchSupplier] = useState("")
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
-  const [accounts, setAccounts] = useState([
-    { id: "1", type: "UBA", number: "1234567890" },
-    { id: "2", type: "MOMO", number: "0987654321" },
-    { id: "3", type: "Orange Money", number: "1122334455" },
-  ])
   const [ohadaCodes, setOhadaCodes] = useState<OhadaCodeAttributes[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [newItem, setNewItem] = useState<NewExpenseItem>({})
+  const [selectedOhadaCode, setSelectedOhadaCode] = useState<string>("");
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState("");
+  const [selectedShopId, setSelectedShopId] = useState<string>("");
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
-        // Fetch OHADA codes for expenses
-        const codesResponse = await safeIpcInvoke<OhadaCodeResponse>('finance:ohada-codes:get-by-type', { 
-          type: 'expense' 
-        }, { success: false, codes: [] });
+        // Fetch OHADA codes for expense
+        const codesResponse = await safeIpcInvoke<OhadaCodeResponse>(
+          'finance:ohada-codes:get-by-type',
+          { type: 'expense' },
+          { success: false }
+        );
 
         if (codesResponse?.success && codesResponse.codes) {
           setOhadaCodes(codesResponse.codes);
@@ -143,11 +144,12 @@ const Expenses = () => {
           });
         }
 
-        // Fetch expenses
-        const expensesResponse = await safeIpcInvoke<ExpenseResponse>('finance:expense:get-all', {}, {
-          success: false,
-          expenses: []
-        });
+        // Fetch expenses with associated OHADA codes
+        const expensesResponse = await safeIpcInvoke<ExpenseResponse>(
+          'finance:expense:get-all',
+          {},
+          { success: false }
+        );
 
         if (expensesResponse?.success && expensesResponse.expenses) {
           setExpenses(expensesResponse.expenses);
@@ -177,13 +179,13 @@ const Expenses = () => {
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
 
-  const filteredItems = expenses.filter(expense =>
-    expense.description.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredItems = expenses.filter((item: any) => {
+    const dataValues = item.dataValues || item;
+    return dataValues.description?.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
-  const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem)
-
-  const totalPages = Math.ceil(filteredItems.length / itemsPerPage)
+  const currentItems = filteredItems.slice((currentPage - 1) * 10, currentPage * 10);
+  const totalPages = Math.ceil(filteredItems.length / 10);
 
   const handlePageChange = (pageNumber: number) => {
     setCurrentPage(pageNumber)
@@ -195,71 +197,108 @@ const Expenses = () => {
     )
   }
 
+  const handleOhadaCodeSelection = (value: string) => {
+    setSelectedOhadaCode(value);
+    setNewItem({ ...newItem, ohadaCodeId: value });
+  };
+
+  const handleCustomCategoryToggle = (checked: boolean) => {
+    setIsCustomCategory(checked);
+    if (!checked) {
+      // Reset to regular OHADA code selection if custom category is disabled
+      setNewItem({ ...newItem, isCustom: false });
+      setCustomCategoryName("");
+      setSelectedOhadaCode("");
+    } else {
+      setNewItem({ ...newItem, isCustom: true });
+    }
+  };
+
   const handleAddItem = async () => {
     try {
       let ohadaCodeId = newItem.ohadaCodeId;
 
-      // If it's a custom category, create new OHADA code first
-      if (isCustomCategory) {
-        const ohadaRequest: CreateOhadaCodeRequest = {
-          data: {
-            code: customCategory.code,
-            name: customCategory.name,
-            description: customCategory.description,
-            type: 'expense',
-            classification: 'Custom',
-          }
-        };
-
-        const ohadaResponse = await safeIpcInvoke<OhadaCodeResponse>('finance:ohada-codes:create', 
-          ohadaRequest, 
-          { success: false }
-        );
-
-        if (!ohadaResponse?.success || !ohadaResponse.code) {
+      // If custom category is enabled and filled out, create it first
+      if (newItem.isCustom && selectedOhadaCode && customCategoryName) {
+        // Find the selected OHADA code details
+        const selectedCode = ohadaCodes.find(code => code.id === selectedOhadaCode);
+        if (!selectedCode) {
           toast({
             title: "Error",
-            description: ohadaResponse?.message || 'Failed to create custom category',
+            description: "Selected OHADA code not found",
             variant: "destructive",
           });
           return;
         }
 
-        ohadaCodeId = ohadaResponse.code.id;
+        const createOhadaCodeRequest: CreateOhadaCodeRequest = {
+          data: {
+            code: selectedCode.code,
+            name: customCategoryName,
+            description: selectedCode.description,
+            type: 'expense',
+            classification: 'Custom'
+          }
+        };
+
+        const response = await safeIpcInvoke<OhadaCodeResponse>(
+          'finance:ohada-codes:create',
+          createOhadaCodeRequest,
+          { success: false }
+        );
+
+        if (!response?.success || !response.code?.id) {
+          toast({
+            title: "Error",
+            description: response?.message || 'Failed to create custom category',
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Use the newly created OHADA code's ID
+        ohadaCodeId = response.code.id;
       }
 
-      const expenseData: Omit<ExpenseAttributes, 'id'> = {
-        date: new Date(newItem.date || Date.now()),
-        description: newItem.description || '',
-        amount: parseFloat(newItem.amountPaid || '0'),
-        paymentMethod: newItem.paymentMethod || '',
-        ohadaCodeId,
-        status: 'pending'
-      };
-      
-      await handleAddExpense(expenseData);
-    } catch (error) {
-      console.error('Error adding expense:', error);
-      toast({
-        title: "Error",
-        description: 'Failed to add expense',
-        variant: "destructive",
-      });
-    }
-  };
+      // Proceed with creating the expense
+      if (!ohadaCodeId || !newItem.date || !newItem.description || !newItem.amount || !newItem.paymentMethod) {
+        toast({
+          title: "Error",
+          description: "Please fill in all required fields",
+          variant: "destructive",
+        });
+        return;
+      }
 
-  const handleAddExpense = async (expenseData: Omit<ExpenseAttributes, 'id'>) => {
-    try {
-      const request: CreateExpenseRequest = { data: expenseData };
-      const response = await safeIpcInvoke<ExpenseResponse>('finance:expense:create', 
-        request, 
+      const createExpenseRequest: CreateExpenseRequest = {
+        data: {
+          date: new Date(newItem.date || Date.now()),
+          description: newItem.description,
+          amount: parseFloat(newItem.amount),
+          paymentMethod: newItem.paymentMethod,
+          ohadaCodeId: ohadaCodeId,
+          userId: user?.id,
+          shopId: selectedShopId || undefined,
+          status: 'completed'
+        }
+      };
+
+      const response = await safeIpcInvoke<ExpenseResponse>(
+        'finance:expense:create',
+        createExpenseRequest,
         { success: false }
       );
-      
+
       if (response?.success && response.expense) {
-        setExpenses([...expenses, response.expense]);
+        // Format the new expense data before adding to state
+        const formattedExpense = {
+          ...response.expense,
+          date: new Date(response.expense.date), // Ensure date is properly formatted
+        };
+        setExpenses(prevExpenses => [...prevExpenses, formattedExpense]);
         setIsAddDialogOpen(false);
         setNewItem({});
+        setSelectedOhadaCode("");
         toast({
           title: "Success",
           description: "Expense added successfully",
@@ -272,10 +311,10 @@ const Expenses = () => {
         });
       }
     } catch (error) {
-      console.error('Error creating expense:', error);
+      console.error('Error adding expense:', error);
       toast({
         title: "Error",
-        description: 'Failed to create expense',
+        description: 'Failed to add expense',
         variant: "destructive",
       });
     }
@@ -317,129 +356,156 @@ const Expenses = () => {
         <div className="flex items-center space-x-2">
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
                 Add Expense
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add New Expense</DialogTitle>
+                <DialogTitle>Add Expense</DialogTitle>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="date" className="text-right">Date</Label>
+              <div className="space-y-4">
+                <div>
+                  <Label>Date</Label>
                   <Input
-                    id="date"
                     type="date"
-                    className="col-span-3"
-                    value={newItem.date || new Date().toISOString().split('T')[0]}
-                    onChange={(e) => setNewItem({ ...newItem, date: e.target.value })}
+                    value={newItem.date}
+                    onChange={(e) =>
+                      setNewItem({ ...newItem, date: e.target.value })
+                    }
                   />
                 </div>
-
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="description" className="text-right">Description</Label>
+                <div>
+                  <Label>Description</Label>
                   <Input
-                    id="description"
-                    className="col-span-3"
-                    onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                    value={newItem.description}
+                    onChange={(e) =>
+                      setNewItem({ ...newItem, description: e.target.value })
+                    }
                   />
                 </div>
-
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="amount" className="text-right">Amount</Label>
+                <div>
+                  <Label>Amount</Label>
                   <Input
-                    id="amount"
                     type="number"
-                    className="col-span-3"
-                    onChange={(e) => setNewItem({ ...newItem, amountPaid: `${e.target.value} XAF` })}
+                    value={newItem.amount}
+                    onChange={(e) =>
+                      setNewItem({ ...newItem, amount: e.target.value })
+                    }
                   />
                 </div>
+                <div>
+                  <Label>Payment Method</Label>
+                  <Select
+                    value={newItem.paymentMethod}
+                    onValueChange={(value) =>
+                      setNewItem({ ...newItem, paymentMethod: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select payment method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                      <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                {isCustomCategory ? (
-                  <>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="customName" className="text-right">Category Name</Label>
-                      <Input
-                        id="customName"
-                        value={customCategory.name}
-                        onChange={(e) => setCustomCategory(prev => ({ ...prev, name: e.target.value }))}
-                        className="col-span-3"
+                {/* Shop Selection for admin/shop owner */}
+                {(user?.role === 'admin' || user?.role === 'shop_owner') && business?.shops && business.shops.length > 0 && (
+                  <div>
+                    <Label>Shop (Optional)</Label>
+                    <Select
+                      value={selectedShopId}
+                      onValueChange={setSelectedShopId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select shop" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="no-shop">No Shop</SelectItem>
+                        {business.shops.map((shop: any) => (
+                          <SelectItem key={shop.id} value={shop.id}>
+                            {shop.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>OHADA Code</Label>
+                  {!isCustomCategory ? (
+                    <Select
+                      value={selectedOhadaCode}
+                      onValueChange={handleOhadaCodeSelection}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select OHADA Code" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[200px] overflow-y-auto">
+                        {ohadaCodes.map((code : any) => (
+                          <SelectItem key={code.dataValues.id} value={code.dataValues.id as string}>
+                            {code.dataValues.code} - {code.dataValues.name}
+                            <span className="block text-sm text-gray-500">{code.dataValues.description}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+                  
+                  <div className="mt-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="customCategory"
+                        checked={isCustomCategory}
+                        onCheckedChange={handleCustomCategoryToggle}
                       />
+                      <Label htmlFor="customCategory">Add Custom Category</Label>
                     </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="ohadaCode" className="text-right">OHADA Code</Label>
-                      <div className="col-span-3">
+                    
+                    {isCustomCategory && (
+                      <div className="mt-2 space-y-4">
                         <Select
-                          onValueChange={(value) => {
-                            const selectedCode = ohadaCodes.find(code => code.id === value);
-                            setCustomCategory(prev => ({
-                              ...prev,
-                              code: value,
-                              description: selectedCode?.description || ''
-                            }));
-                          }}
+                          value={selectedOhadaCode}
+                          onValueChange={handleOhadaCodeSelection}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select OHADA code" />
+                            <SelectValue placeholder="Select OHADA Code for Custom Category" />
                           </SelectTrigger>
-                          <SelectContent>
-                            {ohadaCodes.map((code) => (
-                              <SelectItem key={code.id} value={code.id || ''}>
-                                {code.code} - {code.name}
+                          <SelectContent className="max-h-[200px] overflow-y-auto">
+                            {ohadaCodes.map((code: any) => (
+                              <SelectItem key={code.dataValues.id} value={code.dataValues.id as string}>
+                                {code.dataValues.code} - {code.dataValues.name}
+                                <span className="block text-sm text-gray-500">{code.dataValues.description}</span>
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                        {customCategory.code && (
-                          <p className="text-sm text-gray-500 mt-1">
-                            {ohadaCodes.find(code => code.id === customCategory.code)?.description}
-                          </p>
-                        )}
+                        <div className="space-y-2">
+                          <Label>Category Name</Label>
+                          <Input
+                            placeholder="Enter custom category name"
+                            value={customCategoryName}
+                            onChange={(e) => {
+                              setCustomCategoryName(e.target.value);
+                              setNewItem({ 
+                                ...newItem, 
+                                description: e.target.value,
+                                ohadaCodeId: selectedOhadaCode 
+                              });
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="category" className="text-right">Category</Label>
-                    <div className="col-span-3">
-                      <Select
-                        onValueChange={(value) => {
-                          if (value === "custom") {
-                            setIsCustomCategory(true);
-                          } else {
-                            const selectedCode = ohadaCodes.find(code => code.id === value);
-                            setNewItem(prev => ({ 
-                              ...prev, 
-                              ohadaCodeId: value,
-                              description: selectedCode?.description || ''
-                            }));
-                          }
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ohadaCodes.map((code) => (
-                            <SelectItem key={code.id} value={code.id || ''}>
-                              {code.code} - {code.name}
-                            </SelectItem>
-                          ))}
-                          <SelectItem value="custom">Custom Category</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {newItem.ohadaCodeId && (
-                        <p className="text-sm text-gray-500 mt-1">
-                          {ohadaCodes.find(code => code.id === newItem.ohadaCodeId)?.description}
-                        </p>
-                      )}
-                    </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <div className="flex justify-end">
+                </div>
                 <Button onClick={handleAddItem}>Add Expense</Button>
               </div>
             </DialogContent>
@@ -480,18 +546,6 @@ const Expenses = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]">
-                    <Checkbox
-                      checked={selectedItems.length === currentItems.length}
-                      onCheckedChange={() => {
-                        if (selectedItems.length === currentItems.length) {
-                          setSelectedItems([])
-                        } else {
-                          setSelectedItems(currentItems.map(item => item.id).filter((id): id is string => id !== undefined))
-                        }
-                      }}
-                    />
-                  </TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Amount</TableHead>
@@ -501,31 +555,32 @@ const Expenses = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={item.id ? selectedItems.includes(item.id) : false}
-                        onCheckedChange={() => item.id && handleCheckboxChange(item.id)}
-                      />
-                    </TableCell>
-                    <TableCell>{new Date(item.date).toLocaleDateString()}</TableCell>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell>{item.amount}</TableCell>
-                    <TableCell>{item.paymentMethod}</TableCell>
-                    <TableCell>{ohadaCodes.find(code => code.id === item.ohadaCodeId)?.name || 'Unknown'}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <Button variant="ghost" size="icon">
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {currentItems.map((item: any) => {
+                  const dataValues = item.dataValues || item;
+                  return (
+                    <TableRow key={dataValues.id}>
+                      <TableCell>{new Date(dataValues.date).toLocaleDateString()}</TableCell>
+                      <TableCell>{dataValues.description}</TableCell>
+                      <TableCell>{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XAF' }).format(dataValues.amount)}</TableCell>
+                      <TableCell style={{ textTransform: 'capitalize' }}>{dataValues.paymentMethod?.replace('_', ' ')}</TableCell>
+                      <TableCell>{dataValues.ohadaCode?.name || 'Unknown'}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <Button variant="ghost" size="icon">
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => handleDeleteExpense(dataValues.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

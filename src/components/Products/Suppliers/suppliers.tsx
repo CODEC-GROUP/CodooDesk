@@ -22,7 +22,7 @@ import { EmptyState } from "./EmptyState"
 interface Supplier {
   id: string;
   name: string;
-  phoneNumber: string;
+  phone: string;
   email: string;
   address: string;
   city: string;
@@ -35,11 +35,13 @@ interface Supplier {
     productCount: number;
     totalValue: number;
   }[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface NewSupplier {
   name: string;
-  phoneNumber: string;
+  phone: string;
   email: string;
   address: string;
   city: string;
@@ -71,7 +73,7 @@ const Suppliers = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newSupplier, setNewSupplier] = useState<NewSupplier>({
     name: "",
-    phoneNumber: "",
+    phone: "",
     email: "",
     address: "",
     city: "",
@@ -125,16 +127,19 @@ const Suppliers = () => {
     return supplier.supplierProducts?.reduce((total, product) => total + product.productCount, 0) || 0;
   };
 
-  const filteredSuppliers = suppliers?.filter(supplier =>
-    supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    supplier.phoneNumber.includes(searchTerm) ||
-    supplier.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    [supplier.address, supplier.city, supplier.region, supplier.country]
-      .filter(Boolean)
-      .join(', ')
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  ) || [];
+  const filteredSuppliers = suppliers?.filter((supplier: any) => {
+    const dataValues = supplier.dataValues || supplier;
+    return (
+      dataValues.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      dataValues.phone?.includes(searchTerm) ||
+      dataValues.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      [dataValues.address, dataValues.city, dataValues.region, dataValues.country]
+        .filter(Boolean)
+        .join(', ')
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase())
+    );
+  }) || [];
 
   const currentSuppliers = filteredSuppliers.slice(
     (currentPage - 1) * itemsPerPage,
@@ -147,53 +152,48 @@ const Suppliers = () => {
     setCurrentPage(pageNumber);
   };
 
-  const handleAddSupplier = async () => {
+  const handleAddSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      const businessId = business?.id || JSON.parse(localStorage.getItem('business') || '{}')?.id;
-      
-      if (!businessId) {
-        throw new Error('Business ID is required');
-      }
+      console.log('New Supplier Data:', newSupplier);
 
-      const supplierData = {
-        ...newSupplier,
-        businessId
-      };
-
-      if (isEditing && editingId) {
-        const response = await safeIpcInvoke<SupplierResponse>('entities:supplier:update', {
-          id: editingId,
-          updates: supplierData
-        }, { success: false });
-
-        if (response?.success && response.supplier) {
-          setSuppliers(prev => prev.map(supplier => 
-            supplier.id === editingId ? response.supplier! : supplier
-          ));
-          toast({
-            title: "Success",
-            description: "Supplier updated successfully",
-          });
+      const response = await safeIpcInvoke<SupplierResponse>(
+        isEditing ? 'entities:supplier:update' : 'entities:supplier:create',
+        {
+          supplierData: {
+            id: editingId,
+            ...newSupplier,
+            businessId: business?.id
+          }
         }
+      );
+
+      if (response?.success && response.supplier) {
+        // Format the supplier data before updating state
+        const formattedSupplier = {
+          ...response.supplier,
+          createdAt: new Date(response.supplier.createdAt),
+          updatedAt: new Date(response.supplier.updatedAt),
+          // Format any other date fields
+        };
+
+        setSuppliers(prevSuppliers => {
+          if (isEditing) {
+            return prevSuppliers.map(supplier => 
+              supplier.id === editingId ? formattedSupplier : supplier
+            );
+          }
+          return [...prevSuppliers, formattedSupplier];
+        });
+
+        handleDialogClose();
+        toast({
+          title: "Success",
+          description: `Supplier ${isEditing ? 'updated' : 'added'} successfully`,
+        });
       } else {
-        const response = await safeIpcInvoke<SupplierResponse>('entities:supplier:create', {
-          supplierData
-        }, { success: false });
-
-        if (response?.success && response.supplier) {
-          setSuppliers(prev => [...prev, response.supplier as Supplier]);
-          toast({
-            title: "Success",
-            description: "Supplier added successfully",
-          });
-        }
+        throw new Error(response?.message || `Failed to ${isEditing ? 'update' : 'add'} supplier`);
       }
-      
-      setIsDialogOpen(false);
-      setIsEditing(false);
-      setEditingId(null);
-      resetNewSupplier();
-      
     } catch (error) {
       console.error('Error adding/updating supplier:', error);
       toast({
@@ -207,7 +207,7 @@ const Suppliers = () => {
   const resetNewSupplier = () => {
     setNewSupplier({
       name: "",
-      phoneNumber: "",
+      phone: "",
       email: "",
       address: "",
       city: "",
@@ -221,7 +221,7 @@ const Suppliers = () => {
     setEditingId(supplier.id);
     setNewSupplier({
       name: supplier.name,
-      phoneNumber: supplier.phoneNumber,
+      phone: supplier.phone,
       email: supplier.email,
       address: supplier.address,
       city: supplier.city,
@@ -289,7 +289,7 @@ const Suppliers = () => {
             setIsEditing(false);
             setNewSupplier({
               name: "",
-              phoneNumber: "",
+              phone: "",
               email: "",
               address: "",
               city: "",
@@ -304,10 +304,7 @@ const Suppliers = () => {
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Edit Supplier' : 'Add Supplier'}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleAddSupplier();
-            }}>
+            <form onSubmit={handleAddSupplier}>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">Name</Label>
@@ -319,12 +316,12 @@ const Suppliers = () => {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="phoneNumber">Phone Number</Label>
+                  <Label htmlFor="phone">Phone</Label>
                   <Input
-                    id="phoneNumber"
+                    id="phone"
                     required
-                    value={newSupplier.phoneNumber}
-                    onChange={(e) => setNewSupplier({ ...newSupplier, phoneNumber: e.target.value })}
+                    value={newSupplier.phone}
+                    onChange={(e) => setNewSupplier({ ...newSupplier, phone: e.target.value })}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -423,7 +420,7 @@ const Suppliers = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Phone Number</TableHead>
+                <TableHead>Phone</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Total Items</TableHead>
@@ -432,41 +429,44 @@ const Suppliers = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {currentSuppliers.map((supplier) => (
-                <TableRow key={supplier.id}>
-                  <TableCell>{supplier.name}</TableCell>
-                  <TableCell>{supplier.phoneNumber}</TableCell>
-                  <TableCell>{supplier.email}</TableCell>
-                  <TableCell 
-                    className="max-w-[200px] truncate"
-                    title={[supplier.address, supplier.city, supplier.region, supplier.country].filter(Boolean).join(', ')}
-                  >
-                    {formatLocation(supplier)}
-                  </TableCell>
-                  <TableCell>{calculateTotalItems(supplier)}</TableCell>
-                  <TableCell>${calculateSupplierSales(supplier).toFixed(2)}</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEditSupplier(supplier)}
-                        aria-label="Edit"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteSupplier(supplier.id)}
-                        aria-label="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {currentSuppliers.map((supplier: any) => {
+                const dataValues = supplier.dataValues || supplier;
+                return (
+                  <TableRow key={dataValues.id}>
+                    <TableCell>{dataValues.name}</TableCell>
+                    <TableCell>{dataValues.phone}</TableCell>
+                    <TableCell>{dataValues.email}</TableCell>
+                    <TableCell
+                      className="max-w-[200px] truncate"
+                      title={[dataValues.address, dataValues.city, dataValues.region, dataValues.country].filter(Boolean).join(', ')}
+                    >
+                      {formatLocation(dataValues)}
+                    </TableCell>
+                    <TableCell>{calculateTotalItems(dataValues)}</TableCell>
+                    <TableCell>${calculateSupplierSales(dataValues).toFixed(2)}</TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEditSupplier(dataValues)}
+                          aria-label="Edit"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteSupplier(dataValues.id)}
+                          aria-label="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -477,10 +477,7 @@ const Suppliers = () => {
           <DialogHeader>
             <DialogTitle>{isEditing ? 'Edit Supplier' : 'Add Supplier'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            handleAddSupplier();
-          }}>
+          <form onSubmit={handleAddSupplier}>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="name">Name</Label>
@@ -492,12 +489,12 @@ const Suppliers = () => {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="phoneNumber">Phone Number</Label>
+                <Label htmlFor="phone">Phone</Label>
                 <Input
-                  id="phoneNumber"
+                  id="phone"
                   required
-                  value={newSupplier.phoneNumber}
-                  onChange={(e) => setNewSupplier({ ...newSupplier, phoneNumber: e.target.value })}
+                  value={newSupplier.phone}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, phone: e.target.value })}
                 />
               </div>
               <div className="grid gap-2">

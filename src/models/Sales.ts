@@ -1,7 +1,6 @@
 import { Model, DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../services/database/index.js';
 import Order from './Order.js'
-import Employee from './Employee.js';
 import Invoice from './Invoice.js';
 import Receipt from './Receipt.js';
 import Shop from './Shop.js';
@@ -20,7 +19,7 @@ export interface SalesAttributes {
   discount: number;
   profit: number;
   paymentMethod: 'cash' | 'card' | 'mobile_money' | 'bank_transfer';
-  employeeId?: string;
+  salesPersonId: string;
   createdAt?: Date;
   updatedAt?: Date;
   receipt_id?: string | null;
@@ -40,7 +39,7 @@ class Sales extends Model<SalesAttributes> implements SalesAttributes {
   public discount!: number;
   public profit!: number;
   public paymentMethod!: 'cash' | 'card' | 'mobile_money' | 'bank_transfer';
-  public employeeId!: string;
+  public salesPersonId!: string;
   public createdAt!: Date;
   public updatedAt!: Date;
   public receipt_id!: string | null;
@@ -101,46 +100,28 @@ class Sales extends Model<SalesAttributes> implements SalesAttributes {
         profit: {
           type: DataTypes.DECIMAL(10, 2),
           allowNull: false,
-          defaultValue: 0,
+          defaultValue: 0.00,
         },
         paymentMethod: {
           type: DataTypes.ENUM('cash', 'card', 'mobile_money', 'bank_transfer'),
           allowNull: false,
           defaultValue: 'cash',
         },
-        employeeId: {
+        salesPersonId: {
           type: DataTypes.UUID,
-          allowNull: true,
+          allowNull: false,
           references: {
-            model: 'Employees',
-            key: 'id'
-          }
+            model: 'Users',
+            key: 'id',
+          },
         },
         receipt_id: {
           type: DataTypes.UUID,
           allowNull: true,
-          references: {
-            model: 'Receipts',
-            key: 'id'
-          }
         },
         invoice_id: {
           type: DataTypes.UUID,
           allowNull: true,
-          references: {
-            model: 'Invoices',
-            key: 'id'
-          }
-        },
-        createdAt: {
-          type: DataTypes.DATE,
-          allowNull: false,
-          defaultValue: DataTypes.NOW,
-        },
-        updatedAt: {
-          type: DataTypes.DATE,
-          allowNull: false,
-          defaultValue: DataTypes.NOW,
         },
       },
       {
@@ -152,30 +133,12 @@ class Sales extends Model<SalesAttributes> implements SalesAttributes {
   }
 
   static associate(models: any) {
-    this.belongsTo(models.Shop, {
-      foreignKey: 'shopId',
-      as: 'shop',
-    });
-    this.hasMany(models.Order, {
-      foreignKey: 'saleId',
-      as: 'orders',
-    });
-    this.hasOne(models.Invoice, {
-      foreignKey: 'sale_id',
-      as: 'invoice'
-    });
-    this.hasOne(models.Receipt, {
-      foreignKey: 'sale_id',
-      as: 'receipt'
-    });
-    this.belongsTo(Employee, {
-      foreignKey: 'employeeId',
-      as: 'employee'
-    });
-    this.hasOne(models.Payment, {
-      foreignKey: 'sale_id',
-      as: 'payment'
-    });
+    this.belongsTo(models.Shop, { foreignKey: 'shopId', as: 'shop' });
+    this.hasMany(models.Order, { foreignKey: 'saleId', as: 'orders' });
+    this.hasOne(models.Receipt, { foreignKey: 'sale_id', as: 'receipt' });
+    this.hasOne(models.Invoice, { foreignKey: 'sale_id', as: 'invoice' });
+    this.hasOne(models.Payment, { foreignKey: 'sale_id', as: 'payment' });
+    this.belongsTo(models.User, { foreignKey: 'salesPersonId', as: 'salesPerson' });
   }
 }
 

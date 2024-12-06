@@ -40,6 +40,7 @@ export interface PrinterReceiptData {
   date: Date;
   paymentMethod: string;
   salesPersonId: string;
+  paymentStatus?: 'paid' | 'unpaid' | 'partially_paid';
 }
 
 export interface POSSaleResponse {
@@ -99,6 +100,7 @@ export class PrinterService {
   generatePreviewHtml(businessInfo: PrinterBusinessInfo, receipt: PrinterReceiptData): string {
     const { fullBusinessName, address, taxIdNumber, shop, shopLogo } = businessInfo;
     const fullAddress = `${address.street}, ${address.city}, ${address.state}${address.postalCode ? ` ${address.postalCode}` : ''}, ${address.country}`;
+    const isInvoice = receipt.paymentStatus !== 'paid';
 
     return `
       <div class="receipt" style="font-family: monospace; max-width: 400px; margin: 0 auto; padding: 20px;">
@@ -108,10 +110,15 @@ export class PrinterService {
           <p style="margin: 5px 0;">${fullAddress}</p>
           ${taxIdNumber ? `<p style="margin: 5px 0;">RC: ${taxIdNumber}</p>` : ''}
           <h3 style="margin: 5px 0;">${shop.name}</h3>
+          <h2 style="margin: 10px 0; border: 2px solid black; padding: 5px; display: inline-block;">
+            ${isInvoice ? 'FACTURE' : 'REÇU'}
+          </h2>
         </div>
         <div style="margin-bottom: 20px;">
-          <p>Reçu N°: <strong>${receipt.receiptId}</strong></p>
-          <p>Facture N°: <strong>${receipt.saleId}</strong></p>
+          ${isInvoice ? 
+            `<p>Facture N°: <strong>${receipt.saleId}</strong></p>` :
+            `<p>Reçu N°: <strong>${receipt.receiptId}</strong></p>`
+          }
           <p>Date: <strong>${new Date(receipt.date).toLocaleString('fr-FR')}</strong></p>
           ${receipt.customerName ? `<p>Client: <strong>${receipt.customerName}</strong></p>` : ''}
           ${receipt.customerPhone ? `<p>Tel: <strong>${receipt.customerPhone}</strong></p>` : ''}
@@ -154,17 +161,36 @@ export class PrinterService {
             <span>Total:</span>
             <strong>${this.formatCurrency(receipt.total)}</strong>
           </p>
-          <p style="display: flex; justify-content: space-between;">
-            <span>Payé (${receipt.paymentMethod}):</span>
-            <strong>${this.formatCurrency(receipt.amountPaid)}</strong>
-          </p>
-          <p style="display: flex; justify-content: space-between;">
-            <span>Monnaie:</span>
-            <strong>${this.formatCurrency(receipt.change)}</strong>
-          </p>
+          ${isInvoice ? `
+            <div style="margin-top: 10px; border-top: 1px dashed #000; padding-top: 10px;">
+              <p style="text-align: center; font-weight: bold;">STATUT: ${receipt.paymentStatus === 'partially_paid' ? 'PARTIELLEMENT PAYÉ' : 'NON PAYÉ'}</p>
+              ${receipt.paymentStatus === 'partially_paid' ? `
+                <p style="display: flex; justify-content: space-between;">
+                  <span>Montant Payé:</span>
+                  <strong>${this.formatCurrency(receipt.amountPaid)}</strong>
+                </p>
+                <p style="display: flex; justify-content: space-between;">
+                  <span>Reste à Payer:</span>
+                  <strong>${this.formatCurrency(receipt.total - receipt.amountPaid)}</strong>
+                </p>
+              ` : ''}
+            </div>
+          ` : `
+            <p style="display: flex; justify-content: space-between;">
+              <span>Payé (${receipt.paymentMethod}):</span>
+              <strong>${this.formatCurrency(receipt.amountPaid)}</strong>
+            </p>
+            <p style="display: flex; justify-content: space-between;">
+              <span>Monnaie:</span>
+              <strong>${this.formatCurrency(receipt.change)}</strong>
+            </p>
+          `}
         </div>
         <div style="margin-top: 20px; text-align: center;">
-          <p style="margin: 5px 0;">Merci de votre confiance!</p>
+          ${isInvoice ? 
+            `<p style="margin: 5px 0; font-style: italic;">Cette facture est valable pour une durée de 30 jours.</p>` :
+            `<p style="margin: 5px 0;">Merci de votre confiance!</p>`
+          }
           <p style="margin: 5px 0;">À bientôt!</p>
         </div>
       </div>
