@@ -35,7 +35,8 @@ export function registerOrderManagementHandlers() {
     changeGiven,
     shopId,
     discount = 0,
-    deliveryFee = 0
+    deliveryFee = 0,
+    user
   }) => {
     const t = await sequelize.transaction();
 
@@ -70,7 +71,8 @@ export function registerOrderManagementHandlers() {
         deliveryFee: deliveryFee || 0,
         discount: discount || 0,
         profit: orderTotals.profit,
-        paymentMethod
+        paymentMethod,
+        salesPersonId: user.id
       }, { transaction: t });
 
       // Add after creating the sale
