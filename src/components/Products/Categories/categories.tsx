@@ -97,7 +97,14 @@ const Categories = () => {
       }, { success: false, category: null });
 
       if (result?.success && result.category) {
-        setCategories(prev => [...prev, result.category] as Category[]);
+        const newCategoryData = {
+          id: (result.category as any).dataValues.id,
+          name: (result.category as any).dataValues.name,
+          description: (result.category as any).dataValues.description,
+          image: (result.category as any).dataValues.image,
+          businessId: (result.category as any).dataValues.businessId,
+        };
+        setCategories(prev => [...prev, newCategoryData]);
         setIsAddCategoryOpen(false);
         setNewCategory({ name: "", description: "", image: null });
         setEditingCategory(null);
@@ -252,7 +259,7 @@ const Categories = () => {
             />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {filteredCategories.map((category) => (
             <Card key={category.id}>
               <CardContent className="p-4">

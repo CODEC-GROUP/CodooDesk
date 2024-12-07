@@ -93,7 +93,7 @@ export function registerPOSHandlers() {
           paymentStatus: 'paid',
         }, { transaction: t });
 
-        // Update product quantity
+        // Update product quantity and status
         await Product.decrement(
           'quantity', 
           { 
@@ -103,7 +103,6 @@ export function registerPOSHandlers() {
           }
         );
 
-        // Update product status
         const product = await Product.findByPk(item.id, { transaction: t });
         if (product) {
           const newStatus = product.quantity <= 0 ? 'out_of_stock' :
@@ -136,25 +135,24 @@ export function registerPOSHandlers() {
         shopId: request.shopId,
       }, { transaction: t });
 
-      // Create receipt for the sale
+      // Create receipt
       const receipt = await Receipt.create({
         sale_id: sale.id,
         amount: netAmount,
         status: 'paid'
       }, { transaction: t });
 
-      // Fetch the complete sale information with related data
+      // Fetch the complete sale with all related data
       const completeSale = await Sales.findOne({
         where: { id: sale.id },
         include: [
           {
             model: Order,
-            as: 'orders',  // Ensure this matches the alias in your association
+            as: 'orders',
             include: [
-              { 
-                model: Product, 
-                as: 'product',  // Add the alias here
-                attributes: ['name'] 
+              {
+                model: Product,
+                as: 'product'
               }
             ]
           }
@@ -162,17 +160,22 @@ export function registerPOSHandlers() {
         transaction: t
       });
 
+      if (!completeSale) {
+        throw new Error('Failed to fetch sale data');
+      }
+
+      // Prepare receipt data
       const receiptData = {
         saleId: sale.id,
         receiptId: receipt.id,
-        date: sale.createdAt,
+        date: new Date(),
         items: request.cartItems.map(item => ({
           name: item.name,
           quantity: item.quantity,
           sellingPrice: item.actualPrice
         })),
-        customerName: request.customer?.name,
-        customerPhone: request.customer?.phone,
+        customerName: request.customer?.name || 'Walk-in Customer',
+        customerPhone: request.customer?.phone || '',
         subtotal: request.subtotal,
         discount: request.discount || 0,
         total: netAmount,
@@ -183,11 +186,11 @@ export function registerPOSHandlers() {
       };
 
       await t.commit();
-      return { 
-        success: true, 
-        message: 'Sale completed successfully', 
-        sale: completeSale,
-        receipt: receiptData 
+
+      return {
+        success: true,
+        sale: completeSale.get({ plain: true }),
+        receipt: receiptData
       };
     } catch (error) {
       await t.rollback();

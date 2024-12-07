@@ -1,13 +1,16 @@
 import { Model, DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../services/database/index.js';
 import Order from './Order.js';
-import Inventory from './Inventory.js';
+import Product from './Product.js';
+import Shop from './Shop.js';
 
 export interface ReturnAttributes {
   id?: string;
   orderId: string;
-  customerName: string;
-  productName: string;
+  productId: string;
+  shopId?: string;
+  customerFirstName: string;
+  customerLastName: string;
   quantity: number;
   amount: number;
   reason: string;
@@ -20,8 +23,10 @@ export interface ReturnAttributes {
 class Return extends Model<ReturnAttributes> implements ReturnAttributes {
   public id!: string;
   public orderId!: string;
-  public customerName!: string;
-  public productName!: string;
+  public productId!: string;
+  public shopId?: string;
+  public customerFirstName!: string;
+  public customerLastName!: string;
   public quantity!: number;
   public amount!: number;
   public reason!: string;
@@ -46,11 +51,23 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
             key: 'id',
           },
         },
-        customerName: {
+        productId: {
+          type: DataTypes.UUID,
+          allowNull: false,
+          references: {
+            model: 'Products',
+            key: 'id',
+          },
+        },
+        shopId: {
+          type: DataTypes.UUID,
+          allowNull: true,
+        },
+        customerFirstName: {
           type: DataTypes.STRING,
           allowNull: false,
         },
-        productName: {
+        customerLastName: {
           type: DataTypes.STRING,
           allowNull: false,
         },
@@ -76,6 +93,7 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
         },
         status: {
           type: DataTypes.ENUM('pending', 'completed'),
+          allowNull: false,
           defaultValue: 'pending',
         },
         date: {
@@ -87,15 +105,27 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
       {
         sequelize,
         modelName: 'Return',
+        tableName: 'Returns',
         timestamps: true,
       }
     );
   }
 
-  static associate(models: any) {
-    this.belongsTo(models.Order, { foreignKey: 'orderId', as: 'order' });
-    this.belongsTo(models.Inventory, { foreignKey: 'inventoryId', as: 'inventory' });
-    // Add other associations here if needed
+  static associate() {
+    this.belongsTo(Order, {
+      foreignKey: 'orderId',
+      as: 'order',
+    });
+
+    this.belongsTo(Product, {
+      foreignKey: 'productId',
+      as: 'product',
+    });
+
+    this.belongsTo(Shop, {
+      foreignKey: 'shopId',
+      as: 'shop',
+    });
   }
 }
 

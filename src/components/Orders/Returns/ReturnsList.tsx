@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/Shared/ui/table"
@@ -27,7 +27,8 @@ import Pagination from "@/components/Shared/ui/pagination"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import { EmptyState } from './Empty/EmptyState'
-
+import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout';
+import { SalesAttributes as Sale} from "@/models/Sales"
 // Update Return type
 interface ReturnedItem {
   id: string;
@@ -54,6 +55,7 @@ interface Return {
 interface ReturnResponse {
   success: boolean;
   returns?: Return[];
+  suggestions?: OrderSuggestion[];
   message?: string;
 }
 
@@ -86,112 +88,26 @@ interface Order {
   product: OrderProduct;
 }
 
-// Mock data for dropdowns
-const customers: Customer[] = [
-  { id: "1", name: "Aurelie Mballa", phone: "237670000001" },
-  { id: "2", name: "Jean-Claude Ndombe", phone: "237670000002" },
-];
+interface OrderSuggestion {
+  id: string;
+  receipt_id: string;
+  invoice_id: string;
+  customer_name: string;
+  total_amount: number;
+  created_at: string;
+  display: string;
+}
 
-const orders: Order[] = [
-  { 
-    id: "ORD-001", 
-    customerName: "Aurelie Mballa",
-    date: "2024-01-15",
-    total: 15000,
-    product: {
-      id: "1",
-      name: "Product A",
-      price: 1000,
-      quantity: 2,
-      total: 2000,
-      product_id: "1"
-    }
-  },
-  { 
-    id: "ORD-002",
-    customerName: "Jean-Claude Ndombe",
-    date: "2024-01-16",
-    total: 25000,
-    product: {
-      id: "2",
-      name: "Product B",
-      price: 2000,
-      quantity: 1,
-      total: 2000,
-      product_id: "2"
-    }
-  },
-];
 
-// Mock data for initial returns
-const initialReturns: Return[] = [
-  {
-    id: "RET-001",
-    orderId: "ORD-001",
-    items: [
-      {
-        id: "1",
-        productId: "1",
-        productName: "Product A",
-        quantity: 1,
-        price: 1000,
-        reason: "Defective Product"
-      }
-    ],
-    total: 1000,
-    status: "pending",
-    createdAt: "2024-01-15",
-    customer: {
-      id: "1",
-      name: "Aurelie Mballa"
-    }
-  },
-  {
-    id: "RET-002",
-    orderId: "ORD-002",
-    items: [
-      {
-        id: "2",
-        productId: "2",
-        productName: "Product B",
-        quantity: 2,
-        price: 2000,
-        reason: "Wrong Size"
-      }
-    ],
-    total: 4000,
-    status: "approved",
-    createdAt: "2024-01-16",
-    customer: {
-      id: "2",
-      name: "Jean-Claude Ndombe"
-    }
-  },
-  {
-    id: "RET-003",
-    orderId: "ORD-003",
-    items: [
-      {
-        id: "3",
-        productId: "3",
-        productName: "Product C",
-        quantity: 1,
-        price: 3000,
-        reason: "Not as Described"
-      }
-    ],
-    total: 3000,
-    status: "rejected",
-    createdAt: "2024-01-17",
-    customer: {
-      id: "3",
-      name: "Marie Kouassi"
-    }
-  }
-];
+
+interface SaleDetailsResponse {
+  success: boolean;
+  sale?: Sale;
+  message?: string;
+}
 
 const Returns = () => {
-  const [returns, setReturns] = useState(initialReturns)
+  const [returns, setReturns] = useState<Return[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedReturns, setSelectedReturns] = useState<string[]>([])
@@ -212,6 +128,11 @@ const Returns = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [suggestions, setSuggestions] = useState<OrderSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [sale, setSale] = useState<Sale | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
@@ -219,6 +140,28 @@ const Returns = () => {
   useEffect(() => {
     setCurrentPage(1)
   }, [searchTerm])
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    function handleSuggestionClickOutside(event: MouseEvent) {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleSuggestionClickOutside);
+    return () => document.removeEventListener('mousedown', handleSuggestionClickOutside);
+  }, []);
 
   const filteredReturns = returns.filter(returnItem => {
     const matchesSearch = 
@@ -253,17 +196,26 @@ const Returns = () => {
   const fetchReturns = async () => {
     try {
       setIsLoading(true);
-      const response = await safeIpcInvoke<ReturnResponse>('returns:get-all', {}, {
-        success: false,
-        returns: []
-      });
+      const userRole = localStorage.getItem('userRole') || '';
+      const shopId = localStorage.getItem('shopId') || '';
+      
+      const response = await safeIpcInvoke<ReturnResponse>('entities:return:get-all', 
+        { 
+          userRole,
+          shopId
+        }, 
+        {
+          success: false,
+          returns: []
+        }
+      );
 
       if (response?.success && response.returns) {
         setReturns(response.returns);
       } else {
         toast({
           title: "Error",
-          description: "Failed to load returns",
+          description: response?.message || "Failed to load returns",
           variant: "destructive",
         });
       }
@@ -278,6 +230,10 @@ const Returns = () => {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchReturns();
+  }, []);
 
   const handleApproveReturn = async (returnId: string) => {
     try {
@@ -380,16 +336,22 @@ const Returns = () => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
-    if (!selectedOrder || !selectedProduct || !returnQuantity) {
-      // Add error notification here
+    if (!sale || !selectedProduct || !returnQuantity) {
+      toast({
+        title: "Error",
+        description: "Please select a sale and product, and specify return quantity",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
       const returnData = {
-        orderId: selectedOrder.id,
+        saleId: sale.id,
+        shopId: sale.shopId, // Add shop ID from sale
         items: [
           {
+            orderId: selectedProduct.id, // Move orderId to item level
             productId: selectedProduct.product_id,
             productName: selectedProduct.name,
             quantity: returnQuantity,
@@ -400,23 +362,42 @@ const Returns = () => {
         total: returnQuantity * selectedProduct.price,
         status: 'pending',
         customer: {
-          id: selectedOrder.customerName,
-          name: selectedOrder.customerName
+          id: sale.customer_id,// Use proper customer ID
+          name: sale.customer?.first_name || 'Walking Customer',
         }
       };
 
-      const response = await safeIpcInvoke<ReturnActionResponse>('returns:create', { returnData }, { success: false });
+      setIsProcessing(true);
+      const response = await safeIpcInvoke<ReturnActionResponse>('entities:return:create', { returnData }, { success: false });
       
       if (response?.success && response.return) {
+        toast({
+          title: "Success",
+          description: "Return created successfully",
+        });
         setReturns(prev => [...prev, response.return as Return]);
         // Reset form
-        setSelectedOrder(null);
+        setSale(null);
         setSelectedProduct(null);
         setReturnQuantity(0);
         setReturnAmount(0);
+        setIsAddReturnOpen(false);
+      } else {
+        toast({
+          title: "Error",
+          description: response?.message || "Failed to create return",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Error creating return:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create return",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -492,6 +473,84 @@ const Returns = () => {
     }
   };
 
+  const handleSearchChange = async (value: string) => {
+    setSearchTerm(value);
+    if (value.length >= 2) {
+      try {
+        const result = await safeIpcInvoke<ReturnResponse>('entities:order:search', { 
+          searchTerm: value,
+          shopId: localStorage.getItem('shopId') || ''
+        });
+        
+        if (result?.success && result.suggestions) {
+          setSuggestions(result.suggestions);
+          setShowSuggestions(true);
+        }
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch order suggestions',
+          variant: 'destructive',
+        });
+      }
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSuggestionClick = async (suggestion: OrderSuggestion) => {
+    try {
+      const response = await safeIpcInvoke<SaleDetailsResponse>('entities:order:get-details', { 
+        orderId: suggestion.id,
+      });
+
+      if (response?.success && response.sale) {
+        const order: Order = {
+          id: response.sale?.id || '',
+          customerName: response.sale?.customer?.first_name || 'Walking Customer',
+          date: response.sale?.createdAt?.toISOString() || '', 
+          total: response.sale?.netAmount || 0,
+          product: response.sale?.orders?.[0] ? {
+            id: response.sale?.orders?.[0]?.product?.id || '',
+            name: response.sale?.orders?.[0]?.product?.name || '',
+            price: response.sale?.orders?.[0]?.sellingPrice || 0,
+            quantity: response.sale?.orders?.[0]?.quantity || 0,
+            total: (response.sale?.orders?.[0]?.quantity || 0) * (response.sale?.orders?.[0]?.sellingPrice || 0),
+            product_id: response.sale?.orders?.[0]?.product?.id || ''
+          } : { 
+            id: '', 
+            name: '', 
+            price: 0, 
+            quantity: 0, 
+            total: 0, 
+            product_id: '' 
+          },
+        };
+        
+        setSelectedOrder(order);
+        setSelectedProduct(null);
+        setReturnQuantity(0);
+        setShowSuggestions(false);
+        setSearchTerm(suggestion.display);
+      } else {
+        toast({
+          title: "Error",
+          description: response?.message || "Failed to get order details",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching order details:', error);
+      toast({
+        title: "Error",
+        description: "Failed to get order details",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="container mx-auto p-6">
       {returns.length === 0 && !isLoading ? (
@@ -533,14 +592,32 @@ const Returns = () => {
                         <SelectItem value="rejected">Rejected</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="relative ml-2">
+                    <div className="relative ml-2" ref={searchRef}>
                       <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
                       <Input
                         placeholder="Search returns..."
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onChange={(e) => handleSearchChange(e.target.value)}
                         className="pl-8"
                       />
+                      {showSuggestions && suggestions.length > 0 && (
+                        <Card className="absolute z-10 w-full mt-1">
+                          <CardContent className="p-2">
+                            {suggestions.map((suggestion) => (
+                              <div
+                                key={suggestion.id}
+                                className="p-2 hover:bg-gray-100 cursor-pointer rounded"
+                                onClick={() => handleSuggestionClick(suggestion)}
+                              >
+                                <div className="font-medium">{suggestion.display}</div>
+                                <div className="text-sm text-gray-500">
+                                  Total: {suggestion.total_amount} • Date: {suggestion.created_at}
+                                </div>
+                              </div>
+                            ))}
+                          </CardContent>
+                        </Card>
+                      )}
                     </div>
                   </div>
 
@@ -639,53 +716,37 @@ const Returns = () => {
               <Card>
                 <CardContent className="p-6">
                   <form onSubmit={handleAddReturn} className="space-y-6">
-                    {/* Customer Selection */}
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="customer" className="text-right">Customer</Label>
-                      <div className="col-span-3">
-                        <Select 
-                          onValueChange={(value) => {
-                            const customer = customers.find(c => c.id === value);
-                            setSelectedCustomer(customer || null);
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select customer" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {customers.map((customer) => (
-                              <SelectItem key={customer.id} value={customer.id}>
-                                {customer.name} - {customer.phone}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
 
                     {/* Order Selection */}
                     <div className="grid grid-cols-4 items-center gap-4">
                       <Label htmlFor="order" className="text-right">Order</Label>
-                      <div className="col-span-3">
-                        <Select 
-                          onValueChange={(value) => {
-                            const order = orders.find(o => o.id === value);
-                            setSelectedOrder(order || null);
-                            setSelectedProduct(null);
-                            setReturnQuantity(0);
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select order" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {orders.map((order) => (
-                              <SelectItem key={order.id} value={order.id}>
-                                {order.id} - {order.customerName} - {order.total} XAF
-                              </SelectItem>
+                      <div className="col-span-3 relative">
+                        <Input
+                          type="text"
+                          placeholder="Search for order by ID, customer name, or reciept/invoice ID..."
+                          value={searchTerm}
+                          onChange={(e) => handleSearchChange(e.target.value)}
+                          onFocus={() => setShowSuggestions(true)}
+                        />
+                        {showSuggestions && suggestions.length > 0 && (
+                          <div
+                            ref={suggestionsRef}
+                            className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto"
+                          >
+                            {suggestions.map((suggestion) => (
+                              <div
+                                key={suggestion.id}
+                                className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                                onClick={() => handleSuggestionClick(suggestion)}
+                              >
+                                <div className="font-medium">{suggestion.receipt_id}</div>
+                                <div className="text-sm text-gray-600">
+                                  {suggestion.customer_name} - {suggestion.total_amount.toLocaleString()} XAF
+                                </div>
+                              </div>
                             ))}
-                          </SelectContent>
-                        </Select>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -813,6 +874,39 @@ const Returns = () => {
                     <div className="col-span-2">
                       <Label>Reason</Label>
                       <p className="font-medium">{selectedReturn.items[0].reason}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {sale && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Sale ID</Label>
+                      <p className="font-medium">{sale.id}</p>
+                    </div>
+                    <div>
+                      <Label>Date</Label>
+                      <p className="font-medium">{sale.createdAt?.toString()}</p>
+                    </div>
+                    <div>
+                      <Label>Total</Label>
+                      <p className="font-medium">{sale.netAmount} XAF</p>
+                    </div>
+                    <div>
+                      <Label>Customer Name</Label>
+                      <p className="font-medium">{sale.customer?.first_name}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <Label>Products</Label>
+                      <ul>
+                        {sale?.orders?.map((order:any) => (
+                          <li key={order.product.id}>
+                            <p className="font-medium">{order.product.name}</p>
+                            <p className="text-sm text-gray-500">Quantity: {order.quantity}</p>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
                 </div>

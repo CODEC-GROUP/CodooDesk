@@ -8,7 +8,8 @@ import Product from './Product.js';
 export interface OrderAttributes {
   id?: string;
   saleId: string;
-  product_id: string;
+  product_id?: string;
+  productName?: string;
   quantity: number;
   sellingPrice: number;
   paymentStatus: 'unpaid' | 'paid' | 'refunded';
@@ -17,7 +18,8 @@ export interface OrderAttributes {
 class Order extends Model<OrderAttributes> implements OrderAttributes {
   public id!: string;
   public saleId!: string;
-  public product_id!: string;
+  public product_id?: string;
+  public productName?: string;
   public quantity!: number;
   public sellingPrice!: number;
   public paymentStatus!: 'unpaid' | 'paid' | 'refunded';
@@ -40,7 +42,11 @@ class Order extends Model<OrderAttributes> implements OrderAttributes {
         },
         product_id: {
           type: DataTypes.UUID,
-          allowNull: false,
+          allowNull: true,
+        },
+        productName: {
+          type: DataTypes.STRING,
+          allowNull: true,
         },
         quantity: {
           type: DataTypes.INTEGER,

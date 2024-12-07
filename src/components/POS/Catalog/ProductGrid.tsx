@@ -196,6 +196,8 @@ export function Pos() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [discount, setDiscount] = useState<number>(0);
+  const [lastSaleData, setLastSaleData] = useState<any>(null);
+  const [lastReceiptData, setLastReceiptData] = useState<any>(null);
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -275,8 +277,32 @@ export function Pos() {
         return;
       }
 
-      const response = await safeIpcInvoke<{ 
-        success: boolean; 
+      // Set default Walk-in customer if none selected
+      const customer = selectedCustomer || {
+        id: null,
+        name: 'Walk-in Customer',
+        phone: ''
+      };
+
+      const total = calculateTotal();
+      const saleData = {
+        shopId: business?.shops?.[0]?.id,
+        customerId: selectedCustomer?.id,
+        items: cartItems.map(item => ({
+          productId: item.id,
+          quantity: item.quantity,
+          unitPrice: item.actualPrice
+        })),
+        paymentMethod: paymentType,
+        amountPaid: amountPaid,
+        discount: discount,
+        salesPersonId: user?.id || '',
+        salesPersonName: user?.username || '',
+        paymentStatus: amountPaid >= total ? "paid" : amountPaid > 0 ? "partially_paid" : "unpaid"
+      };
+
+      const response = await safeIpcInvoke<{
+        success: boolean;
         message?: string;
         sale?: any;
         receipt?: {
@@ -284,8 +310,8 @@ export function Pos() {
           receiptId: string;
           date: Date;
           items: Array<{ name: string; quantity: number; sellingPrice: number; }>;
-          customerName?: string;
-          customerPhone?: string;
+          customerName: string;
+          customerPhone: string;
           subtotal: number;
           discount: number;
           total: number;
@@ -294,37 +320,22 @@ export function Pos() {
           paymentMethod: string;
           salesPersonId: string;
         };
-      }>('pos:sale:create', {
-        cartItems: cartItems.map(item => ({
-          id: item.id,
-          name: item.name,
-          actualPrice: item.actualPrice,
-          price: item.actualPrice,
-          quantity: item.quantity
-        })),
-        subtotal: calculateTotal(), 
-        customer: selectedCustomer,
-        paymentMethod: paymentType,
-        amountPaid: amountPaid,
-        changeGiven: changeAmount,
-        shopId: currentShopId,
-        salesPersonId: user.id,
-        discount: discount || 0
-      });
+      }>('pos:sale:create', saleData);
 
-      if (response?.success) {
+      if (response?.success && response.sale && response.receipt) {
         setPaymentSuccess(true);
-        
-        // Print receipt if sale was successful
-        if (response.receipt) {
-          await handlePrintReceipt(response);
-        }
+        setLastSaleData(response.sale);
+        setLastReceiptData(response.receipt);
+
+        // Try to print receipt automatically
+        await handlePrintReceipt(response);
 
         clearCart();
         setAmountPaid(0);
         setChangeAmount(0);
         setSelectedCustomer(null);
-        
+        setDiscount(0);
+
         toast({
           title: "Success",
           description: "Payment processed successfully",
@@ -358,30 +369,14 @@ export function Pos() {
       return;
     }
 
-    const currentShopId = shopId || business.shops?.[0]?.id;
-    const currentShop = business.shops?.find(shop => shop.id === currentShopId);
-
-    if (!currentShop) {
-      toast({
-        title: "Error",
-        description: "Shop information not found",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
       const printerService = new PrinterService();
       
-      // Check if printer is available
-      const hasPrinter = await printerService.detectPrinter();
-      if (!hasPrinter) {
-        toast({
-          title: "Error",
-          description: "Printer not found",
-          variant: "destructive",
-        });
-        return;
+      const currentShopId = shopId || business.shops?.[0]?.id;
+      const currentShop = business.shops?.find(shop => shop.id === currentShopId);
+
+      if (!currentShop) {
+        throw new Error('Shop information not found');
       }
 
       const businessInfo = {
@@ -395,25 +390,21 @@ export function Pos() {
         }
       };
 
-      // Create receipt data from sale response
-      const receiptData = printerService.createReceiptFromSaleResponse(saleResponse);
-      
-      // Print receipt
-      const success = await printerService.printReceipt(businessInfo, receiptData);
-      
-      if (success) {
+      try {
+        await printerService.printReceipt(businessInfo, saleResponse.receipt);
+      } catch (error) {
+        console.error('Error showing print preview:', error);
         toast({
-          title: "Success",
-          description: "Receipt printed successfully",
+          title: "Error",
+          description: "Failed to show print preview",
+          variant: "destructive",
         });
-      } else {
-        throw new Error('Failed to print receipt');
       }
     } catch (error) {
-      console.error('Error printing receipt:', error);
+      console.error('Error preparing receipt:', error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to print receipt",
+        description: error instanceof Error ? error.message : "Failed to prepare receipt",
         variant: "destructive",
       });
     }
@@ -789,15 +780,25 @@ export function Pos() {
                 >
                   PAY
                 </Button>
-                {paymentSuccess && (
-                  <div className="text-green-500 text-sm mt-2">
-                    Payment Successful! <span className="font-bold">Receipt is ready to print.</span>
+                {paymentSuccess && lastSaleData && lastReceiptData && (
+                  <div className="space-y-2">
+                    <div className="text-green-500 text-sm">
+                      Payment Successful! <span className="font-bold">Receipt #{lastReceiptData.receiptId}</span>
+                    </div>
+                    <div className="text-sm">
+                      Customer: <span className="font-medium">{lastReceiptData.customerName}</span>
+                    </div>
+                    <div className="text-sm">
+                      Total: <span className="font-medium">{lastReceiptData.total.toFixed(2)} XAF</span>
+                    </div>
+                    <Button 
+                      className="w-full" 
+                      onClick={() => handlePrintReceipt({ receipt: lastReceiptData })}
+                      variant="outline"
+                    >
+                      Print Receipt
+                    </Button>
                   </div>
-                )}
-                {paymentSuccess && (
-                  <Button className="w-full mt-2" onClick={handlePrintReceipt}>
-                    PRINT RECEIPT
-                  </Button>
                 )}
               </div>
             </CardContent>

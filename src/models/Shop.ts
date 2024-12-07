@@ -7,6 +7,7 @@ import Product from './Product.js';
 import Location from './Location.js';
 import Sales from './Sales.js';
 import Inventory from './Inventory.js';
+import Return from './Return.js';
 
 export interface ShopAttributes {
   id?: string;
@@ -161,6 +162,10 @@ class Shop extends Model<ShopAttributes> implements ShopAttributes {
         allowNull: false
       },
       onDelete: 'CASCADE'
+    });
+    this.hasMany(models.Return, {
+      foreignKey: 'shopId',
+      as: 'returns',
     });
   }
 }

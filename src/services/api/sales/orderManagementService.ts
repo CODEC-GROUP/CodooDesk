@@ -1,21 +1,26 @@
 import { ipcMain } from 'electron';
-import { Op } from 'sequelize';
-import Sales from '../../../models/Sales.js';
+import { Op, or } from 'sequelize';
+import Sales, { SalesAttributes } from '../../../models/Sales.js';
 import Order from '../../../models/Order.js';
 import { sequelize } from '../../database/index.js';
 import Product from '../../../models/Product.js';
 import OhadaCode from '../../../models/OhadaCode.js';
 import Income from '../../../models/Income.js';
+import Customer from '../../../models/Customer.js';
+import Receipt from '../../../models/Receipt.js';
+import Invoice from '../../../models/Invoice.js';
 
 const IPC_CHANNELS = {
   CREATE_SALE_WITH_ORDERS: 'order-management:create-sale',
   GET_SALES_WITH_ORDERS: 'order-management:get-sales',
   GET_SALE_DETAILS: 'order-management:get-sale-details',
   UPDATE_SALE_STATUS: 'order-management:update-sale-status',
+  FORMAT_RECEIPT_DATA: 'order-management:format-receipt',
 };
 
 interface OrderItem {
-  productId: string;
+  productId?: string;
+  productName: string;
   quantity: number;
   sellingPrice: number;
 }
@@ -38,7 +43,7 @@ export function registerOrderManagementHandlers() {
     shopId,
     discount = 0,
     deliveryFee = 0,
-    user
+    salesPersonId
   }) => {
     const t = await sequelize.transaction();
 
@@ -46,12 +51,17 @@ export function registerOrderManagementHandlers() {
       // Calculate total and profit
       const orderTotals = await orderItems.reduce(async (promise: Promise<OrderTotals>, item: OrderItem) => {
         const acc = await promise;
-        const product = await Product.findByPk(item.productId);
-        if (!product) {
-          throw new Error(`Product not found: ${item.productId}`);
+        let itemProfit = 0;
+
+        // If product exists in system, calculate actual profit
+        if (item.productId) {
+          const product = await Product.findByPk(item.productId);
+          if (product) {
+            itemProfit = item.quantity * (item.sellingPrice - product.purchasePrice);
+          }
         }
+
         const itemTotal = item.quantity * item.sellingPrice;
-        const itemProfit = item.quantity * (item.sellingPrice - product.purchasePrice);
         return {
           total: acc.total + itemTotal,
           profit: acc.profit + itemProfit
@@ -64,22 +74,70 @@ export function registerOrderManagementHandlers() {
       // Create sale first
       const sale = await Sales.create({
         shopId,
-        status: 'completed',
+        status: paymentStatus === 'paid' ? 'completed' : 'pending',
         customer_id: customer?.id || null,
         deliveryStatus,
-        netAmount: netAmount || amountPaid,
-        amountPaid,
-        changeGiven,
+        netAmount,
+        amountPaid: paymentStatus === 'paid' ? amountPaid : 0,
+        changeGiven: paymentStatus === 'paid' ? changeGiven : 0,
         deliveryFee: deliveryFee || 0,
         discount: discount || 0,
         profit: orderTotals.profit,
         paymentMethod,
-        salesPersonId: user.id
+        salesPersonId
       }, { transaction: t });
 
-      // Add after creating the sale
+      // Create orders and update product quantities
+      const orderPromises = orderItems.map(async (item: OrderItem) => {
+        // Create order with product name regardless of whether product exists
+        const order = await Order.create({
+          saleId: sale.id,
+          product_id: item.productId as string | undefined,
+          productName: item.productName,
+          quantity: item.quantity,
+          sellingPrice: item.sellingPrice,
+          paymentStatus: paymentStatus || 'pending',
+        }, { transaction: t });
+
+        // Only update quantity if product exists in system
+        if (item.productId) {
+          const product = await Product.findByPk(item.productId, { transaction: t });
+          if (!product) {
+            throw new Error(`Product not found: ${item.productId}`);
+          }
+
+          if (product.quantity < item.quantity) {
+            throw new Error(`Insufficient stock for product: ${product.name}`);
+          }
+
+          // Update product quantity
+          await product.decrement('quantity', {
+            by: item.quantity,
+            transaction: t
+          });
+
+          // Update product status based on new quantity
+          const updatedProduct = await Product.findByPk(item.productId, { transaction: t });
+          if (updatedProduct) {
+            const newStatus = updatedProduct.quantity <= 0 ? 'out_of_stock' :
+                            updatedProduct.quantity <= (updatedProduct.reorderPoint ?? 10) ? 'low_stock' :
+                            updatedProduct.quantity <= (updatedProduct.reorderPoint ?? 10) * 2 ? 'medium_stock' :
+                            'high_stock';
+            
+            await updatedProduct.update({ 
+              status: newStatus as 'high_stock' | 'medium_stock' | 'low_stock' | 'out_of_stock'
+            }, { transaction: t });
+          }
+        }
+
+        return order;
+      });
+
+      await Promise.all(orderPromises);
+
+      // Record the sale in income
       const ohadaCode = await OhadaCode.findOne({
-        where: { code: '701' },
+        where: { code: '701' }, // Sales revenue code
         transaction: t
       });
 
@@ -87,101 +145,322 @@ export function registerOrderManagementHandlers() {
         throw new Error('Sales OHADA code not found');
       }
 
+      // Create income record for all sales, regardless of payment status
       await Income.create({
         date: new Date(),
         description: `Sales revenue - Order #${sale.id}`,
         amount: netAmount,
-        paymentMethod: paymentMethod,
+        paymentMethod,
         ohadaCodeId: ohadaCode.id,
-        shopId: shopId,
+        shopId,
+        saleId: sale.id
       }, { transaction: t });
 
-      // Create orders and update product quantities
-      for (const item of orderItems) {
-        // Create order
-        await Order.create({
-          saleId: sale.id,
-          product_id: item.productId,
-          quantity: item.quantity,
-          sellingPrice: item.sellingPrice,
-          paymentStatus: item.paymentStatus
+      // Generate appropriate document based on payment status
+      let documentData;
+      if (paymentStatus === 'paid') {
+        const receipt = await Receipt.create({
+          sale_id: sale.id,
+          amount: netAmount,
+          status: 'paid'
         }, { transaction: t });
 
-        // Update product quantity
-        await Product.decrement(
-          'quantity',
-          {
-            by: item.quantity,
-            where: { id: item.productId },
-            transaction: t
-          }
-        );
+        // Update sale with receipt reference
+        await sale.update({
+          receipt_id: receipt.id
+        }, { transaction: t });
 
-        // Update product status based on new quantity
-        const product = await Product.findByPk(item.productId, { transaction: t });
-        if (product) {
-          const newStatus = product.quantity <= 0 ? 'out_of_stock' :
-            product.quantity <= (product.reorderPoint || 0) ? 'low_stock' :
-              product.quantity <= ((product.reorderPoint || 0) * 2) ? 'medium_stock' :
-                'high_stock';
-          await product.update({ status: newStatus }, { transaction: t });
-        }
-      }
+        documentData = {
+          type: 'receipt',
+          id: receipt.id,
+          saleId: sale.id,
+          date: new Date(),
+          items: orderItems.map((item: OrderItem) => ({
+            name: item.productName,
+            quantity: item.quantity,
+            sellingPrice: item.sellingPrice
+          })),
+          customerName: customer?.name || 'Walk-in Customer',
+          customerPhone: customer?.phone || '',
+          subtotal: orderTotals.total,
+          discount: discount || 0,
+          deliveryFee: deliveryFee || 0,
+          total: netAmount,
+          amountPaid,
+          change: changeGiven,
+          paymentMethod,
+          salesPersonId
+        };
+      } else {
+        const invoice = await Invoice.create({
+          sale_id: sale.id,
+          amount: netAmount,
+          status: 'unpaid'
+        }, { transaction: t });
 
-      await t.commit();
-      return { success: true, sale };
-    } catch (error) {
-      await t.rollback();
-      return { success: false, error };
-    }
-  });
+        // Update sale with invoice reference
+        await sale.update({
+          invoice_id: invoice.id
+        }, { transaction: t });
 
-  // Get all sales with their orders
-  ipcMain.handle(IPC_CHANNELS.GET_SALES_WITH_ORDERS, async (event, {
-    shopId,
-    page = 1,
-    limit = 10,
-    status,
-    dateRange,
-  }) => {
-    try {
-      const where: any = { shopId };
-
-      if (status) where.status = status;
-      if (dateRange) {
-        where.createdAt = {
-          [Op.between]: [dateRange.start, dateRange.end]
+        documentData = {
+          type: 'invoice',
+          id: invoice.id,
+          saleId: sale.id,
+          date: new Date(),
+          items: orderItems.map((item: OrderItem) => ({
+            name: item.productName,
+            quantity: item.quantity,
+            sellingPrice: item.sellingPrice
+          })),
+          customerName: customer?.name || 'Walk-in Customer',
+          customerPhone: customer?.phone || '',
+          subtotal: orderTotals.total,
+          discount: discount || 0,
+          deliveryFee: deliveryFee || 0,
+          total: netAmount,
+          paymentMethod,
+          salesPersonId
         };
       }
 
-      const sales = await Sales.findAndCountAll({
-        where,
+      // Fetch the complete sale with all related data
+      const completeSale = await Sales.findOne({
+        where: { id: sale.id },
         include: [
           {
             model: Order,
             as: 'orders',
-            include: ['product']
+            include: [
+              {
+                model: Product,
+                as: 'product'
+              }
+            ]
+          }
+        ],
+        transaction: t
+      });
+
+      if (!completeSale) {
+        throw new Error('Failed to fetch sale data');
+      }
+
+      await t.commit();
+
+      return {
+        success: true,
+        sale: completeSale.get({ plain: true }),
+        document: documentData
+      };
+    } catch (error: unknown) {
+      await t.rollback();
+      console.error('Error creating sale:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Failed to create sale',
+        error 
+      };
+    }
+  });
+
+  // Get sales with orders based on user role and shop access
+  ipcMain.handle(IPC_CHANNELS.GET_SALES_WITH_ORDERS, async (event, { 
+    user,
+    shopId,
+    page = 1,
+    limit = 10,
+    startDate,
+    endDate,
+    status
+  }) => {
+    try {
+      const whereClause: any = {};
+      
+      // Handle shop ID based on user role
+      if (user.role === 'admin' || user.role === 'shop_owner') {
+        if (shopId) {
+          whereClause.shopId = shopId;
+        } else if (user.role === 'shop_owner') {
+          whereClause.shopId = {
+            [Op.in]: user.shops || []
+          };
+        }
+      } else {
+        whereClause.shopId = shopId;
+      }
+
+      if (startDate && endDate) {
+        whereClause.createdAt = {
+          [Op.between]: [new Date(startDate), new Date(endDate)]
+        };
+      }
+
+      if (status && status !== 'all') {
+        whereClause.deliveryStatus = status;
+      }
+
+      const offset = (page - 1) * limit;
+
+      const { rows: sales, count } = await Sales.findAndCountAll({
+        include: [
+          {
+            model: Customer,
+            as: 'customer',
+            attributes: ['id', 'first_name', 'last_name', 'phone_number']
           },
-          'customer'
+          {
+            model: Order,
+            as: 'orders',
+            attributes: ['id', 'quantity', 'productName', 'sellingPrice'],
+            include: [
+              {
+                model: Product,
+                as: 'product',
+                attributes: ['id', 'name', 'sellingPrice']
+              }
+            ]
+          }
         ],
         order: [['createdAt', 'DESC']],
         limit,
-        offset: (page - 1) * limit
+        offset,
+      });
+
+      // Sanitize the response
+      const sanitizedSales = sales.map(sale => {
+        const plainSale = sale.get({ plain: true });
+        return {
+          id: plainSale.id,
+          createdAt: plainSale.createdAt,
+          updatedAt: plainSale.updatedAt,
+          netAmount: plainSale.netAmount,
+          deliveryStatus: plainSale.deliveryStatus,
+          paymentStatus: plainSale.status,
+          paymentMethod: plainSale.paymentMethod,
+          customer: plainSale.customer ? {
+            id: plainSale.customer.id,
+            name: `${plainSale.customer.first_name} ${plainSale.customer.last_name}`,
+            phone: plainSale.customer.phone_number
+          } : null,
+          orders: plainSale.orders?.map((order: any) => ({
+            id: order.id,
+            quantity: order.quantity,
+            product: order.product ? {
+              id: order.product.id,
+              name: order.product.name,
+              price: order.product.sellingPrice
+            } : {
+              name: order.productName,
+              price: order.sellingPrice
+            }
+          })) || []
+        };
       });
 
       return {
         success: true,
-        sales: sales.rows,
-        total: sales.count,
-        pages: Math.ceil(sales.count / limit)
+        sales: sanitizedSales,
+        total: count,
+        currentPage: page,
+        pages: Math.ceil(count / limit)
       };
-    } catch (error) {
-      return { success: false, error };
+
+    } catch (error: unknown) {
+      console.error('Error fetching sales:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch sales',
+        sales: [],
+        total: 0,
+        currentPage: page,
+        pages: 0
+      };
     }
   });
 
-  // Get detailed sale information
-  ipcMain.handle(IPC_CHANNELS.GET_SALE_DETAILS, async (event, { saleId }) => {
+  // Get sale details with formatted receipt data
+  ipcMain.handle(IPC_CHANNELS.GET_SALE_DETAILS, async (event, { id }) => {
+    try {
+      if (!id) {
+        return { success: false, message: 'Sale ID is required' };
+      }
+
+      const sale = await Sales.findOne({
+        where: { id: id },
+        include: [
+          {
+            model: Order,
+            as: 'orders',
+            include: [{
+              model: Product,
+              as: 'product'
+            }]
+          },
+          {
+            model: Customer,
+            as: 'customer'
+          },
+          {
+            model: Receipt,
+            as: 'receipt'
+          },
+          {
+            model: Invoice,
+            as: 'invoice'
+          }
+        ]
+      });
+
+      if (!sale) {
+        console.error(`Sale not found with ID: ${id}`);
+        return { success: false, message: 'Sale not found' };
+      }
+
+      const plainSale = sale.get({ plain: true });
+      
+      // Format receipt data
+      const receiptData = {
+        saleId: plainSale.id,
+        receiptId: plainSale.receipt_id || plainSale.invoice_id || null,
+        customerName: plainSale.customer ? 
+          `${plainSale.customer.first_name} ${plainSale.customer.last_name}` : 
+          'Walk-in Customer',
+        customerPhone: plainSale.customer?.phone_number || '',
+        items: plainSale.orders?.map((order: any) => ({
+          name: order.product ? order.product.name : order.productName,
+          quantity: order.quantity,
+          sellingPrice: order.sellingPrice
+        })) || [],
+        subtotal: plainSale.netAmount + (plainSale.discount || 0) - (plainSale.deliveryFee || 0),
+        discount: plainSale.discount || 0,
+        deliveryFee: plainSale.deliveryFee || 0,
+        total: plainSale.netAmount,
+        amountPaid: plainSale.amountPaid || 0,
+        change: plainSale.changeGiven || 0,
+        date: plainSale.createdAt,
+        paymentMethod: plainSale.paymentMethod,
+        salesPersonId: plainSale.salesPersonId
+      };
+
+      return {
+        success: true,
+        data: {
+          sale: plainSale,
+          receiptData
+        }
+      };
+    } catch (error: any) {
+      console.error('Error fetching sale details:', error);
+      return { 
+        success: false, 
+        message: error.message || 'Failed to fetch sale details'
+      };
+    }
+  });
+
+  // Update sale status
+  ipcMain.handle(IPC_CHANNELS.UPDATE_SALE_STATUS, async (event, { saleId, status, type }) => {
     try {
       const sale = await Sales.findByPk(saleId, {
         include: [
@@ -200,46 +479,78 @@ export function registerOrderManagementHandlers() {
         return { success: false, message: 'Sale not found' };
       }
 
-      return { success: true, sale };
-    } catch (error) {
-      return { success: false, error };
-    }
-  });
-
-  // Update sale status
-  ipcMain.handle(IPC_CHANNELS.UPDATE_SALE_STATUS, async (event, {
-    saleId,
-    deliveryStatus,
-    paymentStatus
-  }) => {
-    const t = await sequelize.transaction();
-
-    try {
-      const sale = await Sales.findByPk(saleId);
-      if (!sale) {
-        return { success: false, message: 'Sale not found' };
+      // Update the appropriate status
+      if (type === 'payment') {
+        await sale.update({ status });
+      } else if (type === 'delivery') {
+        await sale.update({ deliveryStatus: status });
       }
 
-      await sale.update({
-        deliveryStatus,
-        status: paymentStatus === 'paid' ? 'completed' : 'pending'
-      }, { transaction: t });
+      const plainSale = sale.get({ plain: true });
+      
+      // Format receipt data
+      const receiptData = {
+        saleId: plainSale.id,
+        receiptId: plainSale.receipt_id || plainSale.invoice_id,
+        customerName: plainSale.customer ? 
+          `${plainSale.customer.first_name} ${plainSale.customer.last_name}` : 
+          'Walk-in Customer',
+        customerPhone: plainSale.customer?.phone_number || '',
+        items: plainSale.orders?.map((order: any) => ({
+          name: order.product ? order.product.name : order.productName,
+          quantity: order.quantity,
+          sellingPrice: order.sellingPrice
+        })) || [],
+        subtotal: plainSale.netAmount + plainSale.discount - plainSale.deliveryFee,
+        discount: plainSale.discount,
+        deliveryFee: plainSale.deliveryFee,
+        total: plainSale.netAmount,
+        amountPaid: plainSale.amountPaid,
+        change: plainSale.changeGiven,
+        date: plainSale.createdAt,
+        paymentMethod: plainSale.paymentMethod,
+        salesPersonId: plainSale.salesPersonId
+      };
 
-      if (paymentStatus) {
-        await Order.update(
-          { paymentStatus },
-          {
-            where: { saleId },
-            transaction: t
+      // Sanitize the response
+      const sanitizedSale = {
+        id: plainSale.id,
+        createdAt: plainSale.createdAt,
+        updatedAt: plainSale.updatedAt,
+        netAmount: plainSale.netAmount,
+        deliveryStatus: plainSale.deliveryStatus,
+        paymentStatus: plainSale.status,
+        paymentMethod: plainSale.paymentMethod,
+        customer: plainSale.customer ? {
+          id: plainSale.customer.id,
+          name: `${plainSale.customer.first_name} ${plainSale.customer.last_name}`,
+          phone: plainSale.customer.phone_number
+        } : null,
+        orders: plainSale.orders?.map((order: any) => ({
+          id: order.id,
+          quantity: order.quantity,
+          product: order.product ? {
+            id: order.product.id,
+            name: order.product.name,
+            price: order.product.sellingPrice
+          } : {
+            name: order.productName,
+            price: order.sellingPrice
           }
-        );
-      }
+        }))
+      };
 
-      await t.commit();
-      return { success: true, sale };
-    } catch (error) {
-      await t.rollback();
-      return { success: false, error };
+      return {
+        success: true,
+        sale: sanitizedSale,
+        receiptData
+      };
+    } catch (error: unknown) {
+      console.error('Error updating sale status:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update sale status'
+      };
     }
   });
 }
