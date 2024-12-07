@@ -131,7 +131,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         });
 
         setTimeout(() => {
-          if (!response.isSetupComplete && response?.user?.role === 'shop_owner') {
+          if (!response.isSetupComplete) {
             router.push('/account-setup');
           } else {
             router.push('/dashboard');
@@ -158,37 +158,16 @@ export function AuthLayout({ children }: AuthLayoutProps) {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      const response = await safeIpcInvoke<LogoutResponse>('auth:logout', {}, { 
-        success: false 
-      });
-
-      if (response?.success) {
-        setUser(null);
-        setBusiness(null);
-        setIsAuthenticated(false);
-        localStorage.removeItem('currentShopId');
-        router.push('/auth/login');
-        toast({
-          title: "Success",
-          description: "Logged out successfully",
-        });
-      } else {
-        toast({
-          title: "Error",
-          description: response?.message || "Failed to logout",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-      toast({
-        title: "Error",
-        description: "Failed to logout",
-        variant: "destructive",
-      });
-    }
+  const handleLogout = () => {
+    setUser(null);
+    setBusiness(null);
+    setIsAuthenticated(false);
+    localStorage.clear();
+    router.push('/auth/login');
+    toast({
+      title: "Success",
+      description: "Logged out successfully",
+    });
   };
 
   const updateUser = async (userData: Partial<User>) => {

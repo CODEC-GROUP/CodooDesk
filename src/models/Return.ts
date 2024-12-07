@@ -18,6 +18,11 @@ export interface ReturnAttributes {
   paymentMethod: string;
   status: 'pending' | 'completed';
   date: Date;
+  product?: Product;
+  order?: Order;
+  shop?: Shop;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 class Return extends Model<ReturnAttributes> implements ReturnAttributes {
@@ -34,6 +39,12 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
   public paymentMethod!: string;
   public status!: 'pending' | 'completed';
   public date!: Date;
+  public product?: Product;
+  public order?: Order;
+  public shop?: Shop;
+
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
 
   static initModel(sequelize: Sequelize): typeof Return {
     return this.init(
@@ -111,20 +122,18 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
     );
   }
 
-  static associate() {
-    this.belongsTo(Order, {
-      foreignKey: 'orderId',
-      as: 'order',
-    });
-
-    this.belongsTo(Product, {
+  static associate(models: any) {
+    this.belongsTo(models.Product, {
       foreignKey: 'productId',
-      as: 'product',
+      as: 'product'
     });
-
-    this.belongsTo(Shop, {
+    this.belongsTo(models.Order, {
+      foreignKey: 'orderId',
+      as: 'order'
+    });
+    this.belongsTo(models.Shop, {
       foreignKey: 'shopId',
-      as: 'shop',
+      as: 'shop'
     });
   }
 }

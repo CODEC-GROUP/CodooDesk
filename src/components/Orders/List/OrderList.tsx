@@ -278,7 +278,10 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   return (
     <div className="container mx-auto p-6">
       {sales.length === 0 && !loading ? (
-        <EmptyState onStartSelling={() => {}} />
+        <EmptyState 
+          type="order"
+          onAddOrder={onAddOrder}
+        />
       ) : (
         <>
           <Card>
@@ -373,7 +376,7 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                             {sale.deliveryStatus}
                           </span>
                         </TableCell>
-                        <TableCell>{formatCurrency(sale.netAmount)}</TableCell>
+                        <TableCell>{formatCurrency(sale.netAmount).toLocaleString()} FCFA</TableCell>
                         <TableCell>
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold
                             ${sale.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 

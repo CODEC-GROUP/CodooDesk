@@ -7,12 +7,12 @@ import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
 
 export default function HomePage() {
   const router = useRouter()
-  const { isAuthenticated, checkSetupStatus } = useAuthLayout()
+  const { isAuthenticated, checkSetupStatus, user } = useAuthLayout()
 
   useEffect(() => {
     const checkAuthAndSetup = async () => {
       try {
-        if (!isAuthenticated) {
+        if (!isAuthenticated || !user) {
           router.push('/auth/login')
           return
         }
@@ -27,7 +27,7 @@ export default function HomePage() {
     }
 
     checkAuthAndSetup()
-  }, [router, checkSetupStatus, isAuthenticated])
+  }, [router, checkSetupStatus, isAuthenticated, user])
 
   // Show setup page only if authenticated and setup not complete
   // Otherwise, the useEffect will handle redirection

@@ -9,15 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Label } from "@/components/Shared/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
-import { 
-  Search, 
-  Plus, 
-  Pen as PenIcon, 
-  Trash2 as TrashIcon, 
-  ArrowLeft, 
-  ArrowRight, 
-  Eye, 
-  FileDown 
+import {
+  Search,
+  Plus,
+  Pen as PenIcon,
+  Trash2 as TrashIcon,
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  FileDown
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
 import { DeleteConfirmationModal } from '@/components/Shared/ui/Modal/delete-confrimation-modal'
@@ -28,7 +28,7 @@ import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import { EmptyState } from './Empty/EmptyState'
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout';
-import { SalesAttributes as Sale} from "@/models/Sales"
+import { SalesAttributes as Sale } from "@/models/Sales"
 // Update Return type
 interface ReturnedItem {
   id: string;
@@ -107,6 +107,7 @@ interface SaleDetailsResponse {
 }
 
 const Returns = () => {
+  const { user, business } = useAuthLayout();
   const [returns, setReturns] = useState<Return[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
@@ -126,7 +127,7 @@ const Returns = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const itemsPerPage = 10;
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [suggestions, setSuggestions] = useState<OrderSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -136,6 +137,13 @@ const Returns = () => {
 
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
+
+  useEffect(() => {
+    console.log('Auth data changed:', { user, business });
+    if (user && business) {
+      fetchReturns();
+    }
+  }, [user, business, currentPage, filterValue]);
 
   useEffect(() => {
     setCurrentPage(1)
@@ -164,13 +172,13 @@ const Returns = () => {
   }, []);
 
   const filteredReturns = returns.filter(returnItem => {
-    const matchesSearch = 
+    const matchesSearch =
       returnItem.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       returnItem.customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       returnItem.items[0].reason.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesFilter = 
-      filterValue === "all" || 
+
+    const matchesFilter =
+      filterValue === "all" ||
       returnItem.status.toLowerCase() === filterValue.toLowerCase()
 
     return matchesSearch && matchesFilter
@@ -196,14 +204,34 @@ const Returns = () => {
   const fetchReturns = async () => {
     try {
       setIsLoading(true);
-      const userRole = localStorage.getItem('userRole') || '';
-      const shopId = localStorage.getItem('shopId') || '';
-      
-      const response = await safeIpcInvoke<ReturnResponse>('entities:return:get-all', 
-        { 
-          userRole,
-          shopId
-        }, 
+      console.log('Starting fetchReturns...', { user, business });
+      if (!user) {
+        console.error('No user found');
+        toast({
+          title: "Error",
+          description: "User not authenticated",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const shopIds = business?.shops?.map(shop => shop.id) || [];
+      if (shopIds.length === 0) {
+        console.error('No shops found');
+        toast({
+          title: "Error",
+          description: "No shops available",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await safeIpcInvoke<ReturnResponse>('entities:return:get-all',
+        {
+          userRole: user.role,
+          shopIds,
+          shopId: shopIds[0]
+        },
         {
           success: false,
           returns: []
@@ -230,10 +258,6 @@ const Returns = () => {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchReturns();
-  }, []);
 
   const handleApproveReturn = async (returnId: string) => {
     try {
@@ -335,7 +359,7 @@ const Returns = () => {
   const handleAddReturn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    
+
     if (!sale || !selectedProduct || !returnQuantity) {
       toast({
         title: "Error",
@@ -369,7 +393,7 @@ const Returns = () => {
 
       setIsProcessing(true);
       const response = await safeIpcInvoke<ReturnActionResponse>('entities:return:create', { returnData }, { success: false });
-      
+
       if (response?.success && response.return) {
         toast({
           title: "Success",
@@ -438,7 +462,7 @@ const Returns = () => {
   }
 
   const handleEditSave = (updatedReturn: Return) => {
-    setReturns(returns.map(returnItem => 
+    setReturns(returns.map(returnItem =>
       returnItem.id === updatedReturn.id ? updatedReturn : returnItem
     ))
     setEditingReturn(null)
@@ -464,7 +488,7 @@ const Returns = () => {
 
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedReturns(filteredReturns.map(item => item.id));
@@ -477,11 +501,11 @@ const Returns = () => {
     setSearchTerm(value);
     if (value.length >= 2) {
       try {
-        const result = await safeIpcInvoke<ReturnResponse>('entities:order:search', { 
+        const result = await safeIpcInvoke<ReturnResponse>('entities:order:search', {
           searchTerm: value,
           shopId: localStorage.getItem('shopId') || ''
         });
-        
+
         if (result?.success && result.suggestions) {
           setSuggestions(result.suggestions);
           setShowSuggestions(true);
@@ -502,7 +526,7 @@ const Returns = () => {
 
   const handleSuggestionClick = async (suggestion: OrderSuggestion) => {
     try {
-      const response = await safeIpcInvoke<SaleDetailsResponse>('entities:order:get-details', { 
+      const response = await safeIpcInvoke<SaleDetailsResponse>('entities:order:get-details', {
         orderId: suggestion.id,
       });
 
@@ -510,7 +534,7 @@ const Returns = () => {
         const order: Order = {
           id: response.sale?.id || '',
           customerName: response.sale?.customer?.first_name || 'Walking Customer',
-          date: response.sale?.createdAt?.toISOString() || '', 
+          date: response.sale?.createdAt?.toISOString() || '',
           total: response.sale?.netAmount || 0,
           product: response.sale?.orders?.[0] ? {
             id: response.sale?.orders?.[0]?.product?.id || '',
@@ -519,16 +543,16 @@ const Returns = () => {
             quantity: response.sale?.orders?.[0]?.quantity || 0,
             total: (response.sale?.orders?.[0]?.quantity || 0) * (response.sale?.orders?.[0]?.sellingPrice || 0),
             product_id: response.sale?.orders?.[0]?.product?.id || ''
-          } : { 
-            id: '', 
-            name: '', 
-            price: 0, 
-            quantity: 0, 
-            total: 0, 
-            product_id: '' 
+          } : {
+            id: '',
+            name: '',
+            price: 0,
+            quantity: 0,
+            total: 0,
+            product_id: ''
           },
         };
-        
+
         setSelectedOrder(order);
         setSelectedProduct(null);
         setReturnQuantity(0);
@@ -554,7 +578,9 @@ const Returns = () => {
   return (
     <div className="container mx-auto p-6">
       {returns.length === 0 && !isLoading ? (
-        <EmptyState onCreateReturn={() => {}} />
+        <EmptyState
+          onCreateReturn={() => setIsAddReturnOpen(true)}
+        />
       ) : (
         <>
           <Tabs defaultValue="returns" className="w-full space-y-6">
@@ -664,7 +690,7 @@ const Returns = () => {
                             <TableCell>
                               {returnItem.items[0].productName} (x{returnItem.items[0].quantity})
                             </TableCell>
-                            <TableCell>{returnItem.total.toLocaleString()} XAF</TableCell>
+                            <TableCell>{returnItem.total.toLocaleString()} FCFA</TableCell>
                             <TableCell>
                               <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(returnItem.status)}`}>
                                 {returnItem.status}
@@ -701,10 +727,10 @@ const Returns = () => {
 
                   {/* Pagination */}
                   <div className="mt-4">
-                    <Pagination 
-                      currentPage={currentPage} 
-                      totalPages={Math.ceil(filteredReturns.length / itemsPerPage)} 
-                      onPageChange={setCurrentPage} 
+                    <Pagination
+                      currentPage={currentPage}
+                      totalPages={Math.ceil(filteredReturns.length / itemsPerPage)}
+                      onPageChange={setCurrentPage}
                     />
                   </div>
                 </CardContent>
@@ -768,7 +794,7 @@ const Returns = () => {
                           <TableBody>
                             <TableRow>
                               <TableCell>
-                                <input 
+                                <input
                                   type="radio"
                                   checked={selectedProduct?.id === selectedOrder.product.id}
                                   onChange={() => setSelectedProduct(selectedOrder.product)}
@@ -778,7 +804,7 @@ const Returns = () => {
                               <TableCell>{selectedOrder.product.price} XAF</TableCell>
                               <TableCell>{selectedOrder.product.quantity}</TableCell>
                               <TableCell>
-                                <Input 
+                                <Input
                                   type="number"
                                   min="1"
                                   max={selectedOrder.product.quantity}
@@ -814,7 +840,7 @@ const Returns = () => {
 
                       <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="description" className="text-right">Description</Label>
-                        <Textarea 
+                        <Textarea
                           className="col-span-3"
                           placeholder="Additional details about the return..."
                         />
@@ -900,7 +926,7 @@ const Returns = () => {
                     <div className="col-span-2">
                       <Label>Products</Label>
                       <ul>
-                        {sale?.orders?.map((order:any) => (
+                        {sale?.orders?.map((order: any) => (
                           <li key={order.product.id}>
                             <p className="font-medium">{order.product.name}</p>
                             <p className="text-sm text-gray-500">Quantity: {order.quantity}</p>

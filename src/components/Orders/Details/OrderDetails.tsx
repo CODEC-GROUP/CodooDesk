@@ -339,18 +339,34 @@ const OrderDetails = ({ orderId, onBack }: OrderDetailsProps) => {
                 <TableRow key={item.id}>
                   <TableCell>{item.productName}</TableCell>
                   <TableCell className="text-right">{item.quantity}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(item.sellingPrice)}</TableCell>
+                  <TableCell className="text-right">{item.unitPrice.toLocaleString()} FCFA</TableCell>
                   <TableCell className="text-right">
-                    {formatCurrency(item.quantity * item.sellingPrice)}
+                    {(item.quantity * item.unitPrice).toLocaleString()} FCFA
                   </TableCell>
                 </TableRow>
               ))}
               <TableRow>
                 <TableCell colSpan={3} className="text-right font-medium">
+                  Subtotal
+                </TableCell>
+                <TableCell className="text-right font-bold">
+                  {order.netAmount.toLocaleString()} FCFA
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell colSpan={3} className="text-right font-medium">
+                  Tax
+                </TableCell>
+                <TableCell className="text-right font-bold">
+                  {order.tax.toLocaleString()} FCFA
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell colSpan={3} className="text-right font-medium">
                   Total
                 </TableCell>
                 <TableCell className="text-right font-bold">
-                  {formatCurrency(order.netAmount)}
+                  {order.total.toLocaleString()} FCFA
                 </TableCell>
               </TableRow>
             </TableBody>

@@ -111,7 +111,7 @@ export function FinancialReports() {
       <div className="grid gap-6 mb-8 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total Revenue"
-          value={`${financialData.totalRevenue.toLocaleString()} XAF`}
+          value={`${financialData.totalRevenue.toLocaleString()} FCFA`}
           icon={DollarSign}
           color="bg-blue-100"
           trend="up"
@@ -130,7 +130,7 @@ export function FinancialReports() {
         />
         <StatCard
           title="Total expenses"
-          value={`${financialData.totalExpenses.toLocaleString()} XAF`}
+          value={`${financialData.totalExpenses.toLocaleString()} FCFA`}
           icon={CreditCard}
           color="bg-purple-100"
           trend="down"
@@ -213,7 +213,7 @@ export function FinancialReports() {
                   <TableRow key={transaction.id}>
                     <TableCell>{transaction.date}</TableCell>
                     <TableCell>{transaction.description}</TableCell>
-                    <TableCell>{transaction.amount.toLocaleString()} XAF</TableCell>
+                    <TableCell>{transaction.amount.toLocaleString()} FCFA</TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                         transaction.type === 'income' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'

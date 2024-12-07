@@ -25,6 +25,12 @@ interface DeleteCategoryResult {
   message?: string;
 }
 
+interface GetCategoriesResult {
+  success: boolean;
+  categories?: Category[];
+  message?: string;
+}
+
 const Categories = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,33 +43,48 @@ const Categories = () => {
 
   useEffect(() => {
     const init = async () => {
-      const isSetup = await checkSetupStatus();
-      if (isSetup && business?.id) {
-        loadCategories();
-      } else {
-        setError('Business setup incomplete');
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        const isSetup = await checkSetupStatus();
+        if (!isSetup) {
+          setError('Business setup incomplete');
+          return;
+        }
+        
+        if (!business?.id) {
+          setError('Business information not found');
+          return;
+        }
+        
+        await loadCategories();
+      } catch (err) {
+        console.error('Initialization error:', err);
+        setError('Failed to initialize categories');
+      } finally {
+        setIsLoading(false);
       }
     };
+    
     init();
   }, [business?.id, checkSetupStatus]);
 
   const loadCategories = async () => {
     try {
+      setError(null);
       const result = await safeIpcInvoke('inventory:category:get-all', {
         businessId: business?.id
-      }, { success: false, categories: [] });
+      }, { success: false, categories: [] } as GetCategoriesResult);
 
       if (result?.success) {
-        setCategories(result.categories);
-      } else if (result) {
-        setError('Failed to load data');
+        setCategories(result.categories || []);
       } else {
-        setError('Failed to load data');
+        setError(result?.message || 'Failed to load categories');
       }
     } catch (err) {
+      console.error('Load categories error:', err);
       setError('Failed to load categories');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -246,45 +267,77 @@ const Categories = () => {
           </DialogContent>
         </Dialog>
       </div>
-      <div className="bg-white p-6 rounded-lg shadow">
-        <div className="flex justify-between items-center mb-4">
-          <div className="relative w-64">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
-            <Input
-              type="text"
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8"
-            />
+      
+      {isLoading ? (
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <p className="font-medium">Error:</p>
+          <p className="text-sm">{error}</p>
+          <Button 
+            variant="outline" 
+            className="mt-2"
+            onClick={() => {
+              setError(null);
+              loadCategories();
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="flex justify-between items-center mb-4">
+            <div className="relative w-64">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
+              <Input
+                type="text"
+                placeholder="Search..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8"
+              />
+            </div>
           </div>
+          
+          {filteredCategories.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-500 mb-4">No categories found</p>
+              <Button onClick={() => setIsAddCategoryOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Add Your First Category
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {filteredCategories.map((category) => (
+                <Card key={category.id}>
+                  <CardContent className="p-4">
+                    <Image 
+                      src={typeof category.image === 'string' ? category.image : "/placeholder.svg?height=100&width=100"} 
+                      alt={category.name} 
+                      width={100}
+                      height={100}
+                      className="w-full h-40 object-cover mb-2 rounded" 
+                    />
+                    <h3 className="font-semibold text-lg">{category.name}</h3>
+                    <p className="text-sm text-gray-500">{category.itemCount} items</p>
+                    <div className="flex justify-end mt-2">
+                      <Button variant="ghost" size="icon" onClick={() => handleEditCategory(category)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteCategory(category.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {filteredCategories.map((category) => (
-            <Card key={category.id}>
-              <CardContent className="p-4">
-                <Image 
-                  src={typeof category.image === 'string' ? category.image : "/placeholder.svg?height=100&width=100"} 
-                  alt={category.name} 
-                  width={100}
-                  height={100}
-                  className="w-full h-40 object-cover mb-2 rounded" 
-                />
-                <h3 className="font-semibold text-lg">{category.name}</h3>
-                <p className="text-sm text-gray-500">{category.itemCount} items</p>
-                <div className="flex justify-end mt-2">
-                  <Button variant="ghost" size="icon" onClick={() => handleEditCategory(category)}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDeleteCategory(category.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   )
 }

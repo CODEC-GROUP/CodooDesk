@@ -395,7 +395,7 @@ export function AddProduct({ onBack }: AddProductProps) {
               <h2 className="text-lg font-semibold mb-4 text-gray-800">Price/Type</h2>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="purchasePrice" className="text-sm font-medium text-gray-700">Purchase Price</Label>
+                  <Label htmlFor="purchasePrice" className="text-sm font-medium text-gray-700">Purchase Price (FCFA)</Label>
                   <Input 
                     id="purchasePrice" 
                     type="number"
@@ -407,7 +407,7 @@ export function AddProduct({ onBack }: AddProductProps) {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="sellingPrice" className="text-sm font-medium text-gray-700">Selling Price</Label>
+                  <Label htmlFor="sellingPrice" className="text-sm font-medium text-gray-700">Selling Price (FCFA)</Label>
                   <Input 
                     id="sellingPrice" 
                     type="number"

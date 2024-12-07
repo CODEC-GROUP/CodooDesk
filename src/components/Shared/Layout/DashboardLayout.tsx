@@ -27,6 +27,7 @@ import {
   Menu,
   ChevronDown,
   HandCoins,
+  LogOut,
 } from 'lucide-react'
 import { useAuthLayout } from './AuthLayout'
 
@@ -51,25 +52,20 @@ const navigationItems = [
   },
   { name: 'POS', href: '/pos', icon: Monitor },
   { name: 'Customers', href: '/customers', icon: Users },
-  { name: 'Shops', href: '/shops', icon: Home },
-  { name: 'Warehouse', href: '/warehouse/dashboard', icon: Package,
-    subItems: [ 
-      // { name: 'Dashboard', href: '/warehouse/dashboard' },
-      { name: 'Warehouses', href: '/warehouse/warehouses' },
-      // { name: 'Purchase History', href: '/warehouse/purchase-history' },
-    ],
+  { name: 'Shops', href: '/shops', icon: Home, requiredRoles: ['admin', 'shop_owner'] },
+  { 
+    name: 'Employees', 
+    href: '/employees', 
+    icon: UserCheck,
+    requiredRoles: ['admin', 'shop_owner']
   },
-  // { name: 'Subscriptions', href: '/subscriptions', icon: CreditCard },
-  { name: 'Employees', href: '/employees', icon: UserCheck },
   {
     name: 'Finance',
     icon: HandCoins,
+    requiredRoles: ['admin', 'shop_owner'],
     subItems: [
-      // {name: 'Treasury', href: '/reports/treasury'},
       { name: 'Income', href: '/reports/income' },
       { name: 'Expenses', href: '/reports/expenses' },
-      { name: 'Financial Performance', href: '/reports/performance' },
-      
     ],
   },
 ]
@@ -80,11 +76,18 @@ const settingsItems = [
 ]
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, business } = useAuthLayout()
+  const { user, business, logout } = useAuthLayout()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [openDropdowns, setOpenDropdowns] = useState<{ [key: string]: boolean }>({})
   const [isMobile, setIsMobile] = useState(false)
+
+  const filteredNavigationItems = navigationItems.filter(item => {
+    if (item.requiredRoles) {
+      return item.requiredRoles.includes(user?.role || '')
+    }
+    return true
+  })
 
   useEffect(() => {
     const checkMobile = () => {
@@ -164,7 +167,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="flex-1 overflow-y-auto py-4">
           <ul className="space-y-1 px-3">
-            {navigationItems.map((item) => (
+            {filteredNavigationItems.map((item) => (
               <li key={item.name}>
                 {item.subItems ? (
                   <div>
@@ -230,28 +233,33 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <h3 className={cn("px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider", !sidebarOpen && "text-center")}>
               {sidebarOpen ? "Settings" : "..."}
             </h3>
-            <ul className="mt-3 space-y-1 px-3">
+            <div className="space-y-1">
               {settingsItems.map((item) => (
-                <li key={item.name}>
-                  <a
-                    href={item.href}
-                    className={cn(
-                      "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      pathname === item.href
-                        ? "bg-blue-600 text-white"
-                        : "text-gray-700 hover:bg-gray-100"
-                    )}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      handleNavigation(item.href)
-                    }}
-                  >
-                    <item.icon className={cn("h-5 w-5 flex-shrink-0", sidebarOpen ? "mr-3" : "mx-auto")} />
-                    {sidebarOpen && <span>{item.name}</span>}
-                  </a>
-                </li>
+                <Button
+                  key={item.name}
+                  variant={pathname === item.href ? 'secondary' : 'ghost'}
+                  className={cn(
+                    'w-full justify-start',
+                    !sidebarOpen && 'justify-center px-2'
+                  )}
+                  onClick={() => window.location.href = item.href}
+                >
+                  <item.icon className={cn('h-5 w-5', !sidebarOpen && 'mr-0')} />
+                  {sidebarOpen && <span className="ml-2">{item.name}</span>}
+                </Button>
               ))}
-            </ul>
+              <Button
+                variant="ghost"
+                className={cn(
+                  'w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100',
+                  !sidebarOpen && 'justify-center px-2'
+                )}
+                onClick={logout}
+              >
+                <LogOut className={cn('h-5 w-5', !sidebarOpen && 'mr-0')} />
+                {sidebarOpen && <span className="ml-2">Logout</span>}
+              </Button>
+            </div>
           </div>
         </nav>
         {!isMobile && (

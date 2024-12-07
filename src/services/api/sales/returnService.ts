@@ -6,7 +6,6 @@ import Product from '../../../models/Product.js';
 import Sales from '../../../models/Sales.js';
 import Order from '../../../models/Order.js';
 import Customer from '../../../models/Customer.js';
-import ReturnItem from '../../../models/ReturnItem.js';
 
 const IPC_CHANNELS = {
   CREATE_RETURN: 'entities:return:create',
@@ -84,59 +83,60 @@ export function registerReturnHandlers() {
     try {
       const { saleId, items, total, customer, shopId } = returnData;
       
-      // Create the return record
-      const returnRecord = await Return.create({
-        orderId: saleId,
-        shopId: shopId,
-        amount: total,
-        status: 'pending',
-        customerFirstName: customer.name,
-        customerLastName: '',
-        productId: items[0].productId,
-        quantity: items.reduce((sum, item) => sum + item.quantity, 0),
-        reason: 'Customer Return',
-        paymentMethod: 'refund',
-        date: new Date()
-      }, { transaction: t });
-
-      // Create return items with their respective order IDs
+      // Create individual returns for each item
       for (const item of items) {
-        await ReturnItem.create({
-          return_id: returnRecord.id,
-          order_id: item.orderId, // Add order ID for each item
-          product_id: item.productId,
-          product_name: item.productName,
+        // Create the return record
+        await Return.create({
+          orderId: item.orderId,
+          productId: item.productId,
+          customerFirstName: customer.name,
+          customerLastName: '',
           quantity: item.quantity,
-          price: item.price,
-          reason: item.reason
+          amount: item.price * item.quantity,
+          reason: item.reason || 'Customer Return',
+          paymentMethod: 'refund',
+          status: 'pending',
+          date: new Date()
+        }, { transaction: t });
+
+        // Update the corresponding order's quantity and payment status
+        const order = await Order.findOne({
+          where: { id: item.orderId },
+          transaction: t
+        });
+
+        if (order) {
+          const updatedQuantity = order.quantity - item.quantity;
+          await order.update({
+            quantity: updatedQuantity,
+            paymentStatus: updatedQuantity === 0 ? 'refunded' : 'paid'
+          }, { transaction: t });
+        }
+
+        // Update product stock quantity
+        if (item.productId) {
+          const product = await Product.findByPk(item.productId, { transaction: t });
+          if (product) {
+            await product.update({
+              quantity: product.quantity + item.quantity
+            }, { transaction: t });
+          }
+        }
+      }
+
+      // Update the sale's net amount
+      const sale = await Sales.findByPk(saleId, { transaction: t });
+      if (sale) {
+        const newNetAmount = sale.netAmount - total;
+        await sale.update({
+          netAmount: newNetAmount,
+          status: newNetAmount === 0 ? 'cancelled' : 'completed'
         }, { transaction: t });
       }
 
       await t.commit();
 
-      // Format the response
-      return { 
-        success: true, 
-        return: {
-          id: returnRecord.id,
-          orderId: saleId,
-          items: items.map(item => ({
-            orderId: item.orderId,
-            productId: item.productId,
-            productName: item.productName,
-            quantity: item.quantity,
-            price: item.price,
-            reason: item.reason
-          })),
-          total: total,
-          status: 'pending',
-          createdAt: returnRecord.created_at,
-          customer: {
-            id: customer.id,
-            name: customer.name
-          }
-        }
-      };
+      return { success: true, message: 'Returns processed successfully' };
     } catch (error) {
       await t.rollback();
       console.error('Error creating return:', error);
@@ -183,33 +183,22 @@ export function registerReturnHandlers() {
   });
 
   // Get all returns handler
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_RETURNS, async (event, { userRole, shopId }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_RETURNS, async (event, { userRole, shopId, shopIds }) => {
     try {
-      let whereClause = {};
-      
-      // If not admin or shop_owner, restrict to specific shop
-      if (userRole !== 'admin' && userRole !== 'shop_owner') {
-        if (!shopId) {
-          return { 
-            success: false, 
-            message: 'Shop ID is required for non-admin users' 
-          };
-        }
-        whereClause = { shopId };
-      }
+      const whereClause = {
+        ...(userRole === 'admin' || userRole === 'shop_owner' 
+          ? { shopId: { [Op.in]: shopIds } }
+          : { shopId: shopId }
+        )
+      };
 
       const returns = await Return.findAll({
         where: whereClause,
         include: [
           {
-            model: Order,
-            attributes: ['id', 'product_id', 'productName', 'quantity', 'sellingPrice'],
-            include: [
-              {
-                model: Product,
-                attributes: ['id', 'name', 'quantity', 'sellingPrice']
-              }
-            ]
+            model: Product,
+            as: 'product',
+            attributes: ['name']
           }
         ],
         order: [['createdAt', 'DESC']]
@@ -217,25 +206,7 @@ export function registerReturnHandlers() {
 
       return {
         success: true,
-        returns: returns.map(ret => ({
-          id: ret.id,
-          orderId: ret.orderId,
-          items: [{
-            id: ret.id,
-            productId: ret.productId,
-            productName: ret.product?.name || '',
-            quantity: ret.quantity,
-            price: ret.amount / ret.quantity,
-            reason: ret.reason
-          }],
-          total: ret.amount,
-          status: ret.status,
-          createdAt: ret.createdAt,
-          customer: {
-            id: ret.customerId || '',
-            name: `${ret.customerFirstName} ${ret.customerLastName}`
-          }
-        }))
+        returns
       };
     } catch (error) {
       console.error('Error fetching returns:', error);

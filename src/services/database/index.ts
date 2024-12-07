@@ -19,9 +19,10 @@ const sequelize = new Sequelize({
 
 const models = initializeModels(sequelize);
 
-
-
-
+/**
+ * Initializes the database connection and syncs the models.
+ * @returns {Promise<boolean>} True if the database was initialized successfully, false otherwise.
+ */
 export async function initDatabase(): Promise<boolean> {
   try {
     await sequelize.authenticate();
@@ -31,6 +32,7 @@ export async function initDatabase(): Promise<boolean> {
     await sequelize.sync({alter: true});
     
 
+    
     return true;
   } catch (error) {
     console.error('Unable to connect to the database:', error);

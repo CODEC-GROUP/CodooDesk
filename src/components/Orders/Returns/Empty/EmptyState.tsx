@@ -2,10 +2,9 @@
 
 import { Button } from "@/components/Shared/ui/button"
 import { RotateCcw, PackageX } from 'lucide-react'
-import Link from 'next/link'
 
 interface EmptyStateProps {
-  onCreateReturn?: () => void;
+  onCreateReturn: () => void;
 }
 
 export function EmptyState({ onCreateReturn }: EmptyStateProps) {
@@ -20,14 +19,12 @@ export function EmptyState({ onCreateReturn }: EmptyStateProps) {
         Track and manage your product returns here.
         All processed returns will be listed in this section.
       </p>
-      <Link href="/orders">
-        <Button 
-          onClick={onCreateReturn}
-          className="bg-[#1A7DC0] text-white shadow-lg hover:bg-[#1A7DC0]/90 px-8 py-6 text-lg h-auto"
-        >
-          Process a Return
-        </Button>
-      </Link>
+      <Button 
+        onClick={onCreateReturn}
+        className="bg-[#1A7DC0] text-white shadow-lg hover:bg-[#1A7DC0]/90 px-8 py-6 text-lg h-auto"
+      >
+        Process a Return
+      </Button>
     </div>
   )
 }

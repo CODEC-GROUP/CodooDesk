@@ -420,8 +420,8 @@ const Suppliers = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Phone</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Phone</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Total Items</TableHead>
                 <TableHead>Total Sales</TableHead>
@@ -434,8 +434,8 @@ const Suppliers = () => {
                 return (
                   <TableRow key={dataValues.id}>
                     <TableCell>{dataValues.name}</TableCell>
-                    <TableCell>{dataValues.phone}</TableCell>
                     <TableCell>{dataValues.email}</TableCell>
+                    <TableCell>{dataValues.phone}</TableCell>
                     <TableCell
                       className="max-w-[200px] truncate"
                       title={[dataValues.address, dataValues.city, dataValues.region, dataValues.country].filter(Boolean).join(', ')}
@@ -443,7 +443,7 @@ const Suppliers = () => {
                       {formatLocation(dataValues)}
                     </TableCell>
                     <TableCell>{calculateTotalItems(dataValues)}</TableCell>
-                    <TableCell>${calculateSupplierSales(dataValues).toFixed(2)}</TableCell>
+                    <TableCell>{calculateSupplierSales(dataValues).toLocaleString()} FCFA</TableCell>
                     <TableCell>
                       <div className="flex space-x-2">
                         <Button

@@ -160,8 +160,8 @@ export function PurchaseHistoryTable() {
                       <TableCell>{purchase.productName}</TableCell>
                       <TableCell>{purchase.purchaseDate}</TableCell>
                       <TableCell>{purchase.quantityPurchased}</TableCell>
-                      <TableCell>{purchase.purchasePrice} XAF</TableCell>
-                      <TableCell>{purchase.totalCost} XAF</TableCell>
+                      <TableCell>{purchase.purchasePrice} FCFA</TableCell>
+                      <TableCell>{purchase.totalCost} FCFA</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => openOverlay(purchase)}>
                           <Pencil className="h-4 w-4" />
