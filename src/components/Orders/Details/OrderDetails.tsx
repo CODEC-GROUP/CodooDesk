@@ -354,19 +354,19 @@ const OrderDetails = ({ orderId, onBack }: OrderDetailsProps) => {
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell colSpan={3} className="text-right font-medium">
+                {/* <TableCell colSpan={3} className="text-right font-medium">
                   Tax
                 </TableCell>
                 <TableCell className="text-right font-bold">
                   {order.tax.toLocaleString()} FCFA
-                </TableCell>
+                </TableCell> */}
               </TableRow>
               <TableRow>
                 <TableCell colSpan={3} className="text-right font-medium">
                   Total
                 </TableCell>
                 <TableCell className="text-right font-bold">
-                  {order.total.toLocaleString()} FCFA
+                  {order.netAmount.toLocaleString()} FCFA
                 </TableCell>
               </TableRow>
             </TableBody>
