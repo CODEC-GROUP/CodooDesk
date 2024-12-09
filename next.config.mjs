@@ -10,7 +10,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  webpack: (config) => {
+  webpack: (config, {isServer}) => {
     config.resolve.extensionAlias = {
       '.js': ['.ts', '.tsx', '.js', '.jsx'],
       '.mjs': ['.mts', '.mjs'],
@@ -29,6 +29,9 @@ const nextConfig = {
     //   net: false,
     //   tls: false,
     // }
+    if (isServer) {
+      config.output.publicPath = '/_next/';
+    }
     return config
   }
 }

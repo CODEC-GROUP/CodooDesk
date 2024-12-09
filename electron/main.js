@@ -2,7 +2,22 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import url from 'url';
-import fs from 'fs';
+import fs, { watch } from 'fs';
+import isDev from 'electron-is-dev';
+
+try {
+  if (isDev) {
+    import('electron-reloader').then(module => {
+      module.default(module, {
+        debug: true,
+        watchRenderer: true
+      });
+    });
+  }
+} catch (err) {
+  console.log('Error enabling hot reload:', err);
+}
+
 import { initDatabase } from '../dist/src/services/database/index.js';
 import { registerInventoryHandlers } from '../dist/src/services/api/inventory/inventoryendpoints.js';
 import { registerInventoryItemHandlers } from '../dist/src/services/api/inventory/InventoryItemService.js';
@@ -106,8 +121,9 @@ async function createWindow() {
         nodeIntegration: false,
         contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
-        webSecurity: true,  // Enable web security
-        allowRunningInsecureContent: false  // Disable insecure content
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        devTools: true
       },
     });
 
@@ -123,10 +139,43 @@ async function createWindow() {
       });
     });
 
-    // Open DevTools in development mode
-    if (process.env.NODE_ENV === 'production') {
-      mainWindow.webContents.openDevTools();
-    }
+    // Register global shortcut for DevTools
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+        mainWindow.webContents.toggleDevTools();
+      }
+    });
+
+    // // Always open DevTools when window is created
+    // mainWindow.webContents.openDevTools();
+
+    // Watch for file changes and reload
+    // const watchPaths = [
+    //   path.join(__dirname, '../src'),
+    //   path.join(__dirname, '../dist'),
+    //   path.join(__dirname, '../out')
+    // ];
+
+    // watchPaths.forEach(watchPath => {
+    //   if (fs.existsSync(watchPath)) {
+    //     watch(watchPath, { recursive: true }, (eventType, filename) => {
+    //       if (filename && !filename.includes('node_modules')) {
+    //         const now = Date.now();
+    //         if (now - lastNavigationTime >= NAVIGATION_COOLDOWN && !isNavigating) {
+    //           console.log(`File changed: ${filename}`);
+    //           if (mainWindow && !mainWindow.isDestroyed()) {
+    //             mainWindow.webContents.reloadIgnoringCache();
+    //           }
+    //           lastNavigationTime = now;
+    //           isNavigating = true;
+    //           setTimeout(() => {
+    //             isNavigating = false;
+    //           }, NAVIGATION_COOLDOWN);
+    //         }
+    //       }
+    //     });
+    //   }
+    // });
 
     const isDevelopment = process.env.NODE_ENV === 'development';
     let startUrl
@@ -160,18 +209,6 @@ async function createWindow() {
 
     mainWindow.on('closed', () => {
       mainWindow = null;
-    });
-
-    // Add keyboard shortcut to toggle DevTools
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      // Toggle DevTools on Ctrl+Shift+I (Windows/Linux) or Cmd+Option+I (Mac)
-      if ((input.control && input.shift && input.key.toLowerCase() === 'i') || (process.platform === 'darwin' && input.meta && input.alt && input.key.toLowerCase() === 'i')) {
-        if (mainWindow.webContents.isDevToolsOpened()) {
-          mainWindow.webContents.closeDevTools();
-        } else {
-          mainWindow.webContents.openDevTools();
-        }
-      }
     });
 
   } catch (error) {
