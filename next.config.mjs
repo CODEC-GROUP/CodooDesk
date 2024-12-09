@@ -1,39 +1,30 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'export',
   distDir: 'out',
+  assetPrefix: process.env.ASSET_PREFIX || '',
   eslint: {
     ignoreDuringBuilds: true,
   },
   trailingSlash: true,
-  reactStrictMode: true,
+  reactStrictMode: false,
   images: {
     unoptimized: true,
   },
-  webpack: (config, {isServer}) => {
+  webpack: (config, { isServer }) => {
     config.resolve.extensionAlias = {
       '.js': ['.ts', '.tsx', '.js', '.jsx'],
       '.mjs': ['.mts', '.mjs'],
       '.cjs': ['.cts', '.cjs']
-    }
-    // config.resolve.fallback = {
-    //   ...config.resolve.fallback,
-    //   fs: false,
-    //   path: false,
-    //   "pg-hstore": false,
-    //   crypto: false,
-    //   stream: false,
-    //   http: false,
-    //   https: false,
-    //   zlib: false,
-    //   net: false,
-    //   tls: false,
-    // }
-    if (isServer) {
-      config.output.publicPath = '/_next/';
-    }
-    return config
+    };
+
+    return config;
   }
-}
+};
 
 export default nextConfig;
