@@ -81,7 +81,6 @@ interface AuthLayoutContextType {
   updateUser: (userData: Partial<User>) => void;
   register: (userData: { username: string; email: string; password: string }) => Promise<{ success: boolean; message?: string; user?: User; business?: Business }>;
   checkAuth: () => Promise<void>;
-  fetchBusiness: () => Promise<Business | undefined | void>;
 }
 
 export const AuthLayoutContext = createContext<AuthLayoutContextType | undefined>(undefined);
@@ -224,6 +223,15 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           title: "Success",
           description: "Registration successful",
         });
+
+        setTimeout(() => {
+          if (!response.isSetupComplete) {
+            router.push('/account-setup');
+          } else {
+            router.push('/dashboard');
+          }
+        }, 100);
+
         return { success: true, user: response.user, business: response.business };
       }
 
@@ -332,10 +340,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         if (storedBusiness) {
           const parsedBusiness = JSON.parse(storedBusiness);
           setBusiness(parsedBusiness);
-        } else {
-          // If business data isn't in localStorage, try to fetch it
-          await fetchBusiness();
-        }
+        } 
       } else {
         setIsAuthenticated(false);
         setUser(null);
@@ -361,32 +366,6 @@ export function AuthLayout({ children }: AuthLayoutProps) {
     }
   };
 
-  const fetchBusiness = async () => {
-    try {
-      const response = await safeIpcInvoke<BusinessResponse>('business:get', {}, {
-        success: false
-      });
-
-      if (response?.success && response.business) {
-        setBusiness(response.business);
-        localStorage.setItem('business', JSON.stringify(response.business));
-        return response.business;
-      } else {
-        toast({
-          title: "Error",
-          description: response?.message || "Failed to fetch business details",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Failed to fetch business:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch business details",
-        variant: "destructive",
-      });
-    }
-  };
 
   useEffect(() => {
     checkAuth();
@@ -409,7 +388,6 @@ export function AuthLayout({ children }: AuthLayoutProps) {
     updateUser,
     register,
     checkAuth,
-    fetchBusiness,
   };
 
   if (isLoading) {

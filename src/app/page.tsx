@@ -2,34 +2,39 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import AccountSetup from '@/components/Setup/AccountSetup'
+import { Login } from '@/components/Auth/Login/LoginForm'
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
 
 export default function HomePage() {
   const router = useRouter()
-  const { isAuthenticated, checkSetupStatus, user } = useAuthLayout()
+  const { isAuthenticated, user, business } = useAuthLayout()
 
   useEffect(() => {
     const checkAuthAndSetup = async () => {
-      try {
-        if (!isAuthenticated || !user) {
-          router.push('/auth/login')
-          return
-        }
+      const storedUser = localStorage.getItem('user')
+      const storedBusiness = localStorage.getItem('business')
 
-        const hasSetup = await checkSetupStatus()
-        if (hasSetup) {
-          router.push('/dashboard')
-        }
-      } catch (error) {
-        console.error('Failed to check setup status:', error)
+      // If no user in localStorage, go to login
+      if (!storedUser) {
+        router.push('/auth/login')
+        return
+      }
+
+      // If user exists in localStorage but no business, go to account setup
+      if (storedUser && !storedBusiness) {
+        router.push('/account-setup')
+        return
+      }
+
+      // If both user and business exist in localStorage, go to dashboard
+      if (storedUser && storedBusiness) {
+        router.push('/dashboard')
       }
     }
 
     checkAuthAndSetup()
-  }, [router, checkSetupStatus, isAuthenticated, user])
+  }, [router, isAuthenticated, user, business])
 
-  // Show setup page only if authenticated and setup not complete
-  // Otherwise, the useEffect will handle redirection
-  return <AccountSetup />
+  // Return Login component as the default
+  return <Login />
 }

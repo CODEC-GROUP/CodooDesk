@@ -16,8 +16,8 @@ import { registerShopHandlers } from '../dist/src/services/api/entities/shopsSer
 import { registerSupplierHandlers } from '../dist/src/services/api/entities/suppliersendpoints.js';
 import { registerInvoiceHandlers } from '../dist/src/services/api/sales/invoiceService.js';
 import { registerPaymentHandlers } from '../dist/src/services/api/sales/paymentService.js';
-import {registerOrderManagementHandlers} from '../dist/src/services/api/sales/orderManagementService.js'
 import { registerReceiptHandlers } from '../dist/src/services/api/sales/RecieptService.js';
+import { registerOrderManagementHandlers } from '../dist/src/services/api/sales/orderManagementService.js';
 import { registerReturnHandlers } from '../dist/src/services/api/sales/returnService.js';
 import { populateExpenseCodes } from '../dist/src/scripts/populateExpenseCodes.js';
 import { populateIncomeCodes } from '../dist/src/scripts/populateIncomeCodes.js';
@@ -200,7 +200,7 @@ function navigateTo(pagePath) {
   const currentTime = Date.now();
   if (isNavigating || (currentTime - lastNavigationTime) < NAVIGATION_COOLDOWN) {
     console.log('Navigation in progress or too frequent, skipping...');
-    return Promise.resolve(); // Return resolved promise instead of undefined
+    return Promise.resolve();
   }
 
   const currentUrl = mainWindow.webContents.getURL();
@@ -224,18 +224,23 @@ function navigateTo(pagePath) {
             isNavigating = false;
           });
       } else {
-        let fullPath;
-        if (pagePath === '' || pagePath === '/') {
-          fullPath = path.join(__dirname, '..', 'out', 'index.html');
-        } else {
-          // Remove leading slash and split path segments
-          const cleanPath = pagePath.startsWith('/') ? pagePath.slice(1) : pagePath;
-          const segments = cleanPath.split('/').filter(Boolean);
-          
-          // Join all segments to create the full path
-          fullPath = path.join(__dirname, '..', 'out', ...segments, 'index.html');
-        }
-        
+        // Normalize the path by removing any absolute path components and converting backslashes
+        const normalizedPath = pagePath
+          .replace(/^[A-Z]:[\\\/]/gi, '') // Remove drive letter if present (case insensitive)
+          .replace(/^[\\\/]+/, '') // Remove leading slashes
+          .replace(/\\/g, '/') // Convert backslashes to forward slashes
+          .replace(/^C:\//, '') // Specifically remove any remaining C:/ pattern
+          .replace(/^\/+/, ''); // Remove any remaining leading slashes
+
+        // Construct the full path relative to the out directory
+        const fullPath = path.join(
+          __dirname, 
+          '..', 
+          'out',
+          ...normalizedPath.split('/').filter(Boolean),
+          'index.html'
+        );
+
         console.log('Attempting to load file:', fullPath);
         
         if (fs.existsSync(fullPath)) {
@@ -253,23 +258,57 @@ function navigateTo(pagePath) {
             });
         } else {
           console.error(`Page not found: ${fullPath}`);
-          const notFoundPath = path.join(__dirname, '..', 'out', '404.html');
-          if (fs.existsSync(notFoundPath)) {
-            mainWindow.loadURL(url.format({
-              pathname: notFoundPath,
+          // Try to load the page without index.html first
+          const altPath = path.join(
+            __dirname,
+            '..',
+            'out',
+            ...normalizedPath.split('/').filter(Boolean)
+          );
+          
+          if (fs.existsSync(altPath)) {
+            const fileUrl = url.format({
+              pathname: altPath,
               protocol: 'file:',
               slashes: true
-            }))
+            });
+            mainWindow.loadURL(fileUrl)
               .then(resolve)
+              .catch(() => {
+                // If that fails, try the 404 page
+                const notFoundPath = path.join(__dirname, '..', 'out', '404.html');
+                if (fs.existsSync(notFoundPath)) {
+                  return mainWindow.loadURL(url.format({
+                    pathname: notFoundPath,
+                    protocol: 'file:',
+                    slashes: true
+                  }));
+                }
+                throw new Error('404 page not found');
+              })
               .catch(reject)
               .finally(() => {
                 isNavigating = false;
               });
           } else {
-            const error = new Error('404 page not found');
-            console.error(error);
-            isNavigating = false;
-            reject(error);
+            const notFoundPath = path.join(__dirname, '..', 'out', '404.html');
+            if (fs.existsSync(notFoundPath)) {
+              mainWindow.loadURL(url.format({
+                pathname: notFoundPath,
+                protocol: 'file:',
+                slashes: true
+              }))
+                .then(resolve)
+                .catch(reject)
+                .finally(() => {
+                  isNavigating = false;
+                });
+            } else {
+              const error = new Error('404 page not found');
+              console.error(error);
+              isNavigating = false;
+              reject(error);
+            }
           }
         }
       }
