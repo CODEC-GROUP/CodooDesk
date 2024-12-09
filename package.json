@@ -1,5 +1,5 @@
 {
-  "name": "salebox",
+  "name": "salesbox",
   "version": "0.1.0",
   "description": "A point of sale application built with Electron and Next.js",
   "author": {
