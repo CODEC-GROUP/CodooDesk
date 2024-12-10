@@ -22,6 +22,7 @@ import {
   CreditCard,
   Mail,
   Phone,
+  ArrowLeft,
   Eye,
   EyeOff
 } from "lucide-react"
@@ -161,7 +162,7 @@ const AccountSetup = () => {
                 fileName: `${Date.now()}-${formData.shopLogo!.name}`,
                 category: 'shop'
               }, { success: false });
-              
+
               if (response?.success && response.fullPath) {
                 fileResults.logoPath = response.fullPath;
               }
@@ -182,7 +183,7 @@ const AccountSetup = () => {
                 fileName: `${Date.now()}-${formData.taxationDocuments!.name}`,
                 category: 'shop'
               }, { success: false });
-              
+
               if (response?.success && response.fullPath) {
                 fileResults.taxDocsPath = response.fullPath;
               }
@@ -203,7 +204,7 @@ const AccountSetup = () => {
                 fileName: `${Date.now()}-${formData.nationalIdCardFront!.name}`,
                 category: 'shop'
               }, { success: false });
-              
+
               if (response?.success && response.fullPath) {
                 fileResults.frontIdPath = response.fullPath;
               }
@@ -223,7 +224,7 @@ const AccountSetup = () => {
                 fileName: `${Date.now()}-${formData.nationalIdCardBack!.name}`,
                 category: 'shop'
               }, { success: false });
-              
+
               if (response?.success && response.fullPath) {
                 fileResults.backIdPath = response.fullPath;
               }
@@ -311,6 +312,14 @@ const AccountSetup = () => {
 
   return (
     <div className="container mx-auto p-6">
+      {/* Add back button */}
+      <Button
+        onClick={() => router.push('/auth/register')}
+        variant="ghost"
+        className="mb-4 flex items-center gap-2"
+      >
+        <ArrowLeft className="w-4 h-4" /> Back to Registration
+      </Button>
       <Card className="w-full max-w-4xl mx-auto">
         <CardContent className="p-6">
           <div className="flex justify-between mb-6">
@@ -737,7 +746,7 @@ const AccountSetup = () => {
               <div className="space-y-6">
                 <h2 className="text-2xl font-bold mb-6">Verify Information & Submit</h2>
                 <p className="text-gray-600 mb-4">Please review your information before submitting:</p>
-                
+
                 <Card className="p-6">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
