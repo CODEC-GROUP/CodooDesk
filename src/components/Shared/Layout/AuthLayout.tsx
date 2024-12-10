@@ -220,17 +220,13 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         }
         
         toast({
-          title: "Success",
+          title: "Success", 
           description: "Registration successful",
         });
 
-        setTimeout(() => {
-          if (!response.isSetupComplete) {
-            router.push('/account-setup');
-          } else {
-            router.push('/dashboard');
-          }
-        }, 100);
+        console.log('Registration successful, navigating to account setup...');
+        
+        router.push('/account-setup');
 
         return { success: true, user: response.user, business: response.business };
       }

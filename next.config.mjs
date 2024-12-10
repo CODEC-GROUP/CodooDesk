@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig = {
   output: 'export',
   distDir: 'out',
-  assetPrefix: process.env.ASSET_PREFIX || '',
+  assetPrefix: process.env.ASSET_PREFIX,
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -22,7 +22,7 @@ const nextConfig = {
       '.mjs': ['.mts', '.mjs'],
       '.cjs': ['.cts', '.cjs']
     };
-
+    
     return config;
   }
 };

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import url from 'url';
 import fs, { watch } from 'fs';
 import isDev from 'electron-is-dev';
+import serve from 'electron-serve';
 
 try {
   if (isDev) {
@@ -51,6 +52,15 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow;
 
+// Add global error handlers at the top level
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+});
+
 // Helper function to log directory structure
 function logDirectoryStructure(dir, level = 0) {
   const items = fs.readdirSync(dir, { withFileTypes: true });
@@ -61,6 +71,12 @@ function logDirectoryStructure(dir, level = 0) {
     }
   });
 }
+
+// Initialize electron serve with app protocol
+const loadURL = serve({
+  directory: 'out',
+  scheme: 'app'
+});
 
 async function createWindow() {
   try {
@@ -115,12 +131,13 @@ async function createWindow() {
     });
     
     mainWindow = new BrowserWindow({
-      width: 800,
-      height: 600,
+      width: 1200,
+      height: 800,
       webPreferences: {
         nodeIntegration: false,
+        sandbox: false,
         contextIsolation: true,
-        preload: path.join(__dirname, 'preload.js'),
+        preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
         webSecurity: true,
         allowRunningInsecureContent: false,
         devTools: true
@@ -178,44 +195,32 @@ async function createWindow() {
     // });
 
     const isDevelopment = process.env.NODE_ENV === 'development';
-    let startUrl
     
     if (isDevelopment) {
-      startUrl = 'http://localhost:3000';
+      await mainWindow.loadURL('http://localhost:3000');
     } else {
-      // Add base directory for static assets
-      const basePath = path.join(__dirname, '..');
-      process.env.ASSET_PREFIX = `file://${basePath}`;
-      
-      startUrl = url.format({
-        pathname: path.join(basePath, 'out', 'index.html'),
-        protocol: 'file:',
-        slashes: true
-      });
-      
-      // Log the paths for debugging
-      console.log('Base Path:', basePath);
-      console.log('Start URL:', startUrl);
+      // No need to set ASSET_PREFIX when using app:// protocol
+      await loadURL(mainWindow);
     }
-    
-    console.log(`Loading application from: ${startUrl}`);
-    
-    // For production mode, we need to wait a bit to ensure all resources are ready
-    if (!isDevelopment) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    
-    await mainWindow.loadURL(startUrl);
 
     mainWindow.on('closed', () => {
       mainWindow = null;
+    });
+
+    // Add error handler for webContents
+    mainWindow.webContents.on('render-process-gone', (event, details) => {
+      console.error('Renderer process gone:', details);
+    });
+
+    mainWindow.webContents.on('crashed', (event) => {
+      console.error('Renderer process crashed');
     });
 
   } catch (error) {
     console.error('Failed to create window:', error);
     dialog.showErrorBox(
       'Application Error',
-      'Failed to start the application. Please check the logs and try again.'
+      `Failed to start the application: ${error.message}`
     );
     app.quit();
   }
@@ -225,136 +230,42 @@ let isNavigating = false;
 let lastNavigationTime = 0;
 const NAVIGATION_COOLDOWN = 1000; // 1 second cooldown
 
-function navigateTo(pagePath) {
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  
+async function navigateTo(pagePath) {
   if (!mainWindow) {
-    console.error('Main window is not initialized');
-    return Promise.reject(new Error('Main window is not initialized'));
+    throw new Error('Main window is not initialized');
   }
 
-  // Prevent recursive navigation
   const currentTime = Date.now();
   if (isNavigating || (currentTime - lastNavigationTime) < NAVIGATION_COOLDOWN) {
     console.log('Navigation in progress or too frequent, skipping...');
-    return Promise.resolve();
+    return;
   }
 
-  const currentUrl = mainWindow.webContents.getURL();
-  if (currentUrl.includes(pagePath)) {
-    console.log('Already on requested page, skipping navigation');
-    return Promise.resolve();
-  }
-  
   isNavigating = true;
   lastNavigationTime = currentTime;
-  
-  return new Promise((resolve, reject) => {
-    try {
-      if (isDevelopment) {
-        const fullUrl = `http://localhost:3000${pagePath.startsWith('/') ? pagePath : `/${pagePath}`}`;
-        console.log(`Navigating to: ${fullUrl}`);
-        mainWindow.loadURL(fullUrl)
-          .then(resolve)
-          .catch(reject)
-          .finally(() => {
-            isNavigating = false;
-          });
-      } else {
-        // Normalize the path by removing any absolute path components and converting backslashes
-        const normalizedPath = pagePath
-          .replace(/^[A-Z]:[\\\/]/gi, '') // Remove drive letter if present (case insensitive)
-          .replace(/^[\\\/]+/, '') // Remove leading slashes
-          .replace(/\\/g, '/') // Convert backslashes to forward slashes
-          .replace(/^C:\//, '') // Specifically remove any remaining C:/ pattern
-          .replace(/^\/+/, ''); // Remove any remaining leading slashes
 
-        // Construct the full path relative to the out directory
-        const fullPath = path.join(
-          __dirname, 
-          '..', 
-          'out',
-          ...normalizedPath.split('/').filter(Boolean),
-          'index.html'
-        );
-
-        console.log('Attempting to load file:', fullPath);
-        
-        if (fs.existsSync(fullPath)) {
-          console.log(`Loading: ${fullPath}`);
-          const fileUrl = url.format({
-            pathname: fullPath,
-            protocol: 'file:',
-            slashes: true
-          });
-          mainWindow.loadURL(fileUrl)
-            .then(resolve)
-            .catch(reject)
-            .finally(() => {
-              isNavigating = false;
-            });
-        } else {
-          console.error(`Page not found: ${fullPath}`);
-          // Try to load the page without index.html first
-          const altPath = path.join(
-            __dirname,
-            '..',
-            'out',
-            ...normalizedPath.split('/').filter(Boolean)
-          );
-          
-          if (fs.existsSync(altPath)) {
-            const fileUrl = url.format({
-              pathname: altPath,
-              protocol: 'file:',
-              slashes: true
-            });
-            mainWindow.loadURL(fileUrl)
-              .then(resolve)
-              .catch(() => {
-                // If that fails, try the 404 page
-                const notFoundPath = path.join(__dirname, '..', 'out', '404.html');
-                if (fs.existsSync(notFoundPath)) {
-                  return mainWindow.loadURL(url.format({
-                    pathname: notFoundPath,
-                    protocol: 'file:',
-                    slashes: true
-                  }));
-                }
-                throw new Error('404 page not found');
-              })
-              .catch(reject)
-              .finally(() => {
-                isNavigating = false;
-              });
-          } else {
-            const notFoundPath = path.join(__dirname, '..', 'out', '404.html');
-            if (fs.existsSync(notFoundPath)) {
-              mainWindow.loadURL(url.format({
-                pathname: notFoundPath,
-                protocol: 'file:',
-                slashes: true
-              }))
-                .then(resolve)
-                .catch(reject)
-                .finally(() => {
-                  isNavigating = false;
-                });
-            } else {
-              const error = new Error('404 page not found');
-              console.error(error);
-              isNavigating = false;
-              reject(error);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Navigation error:', error);
-      isNavigating = false;
-      reject(error);
+  try {
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    if (isDevelopment) {
+      await mainWindow.loadURL(`http://localhost:3000${pagePath}`);
+    } else {
+      // Clean up the path for app:// protocol
+      const normalizedPath = pagePath
+        .replace(/^[A-Z]:[\\\/]/gi, '')
+        .replace(/^[\\\/]+/, '')
+        .replace(/\\/g, '/')
+        .replace(/^C:\//, '')
+        .replace(/^\/+/, '');
+      
+      await loadURL(mainWindow, normalizedPath);
     }
-  });
+  } catch (error) {
+    console.error('Navigation error:', error);
+    throw error;
+  } finally {
+    isNavigating = false;
+  }
 }
 
 app.on('ready', async () => {

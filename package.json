@@ -6,7 +6,7 @@
     "name": "CODEC",
     "email": "contact@codec.cm"
   },
-  "homepage": "https://erp.codec.cm/",
+  "homepage": "./",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -22,9 +22,10 @@
     "pack": "npm run electron-build && electron-builder --dir",
     "dist": "npm run clean && npm run electron-build && electron-builder",
     "clean": "rimraf dist out build",
-    "build-static": "next build && npm run build-static-repair-index",
+    "build-static": "next build && npm run format-html && npm run build-static-repair-index ",
     "build-static-repair-index": "replace-in-files --string \"/_next/static\" --replacement \"../_next/static\" \"out/**/*.html\" && replace-in-files --string \"\\\"/assets/\" --replacement \"\\\"../assets/\" \"out/**/*.html\" && replace-in-files --string \"href=\\\"/\" --replacement \"href=\\\"./\" \"out/**/*.html\" && replace-in-files --string \"src=\\\"/\" --replacement \"src=\\\"./\" \"out/**/*.html\" && replace-in-files --string \"\\\"/assets/\" --replacement \"\\\"../../assets/\" \"out/**/**/*.html\" && node fix-nested-paths.js",
     "electron-rebuild": "electron-rebuild",
+    "format-html": "node scripts/format-html.js",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -50,10 +51,12 @@
     "country-state-city": "^3.2.1",
     "date-fns": "^3.6.0",
     "electron-is-dev": "^3.0.1",
+    "electron-serve": "^2.1.1",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
     "lucide-react": "^0.461.0",
     "next": "^14.1.0",
+    "next-electron-server": "^1.0.0",
     "node-thermal-printer": "^4.4.3",
     "pdfmake": "^0.2.15",
     "pg-hstore": "^2.3.4",
@@ -92,9 +95,11 @@
     "electron-reloader": "^1.2.3",
     "eslint": "^8",
     "eslint-config-next": "15.0.3",
+    "glob": "^10.0.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "postcss": "^8",
+    "prettier": "^3.0.0",
     "replace-in-files-cli": "^2.2.0",
     "rimraf": "^4.4.1",
     "tailwindcss": "^3.4.1",
@@ -104,8 +109,8 @@
   "type": "module",
   "main": "electron/main.js",
   "build": {
-    "appId": "com.salebox.app",
-    "productName": "SaleBox",
+    "appId": "com.salesbox.app",
+    "productName": "SalesBox",
     "icon": "public/assets/images/icon.ico",
     "files": [
       "out/**/*",
