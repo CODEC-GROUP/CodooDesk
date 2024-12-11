@@ -55,7 +55,13 @@ class Category extends Model<CategoryAttributes> implements CategoryAttributes {
       foreignKey: 'businessId',
       as: 'business'
     });
-    this.hasMany(models.Product, { foreignKey: 'category_id', as: 'products' });
+    this.hasMany(models.Product, { 
+      foreignKey: { 
+        name: 'category_id',
+        allowNull: true
+      }, 
+      as: 'products'
+    });
   }
 }
 

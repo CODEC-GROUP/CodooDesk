@@ -214,10 +214,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         setUser(response.user);
         setBusiness(response.business || null);
         
-        localStorage.setItem('user', JSON.stringify(response.user));
-        if (response.business) {
-          localStorage.setItem('business', JSON.stringify(response.business));
-        }
+        localStorage.setItem('user', JSON.stringify(response.user))
         
         toast({
           title: "Success", 
@@ -227,7 +224,6 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         console.log('Registration successful, navigating to account setup...');
         
         router.push('/account-setup');
-
         return { success: true, user: response.user, business: response.business };
       }
 
@@ -241,10 +237,10 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       console.error('Registration error:', error);
       toast({
         title: "Error",
-        description: 'Registration failed',
+        description: error instanceof Error ? error.message : 'Registration failed',
         variant: "destructive",
       });
-      return { success: false, message: 'Registration failed' };
+      return { success: false, message: error instanceof Error ? error.message : 'Registration failed' };
     }
   };
 

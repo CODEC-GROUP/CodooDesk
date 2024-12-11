@@ -90,7 +90,7 @@ class Supplier extends Model<SupplierAttributes> implements SupplierAttributes {
     this.belongsTo(models.BusinessInformation, { foreignKey: 'businessId', as: 'business' });
     this.belongsToMany(models.Product, { 
       through: 'SupplierProducts',
-      foreignKey: 'supplierId',
+      foreignKey:{name: 'supplierId', allowNull: true},
       otherKey: 'productId',
       as: 'supplierProducts'
     });

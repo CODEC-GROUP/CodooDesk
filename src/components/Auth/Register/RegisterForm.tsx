@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/Shared/ui/card"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
 import { Input } from "@/components/Shared/ui/input"
 import { Label } from "@/components/Shared/ui/label"
-import { ChevronUp, EyeIcon } from "lucide-react"
+import { ChevronUp, EyeIcon, EyeOffIcon } from "lucide-react"
 import Link from 'next/link'
 import { useState } from 'react';
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
@@ -26,13 +26,12 @@ export function Register() {
   const [showPassword, setShowPassword] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault() // Prevent form submission
+    if (!formData.acceptTerms) {
+      setError('Please accept the terms and conditions')
+      return
+    }
     setError('')
-
-    // if (!formData.acceptTerms) {
-    //   setError('Please accept the terms and conditions')
-    //   return
-    // }
 
     try {
       const result = await register({
@@ -40,10 +39,12 @@ export function Register() {
         email: formData.email.trim(),
         password: formData.password
       })
-      
-      if (result.success) {
-        router.push('/account-setup')
-      } 
+
+      if (!result.success) {
+        setError(result.message || 'Registration failed')
+        return
+      }
+
     } catch (err: any) {
       const errorMessage = err.message || err.toString()
       setError(`Registration error: ${errorMessage}`)
@@ -51,7 +52,13 @@ export function Register() {
         error: errorMessage,
         details: err
       })
+      return
     }
+  }
+
+  const togglePasswordVisibility = (e: React.MouseEvent) => {
+    e.preventDefault() // Prevent form submission
+    setShowPassword(!showPassword)
   }
 
   return (
@@ -113,7 +120,8 @@ export function Register() {
         <div className="w-full max-w-md">
           <h1 className="text-3xl font-bold mb-2">Adventure starts here 🚀</h1>
           <p className="text-gray-500 mb-8">Make your app management easy and fun!</p>
-          <form className="space-y-4" onSubmit={handleSubmit}>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="username">Username</Label>
               <Input 
@@ -123,6 +131,7 @@ export function Register() {
                 placeholder="Username" 
               />
             </div>
+            
             <div>
               <Label htmlFor="email">Email</Label>
               <Input 
@@ -133,6 +142,7 @@ export function Register() {
                 placeholder="Email" 
               />
             </div>
+            
             <div>
               <Label htmlFor="password">Password</Label>
               <div className="relative">
@@ -145,22 +155,38 @@ export function Register() {
                 />
                 <button
                   type="button"
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={togglePasswordVisibility}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
-                  <EyeIcon className="w-5 h-5" />
+                  {showPassword ? (
+                    <EyeOffIcon className="w-5 h-5" />
+                  ) : (
+                    <EyeIcon className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
+            
             <div className="flex items-center space-x-2">
-              <Checkbox id="terms" />
+              <Checkbox 
+                id="terms" 
+                checked={formData.acceptTerms}
+                onCheckedChange={(checked: boolean) => 
+                  setFormData(prev => ({ ...prev, acceptTerms: checked === true }))
+                }
+              />
               <label htmlFor="terms" className="text-sm text-gray-500">
                 I Agree to privacy policy &amp; terms
               </label>
             </div>
+            
             {error && <div className="text-red-500 text-sm">{error}</div>}
-            <Button className="w-full">REGISTER</Button>
+            
+            <Button type="submit" className="w-full">
+              REGISTER
+            </Button>
           </form>
+          
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">
               Already have an account?{" "}

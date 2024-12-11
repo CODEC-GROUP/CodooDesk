@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import Supplier, { SupplierAttributes } from '../../../models/Supplier.js';
 import Product from '../../../models/Product.js';
 import { Sequelize } from 'sequelize';
+import Order from '../../../models/Order.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -52,27 +53,22 @@ export function registerSupplierHandlers() {
               'id',
               'name',
               [Sequelize.fn('COUNT', Sequelize.col('supplierProducts.id')), 'productCount'],
-              [Sequelize.fn('SUM', Sequelize.col('supplierProducts.purchasePrice')), 'totalValue']
+              [Sequelize.fn('SUM', Sequelize.col('Orders.sellingPrice')), 'totalSales']
             ],
+            include: [{
+              model: Order,
+              attributes: []  // Include no direct attributes from Order
+            }],
             through: { attributes: [] }
           }
         ],
         group: ['Supplier.id', 'supplierProducts.id'],
       });
       
-      // Convert Sequelize models to plain objects
-      const plainSuppliers = suppliers.map(supplier => {
-        const plainSupplier = supplier.get({ plain: true });
-        // Ensure supplierProducts is always an array
-        plainSupplier.supplierProducts = plainSupplier.supplierProducts || [];
-        return plainSupplier;
-      });
-
-      return { success: true, suppliers: plainSuppliers };
+      return { success: true, suppliers };
     } catch (error) {
       console.error('Error fetching suppliers:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      return { success: false, message: 'Error fetching suppliers', error: errorMessage };
+      return { success: false, message: 'Error fetching suppliers' };
     }
   });
 

@@ -301,7 +301,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             </Button>
             <div className="flex items-center space-x-2">
               <Avatar className="h-8 w-8">
-                <AvatarImage src="/placeholder-user.jpg" alt={user?.username || 'User'} />
+                <AvatarImage src="/assets/images/male.png" alt={user?.username || 'User'} />
                 <AvatarFallback>{user?.username?.slice(0, 2).toUpperCase() || 'U'}</AvatarFallback>
               </Avatar>
               <span className="text-sm font-medium">{user?.username || 'User'}</span>

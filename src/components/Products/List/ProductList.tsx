@@ -291,15 +291,17 @@ export function ProductList({ onProductClick, onAddProduct }: ProductListProps) 
                       <TableRow key={product.id}>
                         <TableCell className="font-medium">
                           <div className="flex items-center space-x-3">
-                            {product.featuredImage && (
-                              <Image
-                                src={product.featuredImage}
-                                alt={product.name}
-                                width={40}
-                                height={40}
-                                className="rounded-md"
-                              />
-                            )}
+                            <Image
+                              src={product.featuredImage || '/assets/images/box.png'}
+                              alt={product.name}
+                              width={40}
+                              height={40}
+                              className="rounded-md object-cover"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = '/assets/images/box.png';
+                              }}
+                            />
                             <span>{product.name}</span>
                           </div>
                         </TableCell>

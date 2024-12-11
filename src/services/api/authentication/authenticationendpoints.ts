@@ -39,25 +39,38 @@ export function registerAuthHandlers() {
         };
       }
 
-      // Check for existing user
+      // First, explicitly check for existing user with better error handling
       const existingUser = await User.findOne({
         where: {
           [Op.or]: [
             { email: userData.email.toLowerCase() },
             { username: userData.username.toLowerCase() }
           ]
-        }
+        },
+        paranoid: false  // This will check even soft-deleted records
       });
 
       if (existingUser) {
-        console.log('User already exists:', existingUser);
+        console.log('Found existing user:', {
+          id: existingUser.id,
+          email: existingUser.email,
+          username: existingUser.username
+        });
+        
         return {
           success: false,
-          message: existingUser.email === userData.email.toLowerCase() 
-            ? 'An account with this email already exists' 
+          message: existingUser.email === userData.email.toLowerCase()
+            ? 'An account with this email already exists'
             : 'This username is already taken'
         };
       }
+
+      // Add debug logging before user creation
+      console.log('Creating new user with data:', {
+        email: userData.email.toLowerCase(),
+        username: userData.username.toLowerCase(),
+        role: userData.role || 'shop_owner'
+      });
 
       // Create user with role
       const hashedPassword = await bcrypt.hash(userData.password, 10);
@@ -65,9 +78,23 @@ export function registerAuthHandlers() {
         email: userData.email.toLowerCase(),
         username: userData.username.toLowerCase(),
         password_hash: hashedPassword,
-        role: userData.role || 'shop_owner',  // Default to shop_owner if not specified
-        shopId: undefined,  // Will be updated later for employees
-      }, { transaction: t });
+        role: userData.role || 'shop_owner',
+        shopId: undefined,
+      }, { 
+        transaction: t,
+        // Add validation options
+        validate: true,
+        hooks: true
+      }).catch(error => {
+        // Detailed error logging
+        console.error('User creation failed:', {
+          name: error.name,
+          message: error.message,
+          errors: error.errors,
+          sql: error.sql
+        });
+        throw error;
+      });
 
       // If user is an employee, create employee record
       if (userData.role && userData.role !== 'shop_owner') {
@@ -237,7 +264,32 @@ export function registerAuthHandlers() {
       };
     } catch (error: any) {
       await t.rollback();
-      console.error('Registration failed with error:', error);
+      console.error('Registration failed with detailed error:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        sql: error.sql,
+        errors: error.errors
+      });
+
+      // Better error messages based on error type
+      if (error.name === 'SequelizeUniqueConstraintError') {
+        const field = error.errors[0]?.path;
+        return {
+          success: false,
+          message: field === 'email' 
+            ? 'This email is already registered. Please try logging in or use a different email.'
+            : 'This username is already taken. Please choose a different username.'
+        };
+      }
+
+      if (error.name === 'SequelizeValidationError') {
+        return {
+          success: false,
+          message: error.errors[0]?.message || 'Invalid input data'
+        };
+      }
+
       return {
         success: false,
         message: `Registration failed: ${error.message}`

@@ -144,11 +144,11 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
   }
 
   static associate(models: any) {
-    this.belongsTo(models.Category, { foreignKey: 'category_id', as: 'category' });
+    this.belongsTo(models.Category, { foreignKey:{name: 'category_id', allowNull: true}, as: 'category' });
     this.belongsTo(models.Shop, { foreignKey: 'shop_id', as: 'shop' });
     this.belongsToMany(models.Supplier, { 
       through: 'SupplierProducts',
-      foreignKey: 'productId',
+      foreignKey: {name: 'productId', allowNull: true},
       otherKey: 'supplierId',
       as: 'suppliers'
     });

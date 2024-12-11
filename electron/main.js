@@ -144,6 +144,11 @@ async function createWindow() {
       },
     });
 
+    // Clear storage data before loading the app
+    await mainWindow.webContents.session.clearStorageData({
+      storages: ['localStorage', 'sessionStorage', 'cookies']
+    });
+
     // Set security headers
     mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
       callback({
@@ -235,9 +240,16 @@ async function navigateTo(pagePath) {
     throw new Error('Main window is not initialized');
   }
 
+  console.log('Navigating to path:', pagePath);
+
+  // Reset navigation state if enough time has passed
   const currentTime = Date.now();
-  if (isNavigating || (currentTime - lastNavigationTime) < NAVIGATION_COOLDOWN) {
-    console.log('Navigation in progress or too frequent, skipping...');
+  if (currentTime - lastNavigationTime >= NAVIGATION_COOLDOWN) {
+    isNavigating = false;
+  }
+
+  if (isNavigating) {
+    console.log('Navigation in progress, skipping...');
     return;
   }
 
@@ -250,21 +262,22 @@ async function navigateTo(pagePath) {
     if (isDevelopment) {
       await mainWindow.loadURL(`http://localhost:3000${pagePath}`);
     } else {
-      // Clean up the path for app:// protocol
-      const normalizedPath = pagePath
-        .replace(/^[A-Z]:[\\\/]/gi, '')
-        .replace(/^[\\\/]+/, '')
-        .replace(/\\/g, '/')
-        .replace(/^C:\//, '')
-        .replace(/^\/+/, '');
-      
-      await loadURL(mainWindow, normalizedPath);
+      // Always append index.html to the path
+      const normalizedPath = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;
+      const fullUrl = `app://-${normalizedPath}/index.html`;
+      console.log('Loading URL:', fullUrl);
+      await mainWindow.loadURL(fullUrl);
+      console.log('Full navigation URL:', mainWindow.webContents.getURL());
     }
   } catch (error) {
     console.error('Navigation error:', error);
+    isNavigating = false; // Reset navigation state on error
     throw error;
   } finally {
-    isNavigating = false;
+    // Set a timeout to reset the navigation state
+    setTimeout(() => {
+      isNavigating = false;
+    }, NAVIGATION_COOLDOWN);
   }
 }
 

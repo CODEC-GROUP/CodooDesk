@@ -315,11 +315,15 @@ const Categories = () => {
                 <Card key={category.id}>
                   <CardContent className="p-4">
                     <Image 
-                      src={typeof category.image === 'string' ? category.image : "/placeholder.svg?height=100&width=100"} 
+                      src={typeof category.image === 'string' && category.image ? category.image : "/assets/images/categories.png"} 
                       alt={category.name} 
                       width={100}
                       height={100}
-                      className="w-full h-40 object-cover mb-2 rounded" 
+                      className="w-full h-40 object-cover mb-2 rounded"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = '/assets/images/categories.png';
+                      }}
                     />
                     <h3 className="font-semibold text-lg">{category.name}</h3>
                     <p className="text-sm text-gray-500">{category.itemCount} items</p>
