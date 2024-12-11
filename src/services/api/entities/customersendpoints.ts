@@ -139,6 +139,10 @@ export function registerCustomerHandlers() {
         include: [{
           model: Shop,
           as: 'shops'
+        }, {
+          model: Sales,
+          as: 'sales',
+          attributes: []
         }],
         transaction: t
       });
@@ -166,19 +170,42 @@ export function registerCustomerHandlers() {
 
       await t.commit();
 
-      // Fetch updated customer with associations
+      // Fetch updated customer with all necessary data
       const updatedCustomer = await Customer.findByPk(id, {
         include: [{
           model: Shop,
           as: 'shops',
           attributes: ['id', 'name']
-        }]
+        }, {
+          model: Sales,
+          as: 'sales',
+          attributes: []
+        }],
+        attributes: {
+          include: [
+            [sequelize.fn('COUNT', sequelize.col('sales.id')), 'orders'],
+            [sequelize.fn('SUM', sequelize.col('sales.netAmount')), 'spent']
+          ]
+        },
+        group: ['Customer.id', 'shops.id']
       });
+
+      // Format the response to match frontend expectations
+      const serializedCustomer = {
+        id: updatedCustomer?.id,
+        name: `${updatedCustomer?.first_name} ${updatedCustomer?.last_name}`,
+        phone: updatedCustomer?.phone_number,
+        orders: parseInt(updatedCustomer?.get('orders') as string) || 0,
+        spent: new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'XAF'
+        }).format(parseFloat(updatedCustomer?.get('spent') as string) || 0)
+      };
 
       return { 
         success: true, 
         message: 'Customer updated successfully', 
-        customer: updatedCustomer 
+        customer: serializedCustomer 
       };
     } catch (error) {
       await t.rollback();

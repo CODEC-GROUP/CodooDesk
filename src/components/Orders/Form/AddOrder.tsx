@@ -548,7 +548,28 @@ export function AddOrder({ onBack }: AddOrderProps) {
                   <tr key={item.id}>
                     <td className="px-4 py-2">{item.productName}</td>
                     <td className="px-4 py-2 text-right">{item.unitPrice} XAF</td>
-                    <td className="px-4 py-2 text-right">{item.quantity}</td>
+                    <td className="px-4 py-2 text-right">
+                      <Input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const newQuantity = parseInt(e.target.value);
+                          if (newQuantity > 0) {
+                            setOrderItems(orderItems.map(orderItem => 
+                              orderItem.id === item.id 
+                                ? {
+                                    ...orderItem,
+                                    quantity: newQuantity,
+                                    total: orderItem.unitPrice * newQuantity
+                                  }
+                                : orderItem
+                            ));
+                          }
+                        }}
+                        className="w-20 text-right"
+                      />
+                    </td>
                     <td className="px-4 py-2 text-right">{item.total} XAF</td>
                     <td className="px-4 py-2 text-right">
                       <Button

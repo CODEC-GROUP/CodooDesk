@@ -258,12 +258,32 @@ export function registerEmployeeHandlers() {
           as: 'user',
           attributes: ['username', 'email', 'role']
         }]
-      });
+      }) as Employee & { user: User };
+
+      if (!updatedEmployee) {
+        return {
+          success: false,
+          message: 'Failed to fetch updated employee'
+        };
+      }
+
+      const serializedEmployee = {
+        id: updatedEmployee.id,
+        firstName: updatedEmployee.firstName,
+        lastName: updatedEmployee.lastName,
+        phone: updatedEmployee.phone,
+        role: updatedEmployee.user?.role || updatedEmployee.role,
+        user: updatedEmployee.user ? {
+          username: updatedEmployee.user.username,
+          email: updatedEmployee.user.email,
+          role: updatedEmployee.user.role
+        } : null
+      };
 
       return { 
         success: true, 
         message: 'Employee updated successfully', 
-        employee: updatedEmployee 
+        employee: serializedEmployee 
       };
     } catch (error) {
       await t.rollback();
