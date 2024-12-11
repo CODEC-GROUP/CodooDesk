@@ -287,7 +287,6 @@ export function Pos() {
         return;
       }
 
-      // Set default Walk-in customer if none selected
       const customer = selectedCustomer || {
         id: null,
         name: 'Walk-in Customer',
@@ -295,16 +294,15 @@ export function Pos() {
       };
 
       const total = calculateTotal();
+
       const saleData = {
         shopId: business?.shops?.[0]?.id,
-        customerId: selectedCustomer?.id,
-        items: cartItems.map(item => ({
-          productId: item.id,
-          quantity: item.quantity,
-          unitPrice: item.actualPrice
-        })),
+        customer: customer,
+        cartItems: cartItems,
+        subtotal: total,
         paymentMethod: paymentType,
         amountPaid: amountPaid,
+        changeGiven: changeAmount,
         discount: discount,
         salesPersonId: user?.id || '',
         salesPersonName: user?.username || '',
@@ -329,6 +327,7 @@ export function Pos() {
           change: number;
           paymentMethod: string;
           salesPersonId: string;
+          salesPersonName: string;
         };
       }>('pos:sale:create', saleData);
 

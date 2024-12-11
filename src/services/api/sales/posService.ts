@@ -17,19 +17,25 @@ interface CartItem {
 }
 
 interface POSSaleRequest {
-  cartItems: CartItem[];
-  customer: {
-    id: string;
+  shopId: string;
+  customer?: {
+    id: string | null;
     name: string;
     phone: string;
-  } | null;
-  subtotal: number;
-  paymentMethod: 'cash' | 'card' | 'mobile_money' | 'bank_transfer';
+  };
+  cartItems: {
+    id: string;
+    name: string;
+    quantity: number;
+    actualPrice: number;
+  }[];
+  paymentMethod: string;
   amountPaid: number;
   changeGiven: number;
-  shopId: string;
-  salesPersonId: string;
+  subtotal: number;
   discount?: number;
+  salesPersonId: string;
+  salesPersonName: string;
 }
 
 const IPC_CHANNELS = {
@@ -58,7 +64,7 @@ export function registerPOSHandlers() {
         totalProfit += itemProfit;
       }
 
-      const netAmount = request.subtotal;
+      const netAmount = request.subtotal
       
       if (netAmount < 0) {
         throw new Error('Net amount cannot be negative');
@@ -70,13 +76,13 @@ export function registerPOSHandlers() {
         status: 'completed',
         customer_id: request.customer?.id || null,
         deliveryStatus: 'delivered',
-        netAmount: request.subtotal,
+        netAmount: netAmount,
         amountPaid: request.amountPaid,
         changeGiven: request.changeGiven,
         deliveryFee: 0,
         discount: request.discount || 0,
         profit: totalProfit,
-        paymentMethod: request.paymentMethod,
+        paymentMethod: request.paymentMethod as 'cash' | 'card' | 'mobile_money' | 'bank_transfer',
         salesPersonId: request.salesPersonId,
       };
 
@@ -182,7 +188,8 @@ export function registerPOSHandlers() {
         amountPaid: request.amountPaid,
         change: request.changeGiven,
         paymentMethod: request.paymentMethod,
-        salesPersonId: request.salesPersonId
+        salesPersonId: request.salesPersonId,
+        salesPersonName: request.salesPersonName
       };
 
       await t.commit();
