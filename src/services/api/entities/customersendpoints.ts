@@ -106,7 +106,7 @@ export function registerCustomerHandlers() {
         orders: parseInt(customer.orders) || 0,
         spent: new Intl.NumberFormat('en-US', {
           style: 'currency',
-          currency: 'USD'
+          currency: 'XAF'
         }).format(parseFloat(customer.spent) || 0)
       }));
 

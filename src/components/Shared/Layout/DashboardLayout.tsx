@@ -38,7 +38,7 @@ const navigationItems = [
     icon: ListOrdered,
     subItems: [
       { name: 'Orders', href: '/orders/orders' },
-      { name: 'Returns', href: '/orders/returns' },
+      // { name: 'Returns', href: '/orders/returns' },
     ],
   },
   {

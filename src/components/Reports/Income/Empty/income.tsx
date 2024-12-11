@@ -448,14 +448,14 @@ const Income = () => {
                 )}
 
                 <div className="space-y-2">
-                  <Label>OHADA Code</Label>
+                  <Label>Source</Label>
                   {!isCustomCategory ? (
                     <Select
                       value={selectedOhadaCode}
                       onValueChange={handleOhadaCodeSelection}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select OHADA Code" />
+                        <SelectValue placeholder="Select Source Code" />
                       </SelectTrigger>
                       <SelectContent className="max-h-[200px] overflow-y-auto">
                         {ohadaCodes.map((code: any) => (
@@ -468,7 +468,7 @@ const Income = () => {
                     </Select>
                   ) : null}
 
-                  <div className="mt-4">
+                  {/* <div className="mt-4">
                     <div className="flex items-center space-x-2">
                       <Checkbox
                         id="customCategory"
@@ -513,7 +513,7 @@ const Income = () => {
                         </div>
                       </div>
                     )}
-                  </div>
+                  </div> */}
                 </div>
                 <Button onClick={handleAddItem}>Add Income</Button>
               </div>

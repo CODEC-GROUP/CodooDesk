@@ -144,10 +144,6 @@ async function createWindow() {
       },
     });
 
-    // Clear storage data before loading the app
-    await mainWindow.webContents.session.clearStorageData({
-      storages: ['localStorage', 'sessionStorage', 'cookies']
-    });
 
     // Set security headers
     mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {

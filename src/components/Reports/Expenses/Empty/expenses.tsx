@@ -439,14 +439,14 @@ const Expenses = () => {
                 )}
 
                 <div className="space-y-2">
-                  <Label>OHADA Code</Label>
+                  <Label>Category</Label>
                   {!isCustomCategory ? (
                     <Select
                       value={selectedOhadaCode}
                       onValueChange={handleOhadaCodeSelection}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select OHADA Code" />
+                        <SelectValue placeholder="Select category Code" />
                       </SelectTrigger>
                       <SelectContent className="max-h-[200px] overflow-y-auto">
                         {ohadaCodes.map((code : any) => (
@@ -458,7 +458,7 @@ const Expenses = () => {
                       </SelectContent>
                     </Select>
                   ) : null}
-                  
+{/*                   
                   <div className="mt-4">
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -504,7 +504,7 @@ const Expenses = () => {
                         </div>
                       </div>
                     )}
-                  </div>
+                  </div> */}
                 </div>
                 <Button onClick={handleAddItem}>Add Expense</Button>
               </div>

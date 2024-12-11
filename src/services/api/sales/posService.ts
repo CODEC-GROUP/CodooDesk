@@ -58,7 +58,7 @@ export function registerPOSHandlers() {
         totalProfit += itemProfit;
       }
 
-      const netAmount = request.subtotal - (request.discount || 0);
+      const netAmount = request.subtotal;
       
       if (netAmount < 0) {
         throw new Error('Net amount cannot be negative');

@@ -11,6 +11,7 @@ import Image from 'next/image'
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
+import { AddProduct } from "@/components/Products/Form/AddProduct"
 import EmptyState from './Empty/EmptyState'
 import { PrinterService } from "@/services/printerService";
 
@@ -198,6 +199,15 @@ export function Pos() {
   const [discount, setDiscount] = useState<number>(0);
   const [lastSaleData, setLastSaleData] = useState<any>(null);
   const [lastReceiptData, setLastReceiptData] = useState<any>(null);
+  const [showAddProductForm, setShowAddProductForm] = useState(false);
+
+  const handleAddProduct = () => {
+    setShowAddProductForm(true);
+  };
+
+  const handleCloseAddProductForm = () => {
+    setShowAddProductForm(false);
+  };
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -611,7 +621,7 @@ export function Pos() {
 
           {/* Product Grid - 6x6 Layout */}
           {products.length === 0 ? (
-            <EmptyState />
+            <EmptyState onAddProduct={handleAddProduct} />
           ) : (
             <div className="flex-1 overflow-y-auto min-h-0 pb-4">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -805,6 +815,10 @@ export function Pos() {
           </Card>
         </div>
       </div>
+
+      {showAddProductForm && (
+        <AddProduct onBack={handleCloseAddProductForm} />
+      )}
     </div>
   )
 }

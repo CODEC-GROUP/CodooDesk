@@ -53,7 +53,7 @@ export function registerSupplierHandlers() {
               'id',
               'name',
               [Sequelize.fn('COUNT', Sequelize.col('supplierProducts.id')), 'productCount'],
-              [Sequelize.fn('SUM', Sequelize.col('Orders.sellingPrice')), 'totalSales']
+              [Sequelize.fn('SUM', Sequelize.col('Orders.sellingPrice')), 'totalValue']
             ],
             include: [{
               model: Order,
@@ -65,10 +65,19 @@ export function registerSupplierHandlers() {
         group: ['Supplier.id', 'supplierProducts.id'],
       });
       
-      return { success: true, suppliers };
+      // Convert Sequelize models to plain objects
+      const plainSuppliers = suppliers.map(supplier => {
+        const plainSupplier = supplier.get({ plain: true });
+        // Ensure supplierProducts is always an array
+        plainSupplier.supplierProducts = plainSupplier.supplierProducts || [];
+        return plainSupplier;
+      });
+
+      return { success: true, suppliers: plainSuppliers };
     } catch (error) {
       console.error('Error fetching suppliers:', error);
-      return { success: false, message: 'Error fetching suppliers' };
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      return { success: false, message: 'Error fetching suppliers', error: errorMessage };
     }
   });
 

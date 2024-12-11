@@ -2,7 +2,11 @@ import { Package, Plus } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-export default function EmptyState() {
+interface EmptyStateProps {
+  onAddProduct: () => void;
+}
+
+export default function EmptyState({ onAddProduct }: EmptyStateProps) {
   return (
     <div className="flex h-[450px] shrink-0 items-center justify-center rounded-md border border-dashed">
       <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
@@ -16,18 +20,16 @@ export default function EmptyState() {
         </p>
         
         <div className="flex gap-2">
-          <Link href="/products">
+          <Link href="/products/lists">
             <Button variant="outline" className="gap-2">
               <Package className="h-4 w-4" />
-              View Products
+              Go to Products
             </Button>
           </Link>
-          <Link href="/products/add">
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              Add Product
-            </Button>
-          </Link>
+          {/* <Button onClick={onAddProduct} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Product
+          </Button> */}
         </div>
       </div>
     </div>
