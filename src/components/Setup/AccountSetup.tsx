@@ -70,6 +70,9 @@ interface ValidationErrors {
   state?: string;
   country?: string;
   terms?: string;
+  password?: string;
+  reEnterPassword?: string;
+  managerEmail?: string;
 }
 
 const AccountSetup = () => {
@@ -144,8 +147,18 @@ const AccountSetup = () => {
 
   const handleNext = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    
+    if (step === 2 && !validateStep2()) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields correctly",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setStep((prev) => prev + 1);
-  }
+  };
 
   const handlePrev = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -199,6 +212,67 @@ const AccountSetup = () => {
     }
     if (!country?.trim()) {
       errors.country = "Country is required";
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateStep2 = (): boolean => {
+    const errors: ValidationErrors = {};
+    
+    // Manager Details validation
+    if (!formData.managerName?.trim()) {
+      errors.managerName = "Manager name is required";
+    }
+    
+    if (!formData.phoneNumber?.trim()) {
+      errors.phone = "Phone number is required";
+    } else if (!/^\+?[\d\s-]+$/.test(formData.phoneNumber)) {
+      errors.phone = "Please enter a valid phone number";
+    }
+    
+    if (!formData.email?.trim()) {
+      errors.email = "Email address is required";
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      errors.email = "Please enter a valid email address";
+    }
+    
+    if (!formData.shopName?.trim()) {
+      errors.shopName = "Shop name is required";
+    }
+
+    // Shop Address validation (only if not using business address)
+    if (!useBusinessAddress) {
+      if (!formData.street?.trim()) {
+        errors.address = "Street address is required";
+      }
+      if (!formData.city?.trim()) {
+        errors.city = "City is required";
+      }
+      if (!formData.stateProvince?.trim()) {
+        errors.state = "State/Province is required";
+      }
+      if (!formData.country?.trim()) {
+        errors.country = "Country is required";
+      }
+    }
+
+    // Manager credentials (only if not the manager)
+    if (!isManager) {
+      if (!formData.password) {
+        errors.password = "Password is required";
+      }
+      if (!formData.reEnterPassword) {
+        errors.reEnterPassword = "Please confirm your password";
+      } else if (formData.password !== formData.reEnterPassword) {
+        errors.reEnterPassword = "Passwords do not match";
+      }
+      if (!formData.managerEmail?.trim()) {
+        errors.managerEmail = "Manager email is required";
+      } else if (!/\S+@\S+\.\S+/.test(formData.managerEmail)) {
+        errors.managerEmail = "Please enter a valid email address";
+      }
     }
 
     setValidationErrors(errors);
@@ -621,6 +695,9 @@ const AccountSetup = () => {
                       onChange={handleInputChange}
                       required
                     />
+                    {validationErrors.managerName && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.managerName}</p>
+                    )}
                   </div>
 
                   <div>
@@ -635,6 +712,9 @@ const AccountSetup = () => {
                       onChange={handleInputChange}
                       required
                     />
+                    {validationErrors.phone && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.phone}</p>
+                    )}
                   </div>
 
                   <div>
@@ -647,6 +727,9 @@ const AccountSetup = () => {
                       onChange={handleInputChange}
                       required
                     />
+                    {validationErrors.email && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.email}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="shopName">Shop Name</Label>
@@ -657,6 +740,9 @@ const AccountSetup = () => {
                       onChange={handleInputChange}
                       required
                     />
+                    {validationErrors.shopName && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.shopName}</p>
+                    )}
                   </div>
                   <div className="col-span-2">
                     <h3 className="text-lg font-semibold mb-4">Shop Address</h3>
@@ -698,6 +784,9 @@ const AccountSetup = () => {
                       placeholder="Enter complete street address"
                       disabled={useBusinessAddress}
                     />
+                    {validationErrors.address && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.address}</p>
+                    )}
                   </div>
 
                   <div>
@@ -728,6 +817,9 @@ const AccountSetup = () => {
                         disabled={useBusinessAddress}
                       />
                     )}
+                    {validationErrors.state && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.state}</p>
+                    )}
                   </div>
 
                   <div>
@@ -741,6 +833,9 @@ const AccountSetup = () => {
                       placeholder="Enter city"
                       disabled={useBusinessAddress}
                     />
+                    {validationErrors.city && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.city}</p>
+                    )}
                   </div>
 
                   <div>
@@ -752,6 +847,9 @@ const AccountSetup = () => {
                       onChange={(option) => setFormData(prev => ({ ...prev, country: option?.value || '' }))}
                       isDisabled={useBusinessAddress}
                     />
+                    {validationErrors.country && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.country}</p>
+                    )}
                   </div>
 
                   <div className="flex items-center space-x-2 mb-4">
@@ -784,6 +882,9 @@ const AccountSetup = () => {
                             {showPassword.password ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
                         </div>
+                        {validationErrors.password && (
+                          <p className="text-red-500 text-sm mt-1">{validationErrors.password}</p>
+                        )}
                       </div>
                       <div>
                         <Label htmlFor="reEnterPassword">Re-enter Password</Label>
@@ -804,6 +905,9 @@ const AccountSetup = () => {
                             {showPassword.reEnterPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
                         </div>
+                        {validationErrors.reEnterPassword && (
+                          <p className="text-red-500 text-sm mt-1">{validationErrors.reEnterPassword}</p>
+                        )}
                       </div>
                       <div>
                         <Label htmlFor="managerEmail">Manager Email</Label>
@@ -815,6 +919,9 @@ const AccountSetup = () => {
                           onChange={handleInputChange}
                           required={!isManager}
                         />
+                        {validationErrors.managerEmail && (
+                          <p className="text-red-500 text-sm mt-1">{validationErrors.managerEmail}</p>
+                        )}
                       </div>
                     </>
                   )}
