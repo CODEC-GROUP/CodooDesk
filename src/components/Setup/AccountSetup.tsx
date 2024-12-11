@@ -34,6 +34,7 @@ import { Country, State } from 'country-state-city';
 import { safeIpcInvoke } from '@/lib/ipc';
 import path from 'path';
 import { fileStorage } from '@/services/fileStorage';
+import { toast } from "@/hooks/use-toast"
 
 const businessTypes = [
   'retail',
@@ -53,6 +54,22 @@ interface FileStoreResponse {
   success: boolean;
   path?: string;
   fullPath?: string;
+}
+
+interface ValidationErrors {
+  businessName?: string;
+  businessType?: string;
+  taxId?: string;
+  employees?: string;
+  shopName?: string;
+  managerName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  terms?: string;
 }
 
 const AccountSetup = () => {
@@ -101,6 +118,7 @@ const AccountSetup = () => {
     reEnterPassword: false
   })
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -134,8 +152,70 @@ const AccountSetup = () => {
     setStep((prev) => prev - 1)
   }
 
+  const validateStep3 = (): boolean => {
+    const errors: ValidationErrors = {};
+    
+    // Business Details validation
+    if (!formData.fullBusinessName?.trim()) {
+      errors.businessName = "Business name is required";
+    }
+    if (!formData.businessType?.trim()) {
+      errors.businessType = "Business type is required";
+    }
+    if (!formData.numberOfEmployees) {
+      errors.employees = "Number of employees is required";
+    }
+
+    // Shop Details validation
+    if (!formData.shopName?.trim()) {
+      errors.shopName = "Shop name is required";
+    }
+    if (!formData.managerName?.trim()) {
+      errors.managerName = "Manager name is required";
+    }
+    if (!formData.email?.trim()) {
+      errors.email = "Email is required";
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      errors.email = "Please enter a valid email address";
+    }
+    if (!formData.phoneNumber?.trim()) {
+      errors.phone = "Phone number is required";
+    }
+
+    // Location Details validation
+    const address = useBusinessAddress ? formData.street : formData.shopLocation;
+    const city = useBusinessAddress ? formData.city : formData.shopCity;
+    const state = useBusinessAddress ? formData.stateProvince : formData.shopStateProvince;
+    const country = useBusinessAddress ? formData.country : formData.shopCountry;
+
+    if (!address?.trim()) {
+      errors.address = "Address is required";
+    }
+    if (!city?.trim()) {
+      errors.city = "City is required";
+    }
+    if (!state?.trim()) {
+      errors.state = "State/Province is required";
+    }
+    if (!country?.trim()) {
+      errors.country = "Country is required";
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (step === 3 && !validateStep3()) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields correctly",
+        variant: "destructive",
+      });
+      return;
+    }
 
     if (!user?.id) {
       console.error('No user ID found');
@@ -755,10 +835,30 @@ const AccountSetup = () => {
                         Business Details
                       </h3>
                       <div className="space-y-2">
-                        <p><span className="font-medium">Business Name:</span> {formData.fullBusinessName}</p>
-                        <p><span className="font-medium">Business Type:</span> {formData.businessType}</p>
-                        <p><span className="font-medium">Tax ID:</span> {formData.taxIdNumber}</p>
-                        <p><span className="font-medium">Employees:</span> {formData.numberOfEmployees}</p>
+                        <div>
+                          <p><span className="font-medium">Business Name:</span> {formData.fullBusinessName}</p>
+                          {validationErrors.businessName && (
+                            <p className="text-red-500 text-sm">{validationErrors.businessName}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">Business Type:</span> {formData.businessType}</p>
+                          {validationErrors.businessType && (
+                            <p className="text-red-500 text-sm">{validationErrors.businessType}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">Tax ID:</span> {formData.taxIdNumber}</p>
+                          {validationErrors.taxId && (
+                            <p className="text-red-500 text-sm">{validationErrors.taxId}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">Employees:</span> {formData.numberOfEmployees}</p>
+                          {validationErrors.employees && (
+                            <p className="text-red-500 text-sm">{validationErrors.employees}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -768,10 +868,30 @@ const AccountSetup = () => {
                         Shop Details
                       </h3>
                       <div className="space-y-2">
-                        <p><span className="font-medium">Shop Name:</span> {formData.shopName}</p>
-                        <p><span className="font-medium">Manager:</span> {formData.managerName}</p>
-                        <p><span className="font-medium">Email:</span> {formData.email}</p>
-                        <p><span className="font-medium">Phone:</span> {formData.phoneNumber}</p>
+                        <div>
+                          <p><span className="font-medium">Shop Name:</span> {formData.shopName}</p>
+                          {validationErrors.shopName && (
+                            <p className="text-red-500 text-sm">{validationErrors.shopName}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">Manager:</span> {formData.managerName}</p>
+                          {validationErrors.managerName && (
+                            <p className="text-red-500 text-sm">{validationErrors.managerName}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">Email:</span> {formData.email}</p>
+                          {validationErrors.email && (
+                            <p className="text-red-500 text-sm">{validationErrors.email}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">Phone:</span> {formData.phoneNumber}</p>
+                          {validationErrors.phone && (
+                            <p className="text-red-500 text-sm">{validationErrors.phone}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -781,21 +901,60 @@ const AccountSetup = () => {
                         Location Details
                       </h3>
                       <div className="space-y-2">
-                        <p><span className="font-medium">Address:</span> {useBusinessAddress ? formData.street : formData.shopLocation}</p>
-                        <p><span className="font-medium">City:</span> {useBusinessAddress ? formData.city : formData.shopCity}</p>
-                        <p><span className="font-medium">State/Province:</span> {useBusinessAddress ? formData.stateProvince : formData.shopStateProvince}</p>
-                        <p><span className="font-medium">Country:</span> {useBusinessAddress ? formData.country : formData.shopCountry}</p>
+                        <div>
+                          <p><span className="font-medium">Address:</span> {useBusinessAddress ? formData.street : formData.shopLocation}</p>
+                          {validationErrors.address && (
+                            <p className="text-red-500 text-sm">{validationErrors.address}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">City:</span> {useBusinessAddress ? formData.city : formData.shopCity}</p>
+                          {validationErrors.city && (
+                            <p className="text-red-500 text-sm">{validationErrors.city}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">State/Province:</span> {useBusinessAddress ? formData.stateProvince : formData.shopStateProvince}</p>
+                          {validationErrors.state && (
+                            <p className="text-red-500 text-sm">{validationErrors.state}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p><span className="font-medium">Country:</span> {useBusinessAddress ? formData.country : formData.shopCountry}</p>
+                          {validationErrors.country && (
+                            <p className="text-red-500 text-sm">{validationErrors.country}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
                 </Card>
 
                 <div className="flex items-center space-x-2 bg-blue-50 p-4 rounded-lg">
-                  <Checkbox id="terms" required />
+                  <Checkbox 
+                    id="terms" 
+                    required
+                    onCheckedChange={(checked) => {
+                      if (!checked) {
+                        setValidationErrors(prev => ({
+                          ...prev,
+                          terms: "You must accept the terms to continue"
+                        }));
+                      } else {
+                        setValidationErrors(prev => {
+                          const { terms, ...rest } = prev;
+                          return rest;
+                        });
+                      }
+                    }}
+                  />
                   <Label htmlFor="terms" className="text-sm">
                     I confirm that all provided information is accurate and all uploaded documents are clear and valid.
                   </Label>
                 </div>
+                {validationErrors.terms && (
+                  <p className="text-red-500 text-sm mt-2">{validationErrors.terms}</p>
+                )}
               </div>
             )}
 

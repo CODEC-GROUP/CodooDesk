@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import url from 'url';
@@ -138,7 +138,7 @@ async function createWindow() {
         sandbox: false,
         contextIsolation: true,
         preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
-        webSecurity: true,
+        webSecurity: false,
         allowRunningInsecureContent: false,
         devTools: true
       },
@@ -151,7 +151,8 @@ async function createWindow() {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-            "default-src 'self' 'unsafe-inline' 'unsafe-eval' file: data:;"
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' file: data:;",
+            "img-src 'self' file: data: https: http: file://*;"
           ]
         }
       });
@@ -215,6 +216,12 @@ async function createWindow() {
 
     mainWindow.webContents.on('crashed', (event) => {
       console.error('Renderer process crashed');
+    });
+
+    // Add a protocol handler for local files
+    protocol.registerFileProtocol('local-file', (request, callback) => {
+      const filePath = request.url.replace('local-file://', '');
+      callback(decodeURI(filePath));
     });
 
   } catch (error) {

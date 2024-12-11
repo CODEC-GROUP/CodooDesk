@@ -132,29 +132,90 @@ export function registerCustomerHandlers() {
 
   // Update customer handler
   ipcMain.handle(IPC_CHANNELS.UPDATE_CUSTOMER, async (event, { id, updates }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const customer = await Customer.findByPk(id);
+      const customer = await Customer.findByPk(id, {
+        include: [{
+          model: Shop,
+          as: 'shops'
+        }],
+        transaction: t
+      });
+
       if (!customer) {
+        await t.rollback();
         return { success: false, message: 'Customer not found' };
       }
-      await customer.update(updates);
-      return { success: true, message: 'Customer updated successfully', customer };
+
+      await customer.update({
+        first_name: updates.first_name,
+        last_name: updates.last_name,
+        phone_number: updates.phone_number,
+        dateOfBirth: updates.dateOfBirth,
+        address: updates.address,
+        city: updates.city,
+        region: updates.region,
+        country: updates.country
+      }, { transaction: t });
+
+      // Update shop associations if provided
+      if (updates.shopIds) {
+        await customer.setShops(updates.shopIds, { transaction: t });
+      }
+
+      await t.commit();
+
+      // Fetch updated customer with associations
+      const updatedCustomer = await Customer.findByPk(id, {
+        include: [{
+          model: Shop,
+          as: 'shops',
+          attributes: ['id', 'name']
+        }]
+      });
+
+      return { 
+        success: true, 
+        message: 'Customer updated successfully', 
+        customer: updatedCustomer 
+      };
     } catch (error) {
-      return { success: false, message: 'Error updating customer', error };
+      await t.rollback();
+      console.error('Error updating customer:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error updating customer'
+      };
     }
   });
 
   // Delete customer handler
   ipcMain.handle(IPC_CHANNELS.DELETE_CUSTOMER, async (event, { id }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const customer = await Customer.findByPk(id);
+      const customer = await Customer.findByPk(id, { transaction: t });
       if (!customer) {
+        await t.rollback();
         return { success: false, message: 'Customer not found' };
       }
-      await customer.destroy();
+
+      // Remove shop associations first
+      await customer.setShops([], { transaction: t });
+      
+      // Then delete the customer
+      await customer.destroy({ transaction: t });
+      
+      await t.commit();
       return { success: true, message: 'Customer deleted successfully' };
     } catch (error) {
-      return { success: false, message: 'Error deleting customer', error };
+      await t.rollback();
+      console.error('Error deleting customer:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error deleting customer'
+      };
     }
   });
 }

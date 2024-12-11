@@ -1,5 +1,8 @@
 import { ipcMain } from 'electron';
 import Category, { CategoryAttributes } from '../../../models/Category.js';
+import { sequelize } from '../../database/index.js';
+import { unlink } from 'fs/promises';
+import path from 'path';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -68,32 +71,89 @@ export function registerCategoryHandlers() {
   });
 
   // Update category
-  ipcMain.handle(IPC_CHANNELS.UPDATE_CATEGORY, async (event, { id, updates }) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CATEGORY, async (event, { categoryId, data }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const category = await Category.findByPk(id);
+      const category = await Category.findByPk(categoryId, { transaction: t });
       if (!category) {
+        await t.rollback();
         return { success: false, message: 'Category not found' };
       }
-      await category.update(updates);
-      return { success: true, message: 'Category updated successfully', category };
+
+      // If there's a new image and an old image exists, delete the old one
+      if (data.image && category.image && category.image !== data.image) {
+        try {
+          const oldImagePath = path.resolve(category.image);
+          await unlink(oldImagePath);
+        } catch (error) {
+          console.error('Error deleting old image:', error);
+          // Continue with update even if image deletion fails
+        }
+      }
+
+      await category.update({
+        name: data.name,
+        description: data.description,
+        image: data.image,
+        businessId: data.businessId
+      }, { transaction: t });
+
+      await t.commit();
+
+      // Fetch updated category with any related data
+      const updatedCategory = await Category.findByPk(categoryId, {
+        include: ['products']
+      });
+
+      return { 
+        success: true, 
+        message: 'Category updated successfully', 
+        category: updatedCategory?.get({ plain: true }) 
+      };
     } catch (error) {
+      await t.rollback();
       console.error('Error updating category:', error);
-      return { success: false, message: 'Error updating category', error };
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error updating category' 
+      };
     }
   });
 
   // Delete category
   ipcMain.handle(IPC_CHANNELS.DELETE_CATEGORY, async (event, { id }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const category = await Category.findByPk(id);
+      const category = await Category.findByPk(id, { transaction: t });
       if (!category) {
+        await t.rollback();
         return { success: false, message: 'Category not found' };
       }
-      await category.destroy();
+
+      // Delete associated image if it exists
+      if (category.image) {
+        try {
+          const imagePath = path.resolve(category.image);
+          await unlink(imagePath);
+        } catch (error) {
+          console.error('Error deleting category image:', error);
+          // Continue with deletion even if image deletion fails
+        }
+      }
+
+      await category.destroy({ transaction: t });
+      await t.commit();
+      
       return { success: true, message: 'Category deleted successfully' };
     } catch (error) {
+      await t.rollback();
       console.error('Error deleting category:', error);
-      return { success: false, message: 'Error deleting category', error };
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error deleting category' 
+      };
     }
   });
 }

@@ -376,7 +376,7 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                             {sale.deliveryStatus}
                           </span>
                         </TableCell>
-                        <TableCell>{formatCurrency(sale.netAmount).toLocaleString()} FCFA</TableCell>
+                        <TableCell>{formatCurrency(sale.netAmount).toLocaleString()}</TableCell>
                         <TableCell>
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold
                             ${sale.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 

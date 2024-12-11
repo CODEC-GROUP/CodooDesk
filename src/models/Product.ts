@@ -3,12 +3,11 @@ import { sequelize } from '../services/database/index.js';
 import Category, { CategoryAttributes } from './Category.js';
 import Shop, { ShopAttributes } from './Shop.js';
 import Supplier from './Supplier.js';
-import Order from './Order.js';
 
 export interface ProductAttributes {
   id?: string;
   name: string;
-  sku: string;
+  sku?: string;
   sellingPrice: number;
   quantity: number;
   description: string | null;
@@ -20,13 +19,13 @@ export interface ProductAttributes {
   featuredImage: string | null;
   additionalImages: string[] | null;
   reorderPoint?: number;
+  suppliers?: Array<{ id: string, name: string }>;
 }
 
 export interface ProductInstance extends Model<ProductAttributes>, ProductAttributes {
   suppliers?: Array<{id: string, name: string}>;
   category?: CategoryAttributes | null;
   shop?: ShopAttributes | null;
-  orders?: Order[];
 }
 
 class Product extends Model<ProductAttributes> implements ProductAttributes {
@@ -44,6 +43,7 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
   public featuredImage!: string | null;
   public additionalImages!: string[] | null;
   public reorderPoint?: number;
+  public suppliers?: Array<{ id: string, name: string }>;
 
   public addSuppliers!: (supplierIds: string[]) => Promise<void>;
   public getSuppliers!: () => Promise<any[]>;
@@ -144,11 +144,11 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
   }
 
   static associate(models: any) {
-    this.belongsTo(models.Category, { foreignKey:{name: 'category_id', allowNull: true}, as: 'category' });
+    this.belongsTo(models.Category, { foreignKey: 'category_id', as: 'category' });
     this.belongsTo(models.Shop, { foreignKey: 'shop_id', as: 'shop' });
     this.belongsToMany(models.Supplier, { 
       through: 'SupplierProducts',
-      foreignKey: {name: 'productId', allowNull: true},
+      foreignKey: 'productId',
       otherKey: 'supplierId',
       as: 'suppliers'
     });

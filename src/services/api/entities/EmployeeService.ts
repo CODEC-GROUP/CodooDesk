@@ -232,14 +232,21 @@ export function registerEmployeeHandlers() {
       await employee.update(updates, { transaction: t });
 
       // Update associated user data if provided
-      if (updates.email) {
-        await User.update({
-          email: updates.email,
-          shopId: updates.shopId
-        }, { 
-          where: { id: employee.userId },
-          transaction: t 
-        });
+      if (employee.userId) {
+        const userUpdates: any = {};
+        
+        if (updates.email) userUpdates.email = updates.email;
+        if (updates.username) userUpdates.username = updates.username;
+        if (updates.password_hash) {
+          userUpdates.password_hash = await bcrypt.hash(updates.password_hash, 10);
+        }
+
+        if (Object.keys(userUpdates).length > 0) {
+          await User.update(userUpdates, { 
+            where: { id: employee.userId },
+            transaction: t 
+          });
+        }
       }
 
       await t.commit();
@@ -250,10 +257,6 @@ export function registerEmployeeHandlers() {
           model: User,
           as: 'user',
           attributes: ['username', 'email', 'role']
-        }, {
-          model: Shop,
-          as: 'shop',
-          attributes: ['name']
         }]
       });
 

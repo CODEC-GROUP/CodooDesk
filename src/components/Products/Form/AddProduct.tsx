@@ -17,9 +17,14 @@ import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import { Category, Supplier, fetchProductDependencies } from '../utils/productUtils';
 import Shop from '@/models/Shop';
+import type { ProductAttributes } from '@/models/Product'
+import { fileStorage } from '@/services/fileStorage';
 
 interface AddProductProps {
   onBack: () => void;
+  editMode?: boolean;
+  productToEdit?: ProductAttributes;
+  onEditComplete?: () => void;
 }
 
 interface FileUploadResponse {
@@ -36,7 +41,6 @@ interface ProductData {
   discountPrice: number | null;
   category_id: string;
   shop_id: string;
-  addTax: boolean;
   productType: string;
   businessId?: string;
   featuredImage: string | null;
@@ -66,22 +70,66 @@ interface ShopResponse {
   message?: string;
 }
 
-export function AddProduct({ onBack }: AddProductProps) {
+interface FormData {
+  name: string;
+  description: string | null;
+  sellingPrice: string;
+  sku: string;
+  category_id: string | undefined;
+  shop_id: string;
+  status: 'high_stock' | 'medium_stock' | 'low_stock' | 'out_of_stock';
+  unitType: string;
+  purchasePrice: string;
+  quantity: string;
+  reorderPoint: string;
+  featuredImage: string | null;
+  additionalImages: string[];
+  businessId?: string;
+  userId?: string;
+  productType: string;
+}
+
+export function AddProduct({ onBack, editMode = false, productToEdit, onEditComplete }: AddProductProps) {
   const { business, user } = useAuthLayout();
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    sellingPrice: '',
-    discountPrice: '',
-    category_id: '',
-    shop_id: '',
-    addTax: false,
-    productType: '',
-    quantity: '0',
-    reorderPoint: '10',
-    businessId: business?.id || '',
-    userId: user?.id || '',
-    purchasePrice: ''
+  const [formData, setFormData] = useState<FormData>(() => {
+    if (editMode && productToEdit) {
+      return {
+        name: productToEdit.name,
+        description: productToEdit.description,
+        sellingPrice: productToEdit.sellingPrice.toString(),
+        sku: productToEdit.sku || '',
+        category_id: productToEdit.category_id || undefined,
+        shop_id: productToEdit.shop_id,
+        status: productToEdit.status,
+        unitType: productToEdit.unitType || '',
+        purchasePrice: productToEdit.purchasePrice.toString(),
+        quantity: productToEdit.quantity.toString(),
+        reorderPoint: productToEdit.reorderPoint?.toString() || '10',
+        featuredImage: productToEdit.featuredImage,
+        additionalImages: productToEdit.additionalImages || [],
+        businessId: business?.id,
+        userId: user?.id,
+        productType: productToEdit.unitType || ''
+      };
+    }
+    return {
+      name: '',
+      description: null,
+      sellingPrice: '',
+      sku: '',
+      category_id: undefined,
+      shop_id: '',
+      status: 'high_stock',
+      unitType: '',
+      purchasePrice: '',
+      quantity: '0',
+      reorderPoint: '10',
+      featuredImage: null,
+      additionalImages: [],
+      businessId: business?.id,
+      userId: user?.id,
+      productType: ''
+    };
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -119,98 +167,62 @@ export function AddProduct({ onBack }: AddProductProps) {
     fetchInitialData();
   }, [business?.id]);
 
+  useEffect(() => {
+    if (editMode && productToEdit) {
+      setSelectedSuppliers(productToEdit.suppliers?.map(supplier => supplier.id) || []);
+    }
+  }, [editMode, productToEdit]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (!business?.id) {
-        toast({
-          title: "Error",
-          description: "Business information is missing",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      if (!formData.shop_id) {
-        toast({
-          title: "Error",
-          description: "Please select a shop",
-          variant: "destructive",
-        });
-        return;
-      }
-
       setIsLoading(true);
-
-      // First, handle image uploads
-      let featuredImagePath = null;
-      let additionalImagePaths: string[] = [];
-
-      // Handle featured image
+      const endpoint = editMode ? 'inventory:product:update' : 'inventory:product:create';
+      
+      // Handle featured image upload
+      let featuredImagePath = formData.featuredImage;
       if (featuredImage) {
-        const buffer = await featuredImage.arrayBuffer();
-        const response = await safeIpcInvoke<FileUploadResponse>('file:store', {
-          buffer: Buffer.from(buffer),
-          fileName: `${Date.now()}-${featuredImage.name}`,
-          category: 'products'
-        }, { success: false });
-
-        if (response?.success && response.fullPath) {
-          featuredImagePath = response.fullPath;
-        } else {
-          throw new Error('Failed to upload featured image');
-        }
+        const buffer = Buffer.from(await featuredImage.arrayBuffer());
+        const fileName = `${Date.now()}-${featuredImage.name}`;
+        featuredImagePath = await fileStorage.storeFile(buffer, fileName, 'products');
       }
 
-      // Handle additional images
-      if (additionalImages.length > 0) {
-        for (const image of additionalImages) {
-          const buffer = await image.arrayBuffer();
-          const response = await safeIpcInvoke<FileUploadResponse>('file:store', {
-            buffer: Buffer.from(buffer),
-            fileName: `${Date.now()}-${image.name}`,
-            category: 'products'
-          }, { success: false });
+      // Handle additional images upload
+      const additionalImagePaths = await Promise.all(
+        additionalImages.map(async (file) => {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const fileName = `${Date.now()}-${file.name}`;
+          return fileStorage.storeFile(buffer, fileName, 'products');
+        })
+      );
 
-          if (response?.success && response.fullPath) {
-            additionalImagePaths.push(response.fullPath);
-          } else {
-            toast({
-              title: "Warning",
-              description: `Failed to upload additional image: ${image.name}`,
-              variant: "destructive",
-            });
-          }
-        }
-      }
-
+      // Convert form data to match ProductAttributes
       const productData = {
         ...formData,
-        sellingPrice: parseFloat(formData.sellingPrice),
-        discountPrice: formData.discountPrice ? parseFloat(formData.discountPrice) : null,
-        quantity: parseInt(formData.quantity),
-        reorderPoint: parseInt(formData.reorderPoint),
-        suppliers: selectedSuppliers,
+        sellingPrice: Number(formData.sellingPrice),
+        purchasePrice: Number(formData.purchasePrice),
+        quantity: Number(formData.quantity),
+        reorderPoint: Number(formData.reorderPoint),
         featuredImage: featuredImagePath,
         additionalImages: additionalImagePaths,
-        status: 'active',
-        purchasePrice: parseFloat(formData.purchasePrice)
       };
 
-      const response = await safeIpcInvoke<ProductResponse>(
-        'inventory:product:create',
-        { data: productData },
-        { success: false }
-      );
+      const response = await safeIpcInvoke<ProductResponse>(endpoint, {
+        productId: editMode ? productToEdit?.id : undefined,
+        data: productData,
+        businessId: business?.id
+      }, { success: false });
 
       if (response?.success) {
         toast({
           title: "Success",
-          description: "Product created successfully",
+          description: `Product ${editMode ? 'updated' : 'created'} successfully`,
         });
-        onBack();
-      } else {
-        throw new Error(response?.message ?? 'Failed to create product');
+        if (editMode && onEditComplete) {
+          onEditComplete();
+        } else {
+          onBack();
+        }
       }
     } catch (error) {
       console.error('Error creating product:', error);
@@ -282,12 +294,12 @@ export function AddProduct({ onBack }: AddProductProps) {
       </Button>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl font-semibold flex items-center text-gray-800">
-          Add Product
+          {editMode ? 'Edit Product' : 'Add Product'}
         </h1>
         <div className="space-x-2">
           <Button variant="outline" className="text-gray-600 border-gray-300 hover:bg-gray-50">Cancel</Button>
           <Button className="bg-[#1A7DC4] hover:bg-[#1565a0]" onClick={handleSubmit} disabled={isLoading}>
-            {isLoading ? 'Saving...' : 'Save'}
+            {editMode ? 'Save Changes' : 'Create Product'}
           </Button>
         </div>
       </div>
@@ -314,7 +326,7 @@ export function AddProduct({ onBack }: AddProductProps) {
                     id="productDescription" 
                     placeholder="Product description" 
                     className="mt-1 h-32"
-                    value={formData.description}
+                    value={formData.description || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   />
                 </div>
@@ -500,7 +512,7 @@ export function AddProduct({ onBack }: AddProductProps) {
                   <div className="space-y-2">
                     <Label>Category</Label>
                     <Select 
-                      value={formData.category_id} 
+                      value={formData.category_id || ''} 
                       onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: value }))}
                       disabled={categories.length === 0}
                     >

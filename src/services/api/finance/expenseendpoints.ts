@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import Expense from '../../../models/Expense.js';
 import OhadaCode from '../../../models/OhadaCode.js';
 import Shop from '../../../models/Shop.js';
+import { sequelize } from '../../database/index.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -109,29 +110,101 @@ export function registerExpenseHandlers() {
 
   // Update expense handler
   ipcMain.handle(IPC_CHANNELS.UPDATE_EXPENSE, async (event, { id, data }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const expense = await Expense.findByPk(id);
+      const expense = await Expense.findByPk(id, {
+        include: [
+          {
+            model: OhadaCode,
+            as: 'ohadaCode',
+            attributes: ['id', 'code', 'name', 'description']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name']
+          }
+        ],
+        transaction: t
+      });
+
       if (!expense) {
+        await t.rollback();
         return { success: false, message: 'Expense not found' };
       }
-      await expense.update(data);
-      return { success: true, message: 'Expense updated successfully', expense };
+
+      // Update the expense
+      await expense.update({
+        date: data.date,
+        description: data.description,
+        amount: data.amount,
+        paymentMethod: data.paymentMethod,
+        ohadaCodeId: data.ohadaCodeId,
+        shopId: data.shopId
+      }, { transaction: t });
+
+      // Fetch the updated expense with all relations
+      const updatedExpense = await Expense.findByPk(id, {
+        include: [
+          {
+            model: OhadaCode,
+            as: 'ohadaCode',
+            attributes: ['id', 'code', 'name', 'description']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name']
+          }
+        ],
+        transaction: t
+      });
+
+      await t.commit();
+
+      // Convert to plain object to ensure it's serializable
+      const plainExpense = updatedExpense?.get({ plain: true });
+
+      return { 
+        success: true, 
+        message: 'Expense updated successfully', 
+        expense: plainExpense 
+      };
+
     } catch (error) {
-      return { success: false, message: 'Error updating expense', error };
+      await t.rollback();
+      console.error('Error updating expense:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error updating expense'
+      };
     }
   });
 
   // Delete expense handler
   ipcMain.handle(IPC_CHANNELS.DELETE_EXPENSE, async (event, { id }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const expense = await Expense.findByPk(id);
+      const expense = await Expense.findByPk(id, { transaction: t });
+      
       if (!expense) {
+        await t.rollback();
         return { success: false, message: 'Expense not found' };
       }
-      await expense.destroy();
+
+      await expense.destroy({ transaction: t });
+      await t.commit();
+
       return { success: true, message: 'Expense deleted successfully' };
     } catch (error) {
-      return { success: false, message: 'Error deleting expense', error };
+      await t.rollback();
+      console.error('Error deleting expense:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error deleting expense'
+      };
     }
   });
 }

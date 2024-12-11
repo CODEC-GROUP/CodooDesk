@@ -25,6 +25,7 @@ import { Toast, ToastProvider, ToastViewport } from '@/components/Shared/ui/toas
 import {toast} from '@/hooks/use-toast';
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout";
 import { EmptyState } from '../Empty/EmptyState'
+import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog'
 
 interface EmployeeListProps {
   onEmployeeClick: (employee: Employee) => void;
@@ -39,6 +40,7 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
 
   const fetchEmployees = async () => {
     if (!business?.id) {
@@ -91,40 +93,36 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
     }
   };
 
-  const handleDeleteEmployee = async (employeeId: string) => {
+  const handleDeleteEmployee = async () => {
     try {
-      const response = await safeIpcInvoke('entities:employee:delete', { 
-        id: employeeId 
-      }, { success: false });
+      if (!employeeToDelete) return;
+
+      const response = await safeIpcInvoke<{ success: boolean; message?: string }>(
+        'entities:employee:delete', 
+        { id: employeeToDelete.id },
+        { success: false }
+      );
 
       if (response?.success) {
-        return (
-          <ToastProvider>
-            <Toast>
-              Success: Employee deleted successfully
-            </Toast>
-            <ToastViewport />
-          </ToastProvider>
-        )
+        setEmployees(prevEmployees => 
+          prevEmployees.filter(emp => emp.id !== employeeToDelete.id)
+        );
+        toast({
+          title: "Success",
+          description: "Employee deleted successfully"
+        });
       } else {
-        return (
-          <ToastProvider>
-            <Toast variant="destructive">
-              Error: Failed to delete employee
-            </Toast>
-            <ToastViewport />
-          </ToastProvider>
-        )
+        throw new Error(response?.message || 'Failed to delete employee');
       }
     } catch (error) {
-      return (
-        <ToastProvider>
-          <Toast variant="destructive">
-            Error: {error instanceof Error ? error.message : 'Unknown error'}
-          </Toast>
-          <ToastViewport />
-        </ToastProvider>
-      )
+      console.error('Error deleting employee:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete employee",
+        variant: "destructive"
+      });
+    } finally {
+      setEmployeeToDelete(null);
     }
   };
 
@@ -286,12 +284,28 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={(e) => {
-                            e.stopPropagation();
-                            onEditEmployee(employee);
-                          }}>
-                            <Edit className="h-4 w-4 text-gray-500" />
-                          </Button>
+                          <div className="flex justify-end space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditEmployee(employee);
+                              }}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEmployeeToDelete(employee);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -300,6 +314,16 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
               </div>
             </CardContent>
           </Card>
+          <ConfirmationDialog
+            isOpen={!!employeeToDelete}
+            onClose={() => setEmployeeToDelete(null)}
+            onConfirm={handleDeleteEmployee}
+            title="Delete Employee"
+            description={`Are you sure you want to delete ${employeeToDelete?.firstName} ${employeeToDelete?.lastName}? This action cannot be undone.`}
+            confirmText="Delete"
+            cancelText="Cancel"
+            variant="destructive"
+          />
         </>
       )}
     </div>

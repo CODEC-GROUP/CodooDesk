@@ -1,56 +1,33 @@
 'use client'
 
-import { useState } from "react"
-import { ProductList } from "@/components/Products/List/ProductList"
-import { AddProduct } from "@/components/Products/Form/AddProduct"
+import { useState } from 'react'
+import { ProductList } from '@/components/Products/List/ProductList'
+import { AddProduct } from '@/components/Products/Form/AddProduct'
 import { DashboardLayout } from "@/components/Shared/Layout/DashboardLayout"
-import type { ProductAttributes } from "@/models/Product"
+import type { ReactNode } from 'react'
 
 export default function ProductsPage() {
-  const [view, setView] = useState<"list" | "add" | "details">("list");
-  const [selectedProduct, setSelectedProduct] = useState<ProductAttributes | null>(null);
-
-  // Handle when a product is clicked
-  const handleProductClick = (product: ProductAttributes) => {
-    setView("details");
-    setSelectedProduct(product);
-  };
-
-  // Handle adding a new product
+  const [view, setView] = useState<'list' | 'add'>('list')
+  
   const handleAddProduct = () => {
-    setView("add");
-  };
+    setView('add')
+  }
 
-  // Handle going back to the product list
-  const handleBack = () => {
-    setView("list");
-    setSelectedProduct(null); // Reset selected product on back
-  };
+  const handleBackToList = () => {
+    setView('list')
+  }
 
-  return (
-    <DashboardLayout>
-      <div className="container mx-auto p-6">
-        {/* Render the product list */}
-        {view === "list" && (
-          <ProductList onProductClick={(product: ProductAttributes) => handleProductClick(product)} onAddProduct={handleAddProduct} />
-        )}
+  const content: ReactNode = (
+    <div className="container mx-auto p-6">
+      {view === 'list' && (
+        <ProductList onAddProduct={handleAddProduct} />
+      )}
 
-        {/* Render the add product form */}
-        {view === "add" && (
-          <AddProduct onBack={handleBack} />
-        )}
+      {view === 'add' && (
+        <AddProduct onBack={handleBackToList} />
+      )}
+    </div>
+  )
 
-        {/* Conditionally render ProductDetails when it's implemented */}
-        {view === "details" && selectedProduct && (
-          <div>
-            <h2>{selectedProduct.name}</h2>
-            <p>{selectedProduct.description}</p>
-            <p>{selectedProduct.purchasePrice}</p>
-            {/* Add more details as needed */}
-            <button onClick={handleBack}>Back to Products</button>
-          </div>
-        )}
-      </div>
-    </DashboardLayout>
-  );
+  return <DashboardLayout>{content}</DashboardLayout>
 }

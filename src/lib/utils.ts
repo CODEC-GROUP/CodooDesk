@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD'
+    style: 'decimal',
+    currency: 'XAF'
   }).format(amount);
 };

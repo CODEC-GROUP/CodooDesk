@@ -17,6 +17,7 @@ import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import EmptyState from './EmptyState';
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout';
+import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog'
 
 // Income types based on OHADA accounting system
 export const incomeTypes = {
@@ -100,6 +101,15 @@ interface NewIncomeItem {
   isCustom?: boolean;
 }
 
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('fr-FR', { 
+    style: 'currency', 
+    currency: 'XAF',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount);
+};
+
 const Income = () => {
   const { user, business } = useAuthLayout();
   const [incomes, setIncomes] = useState<IncomeAttributes[]>([]);
@@ -115,6 +125,10 @@ const Income = () => {
   const [selectedOhadaCode, setSelectedOhadaCode] = useState<string>("");
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
+
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingIncome, setEditingIncome] = useState<any>(null);
+  const [incomeToDelete, setIncomeToDelete] = useState<any>(null);
 
   const handleOhadaCodeSelection = (value: string) => {
     setSelectedOhadaCode(value);
@@ -311,14 +325,78 @@ const Income = () => {
     }
   };
 
-  const handleDeleteIncome = async (incomeId: string) => {
+  const handleEditClick = (income: any) => {
+    const dataValues = income.dataValues || income;
+    setEditingIncome({
+      ...dataValues,
+      date: new Date(dataValues.date).toISOString().split('T')[0],
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateIncome = async () => {
     try {
-      const response = await safeIpcInvoke<{ success: boolean; message?: string }>('finance:income:delete', {
-        incomeId
-      }, { success: false });
+      if (!editingIncome.id) return;
+
+      const updateIncomeRequest = {
+        id: editingIncome.id,
+        data: {
+          date: new Date(editingIncome.date),
+          description: editingIncome.description,
+          amount: parseFloat(editingIncome.amount),
+          paymentMethod: editingIncome.paymentMethod,
+          ohadaCodeId: editingIncome.ohadaCodeId,
+          shopId: editingIncome.shopId
+        }
+      };
+
+      const response = await safeIpcInvoke<IncomeResponse>(
+        'finance:income:update',
+        updateIncomeRequest
+      );
 
       if (response?.success) {
-        setIncomes(incomes.filter(inc => inc.id !== incomeId));
+        setIncomes(prevIncomes =>
+          prevIncomes.map(inc => 
+            inc.id === editingIncome.id ? { ...inc, ...editingIncome } : inc
+          )
+        );
+        setIsEditDialogOpen(false);
+        setEditingIncome(null);
+        toast({
+          title: "Success",
+          description: "Income updated successfully",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: response?.message || 'Failed to update income',
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error updating income:', error);
+      toast({
+        title: "Error",
+        description: 'Failed to update income',
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteIncome = async () => {
+    try {
+      if (!incomeToDelete) return;
+
+      const response = await safeIpcInvoke<IncomeResponse>(
+        'finance:income:delete',
+        { id: incomeToDelete.id }
+      );
+
+      if (response?.success) {
+        setIncomes(prevIncomes => 
+          prevIncomes.filter(inc => inc.id !== incomeToDelete.id)
+        );
         toast({
           title: "Success",
           description: "Income deleted successfully",
@@ -337,6 +415,8 @@ const Income = () => {
         description: 'Failed to delete income',
         variant: "destructive",
       });
+    } finally {
+      setIncomeToDelete(null);
     }
   };
 
@@ -395,13 +475,12 @@ const Income = () => {
                   />
                 </div>
                 <div>
-                  <Label>Amount</Label>
+                  <Label>Amount ({formatCurrency(0)})</Label>
                   <Input
                     type="number"
                     value={newItem.amount}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, amount: e.target.value })
-                    }
+                    onChange={(e) => setNewItem({ ...newItem, amount: e.target.value })}
+                    placeholder="Enter amount"
                   />
                 </div>
                 <div>
@@ -590,20 +669,26 @@ const Income = () => {
                       </TableCell>
                       <TableCell>{new Date(dataValues.date).toLocaleDateString()}</TableCell>
                       <TableCell>{dataValues.description}</TableCell>
-                      <TableCell>{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XAF' }).format(dataValues.amount)}</TableCell>
+                      <TableCell>{formatCurrency(dataValues.amount)}</TableCell>
                       <TableCell>{dataValues.ohadaCode?.name || 'Unknown'}</TableCell>
                       <TableCell style={{ textTransform: 'capitalize' }}>{dataValues.paymentMethod?.replace('_', ' ')}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon">
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteIncome(dataValues.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end space-x-2">
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => handleEditClick(item)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => setIncomeToDelete(item)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -647,6 +732,76 @@ const Income = () => {
           </div>
         </div>
       )}
+
+      <ConfirmationDialog
+        isOpen={!!incomeToDelete}
+        onClose={() => setIncomeToDelete(null)}
+        onConfirm={handleDeleteIncome}
+        title="Delete Income"
+        description={`Are you sure you want to delete this income? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+      />
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Income</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={editingIncome?.date}
+                onChange={(e) =>
+                  setEditingIncome({ ...editingIncome, date: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={editingIncome?.description}
+                onChange={(e) =>
+                  setEditingIncome({ ...editingIncome, description: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label>Amount ({formatCurrency(0)})</Label>
+              <Input
+                type="number"
+                value={editingIncome?.amount}
+                onChange={(e) =>
+                  setEditingIncome({ ...editingIncome, amount: parseFloat(e.target.value) })
+                }
+              />
+            </div>
+            <div>
+              <Label>Payment Method</Label>
+              <Select
+                value={editingIncome?.paymentMethod}
+                onValueChange={(value) =>
+                  setEditingIncome({ ...editingIncome, paymentMethod: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select payment method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleUpdateIncome}>Update Income</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

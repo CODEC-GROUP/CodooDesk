@@ -3,6 +3,7 @@ import Supplier, { SupplierAttributes } from '../../../models/Supplier.js';
 import Product from '../../../models/Product.js';
 import { Sequelize } from 'sequelize';
 import Order from '../../../models/Order.js';
+import { sequelize } from '../../database/index.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -98,42 +99,60 @@ export function registerSupplierHandlers() {
   });
 
   // Update supplier handler
-  ipcMain.handle(IPC_CHANNELS.UPDATE_SUPPLIER, async (event, { id, updates }) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATE_SUPPLIER, async (event, { supplierData }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const supplier = await Supplier.findByPk(id);
+      const supplier = await Supplier.findByPk(supplierData.id, { transaction: t });
       if (!supplier) {
+        await t.rollback();
         return { success: false, message: 'Supplier not found' };
       }
 
       await supplier.update({
-        name: updates.name,
-        email: updates.email,
-        phone: updates.phone,
-        address: updates.address,
-        city: updates.city,
-        region: updates.region,
-        country: updates.country,
-        businessId: updates.businessId
-      });
+        name: supplierData.name,
+        email: supplierData.email,
+        phone: supplierData.phone,
+        address: supplierData.address,
+        city: supplierData.city,
+        region: supplierData.region,
+        country: supplierData.country,
+        businessId: supplierData.businessId
+      }, { transaction: t });
 
-      return { success: true, supplier };
+      await t.commit();
+      return { success: true, supplier: supplier.get({ plain: true }) };
     } catch (error) {
+      await t.rollback();
       console.error('Error updating supplier:', error);
-      return { success: false, message: 'Failed to update supplier' };
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Failed to update supplier' 
+      };
     }
   });
 
   // Delete supplier handler
   ipcMain.handle(IPC_CHANNELS.DELETE_SUPPLIER, async (event, { id }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const supplier = await Supplier.findByPk(id);
+      const supplier = await Supplier.findByPk(id, { transaction: t });
       if (!supplier) {
+        await t.rollback();
         return { success: false, message: 'Supplier not found' };
       }
-      await supplier.destroy();
+
+      await supplier.destroy({ transaction: t });
+      await t.commit();
       return { success: true, message: 'Supplier deleted successfully' };
     } catch (error) {
-      return { success: false, message: 'Error deleting supplier', error };
+      await t.rollback();
+      console.error('Error deleting supplier:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error deleting supplier' 
+      };
     }
   });
 }

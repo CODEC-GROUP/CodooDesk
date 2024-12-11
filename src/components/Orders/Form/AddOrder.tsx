@@ -120,6 +120,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const [showPreview, setShowPreview] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
   const [lastOrderResponse, setLastOrderResponse] = useState<OrderResponse | null>(null);
+  const [tempQuantity, setTempQuantity] = useState<number>(1);
 
   // Add default walk-in customer
   const defaultCustomer: Customer = {
@@ -451,13 +452,51 @@ export function AddOrder({ onBack }: AddOrderProps) {
                         key={product.id}
                         className="p-2 hover:bg-gray-100 cursor-pointer"
                         onClick={() => {
-                          setSelectedProduct(product);
-                          setSearchTerm(product.name);
+                          if (tempQuantity > product.quantity) {
+                            toast({
+                              title: "Error",
+                              description: "Quantity exceeds available stock",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          const newItem: OrderItem = {
+                            id: Date.now().toString(),
+                            productId: product.id,
+                            productName: product.name,
+                            unitPrice: product.sellingPrice,
+                            quantity: tempQuantity,
+                            total: product.sellingPrice * tempQuantity
+                          };
+                          setOrderItems([...orderItems, newItem]);
+                          setSearchTerm("");
+                          setSelectedProduct(null);
+                          setTempQuantity(1);
                         }}
                       >
-                        <div className="font-medium">{product.name}</div>
-                        <div className="text-sm text-gray-600">
-                          Price: {product.sellingPrice} XAF | Stock: {product.quantity}
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="font-medium">{product.name}</div>
+                            <div className="text-sm text-gray-600">
+                              Price: {product.sellingPrice} XAF | Stock: {product.quantity}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="1"
+                              max={product.quantity}
+                              value={tempQuantity}
+                              onChange={(e) => {
+                                const value = parseInt(e.target.value);
+                                if (value > 0 && value <= product.quantity) {
+                                  setTempQuantity(value);
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-20"
+                            />
+                          </div>
                         </div>
                       </div>
                     ))}

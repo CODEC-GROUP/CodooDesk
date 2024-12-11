@@ -49,6 +49,16 @@ interface CustomerListProps {
   onAddCustomer: () => void;
 }
 
+interface DeleteCustomerResponse {
+  success: boolean;
+  message?: string;
+}
+
+interface IpcResponse {
+  success: boolean;
+  message?: string;
+}
+
 export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListProps) {
   const { user, business } = useAuthLayout();
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -99,7 +109,7 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
 
   const handleDeleteCustomer = async (customerId: string) => {
     try {
-      const response = await safeIpcInvoke('entities:customer:delete', {
+      const response = await safeIpcInvoke<IpcResponse>('entities:customer:delete', {
         id: customerId
       }, { success: false });
 
@@ -181,14 +191,37 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
     }
   }
 
-  const handleDeleteConfirm = () => {
-    if (customerToDelete) {
-      handleDeleteCustomer(customerToDelete.toString())
-      setSelectedCustomers([])
-      setCustomerToDelete(null)
-      setIsDeleteModalOpen(false)
+  const handleDeleteConfirm = async () => {
+    try {
+      if (!customerToDelete) return;
+
+      const response = await safeIpcInvoke<IpcResponse>(
+        'entities:customer:delete', 
+        { id: customerToDelete },
+        { success: false }
+      );
+
+      if (response?.success) {
+        setCustomers(prev => prev.filter(customer => customer.id !== customerToDelete));
+        toast({
+          title: "Success",
+          description: "Customer deleted successfully",
+        });
+      } else {
+        throw new Error(response?.message || 'Failed to delete customer');
+      }
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete customer",
+        variant: "destructive",
+      });
+    } finally {
+      setCustomerToDelete(null);
+      setIsDeleteModalOpen(false);
     }
-  }
+  };
 
   const handleEditClick = () => {
     if (selectedCustomers.length === 1) {
@@ -200,12 +233,38 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
     }
   }
 
-  const handleEditSave = (updatedCustomer: Customer) => {
-    handleUpdateStatus(updatedCustomer.id.toString(), true)
-    setEditingCustomer(null)
-    setIsEditModalOpen(false)
-    setSelectedCustomers([])
-  }
+  const handleEditSave = async (updatedCustomer: any) => {
+    try {
+      const response = await safeIpcInvoke<IpcResponse>('entities:customer:update', {
+        id: editingCustomer?.id,
+        updates: {
+          first_name: updatedCustomer.name.split(' ')[0],
+          last_name: updatedCustomer.name.split(' ')[1] || '',
+          phone_number: updatedCustomer.phone,
+        }
+      }, { success: false });
+
+      if (response?.success) {
+        toast({
+          title: "Success",
+          description: "Customer updated successfully",
+        });
+        await fetchCustomers();
+      } else {
+        throw new Error(response?.message || 'Failed to update customer');
+      }
+    } catch (error) {
+      console.error('Error updating customer:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update customer",
+        variant: "destructive",
+      });
+    } finally {
+      setEditingCustomer(null);
+      setIsEditModalOpen(false);
+    }
+  };
 
   return (
     <div className="container mx-auto p-6">
@@ -293,6 +352,7 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
                       <TableHead>Phone Number</TableHead>
                       <TableHead>Orders</TableHead>
                       <TableHead>Spent</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -323,6 +383,32 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
                         <TableCell>{customer.phone}</TableCell>
                         <TableCell>{customer.orders}</TableCell>
                         <TableCell>{customer.spent}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCustomer(customer);
+                                setIsEditModalOpen(true);
+                              }}
+                            >
+                              <PenIcon className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCustomerToDelete(customer.id);
+                                setIsDeleteModalOpen(true);
+                              }}
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

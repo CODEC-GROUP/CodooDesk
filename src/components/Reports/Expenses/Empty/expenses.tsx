@@ -17,6 +17,8 @@ import { toast } from '@/hooks/use-toast';
 import EmptyState from './EmptyState';
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout';
 
+import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog'
+
 // Expense types based on OHADA accounting system
 export const expenseTypes = {
   RENT_UTILITIES: { code: "612/614", name: "Rent and Utilities", description: "Loyer et charges" },
@@ -122,6 +124,9 @@ const Expenses = () => {
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
   const [selectedShopId, setSelectedShopId] = useState<string>("");
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<any>(null);
+  const [expenseToDelete, setExpenseToDelete] = useState<any>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -320,14 +325,19 @@ const Expenses = () => {
     }
   };
 
-  const handleDeleteExpense = async (expenseId: string) => {
+  const handleDeleteExpense = async () => {
     try {
-      const response = await safeIpcInvoke<{ success: boolean; message?: string }>('finance:expense:delete', {
-        expenseId
-      }, { success: false });
+      if (!expenseToDelete) return;
+
+      const response = await safeIpcInvoke<ExpenseResponse>(
+        'finance:expense:delete',
+        { id: expenseToDelete.id }
+      );
 
       if (response?.success) {
-        setExpenses(expenses.filter(exp => exp.id !== expenseId));
+        setExpenses(prevExpenses => 
+          prevExpenses.filter(exp => exp.id !== expenseToDelete.id)
+        );
         toast({
           title: "Success",
           description: "Expense deleted successfully",
@@ -346,7 +356,78 @@ const Expenses = () => {
         description: 'Failed to delete expense',
         variant: "destructive",
       });
+    } finally {
+      setExpenseToDelete(null);
     }
+  };
+
+  const handleEditClick = (expense: any) => {
+    const dataValues = expense.dataValues || expense;
+    setEditingExpense({
+      ...dataValues,
+      date: new Date(dataValues.date).toISOString().split('T')[0], // Format date for input
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateExpense = async () => {
+    try {
+      if (!editingExpense.id) return;
+
+      const updateExpenseRequest = {
+        id: editingExpense.id,
+        data: {
+          date: new Date(editingExpense.date),
+          description: editingExpense.description,
+          amount: parseFloat(editingExpense.amount),
+          paymentMethod: editingExpense.paymentMethod,
+          ohadaCodeId: editingExpense.ohadaCodeId,
+          shopId: editingExpense.shopId
+        }
+      };
+
+      const response = await safeIpcInvoke<ExpenseResponse>(
+        'finance:expense:update',
+        updateExpenseRequest,
+        { success: false }
+      );
+
+      if (response?.success) {
+        setExpenses(prevExpenses =>
+          prevExpenses.map(exp => 
+            exp.id === editingExpense.id ? { ...exp, ...editingExpense } : exp
+          )
+        );
+        setIsEditDialogOpen(false);
+        setEditingExpense(null);
+        toast({
+          title: "Success",
+          description: "Expense updated successfully",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: response?.message || 'Failed to update expense',
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error updating expense:', error);
+      toast({
+        title: "Error",
+        description: 'Failed to update expense',
+        variant: "destructive",
+      });
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('fr-FR', { 
+      style: 'currency', 
+      currency: 'XAF',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
   };
 
   return (
@@ -458,53 +539,6 @@ const Expenses = () => {
                       </SelectContent>
                     </Select>
                   ) : null}
-{/*                   
-                  <div className="mt-4">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="customCategory"
-                        checked={isCustomCategory}
-                        onCheckedChange={handleCustomCategoryToggle}
-                      />
-                      <Label htmlFor="customCategory">Add Custom Category</Label>
-                    </div>
-                    
-                    {isCustomCategory && (
-                      <div className="mt-2 space-y-4">
-                        <Select
-                          value={selectedOhadaCode}
-                          onValueChange={handleOhadaCodeSelection}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select OHADA Code for Custom Category" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-[200px] overflow-y-auto">
-                            {ohadaCodes.map((code: any) => (
-                              <SelectItem key={code.dataValues.id} value={code.dataValues.id as string}>
-                                {code.dataValues.code} - {code.dataValues.name}
-                                <span className="block text-sm text-gray-500">{code.dataValues.description}</span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="space-y-2">
-                          <Label>Category Name</Label>
-                          <Input
-                            placeholder="Enter custom category name"
-                            value={customCategoryName}
-                            onChange={(e) => {
-                              setCustomCategoryName(e.target.value);
-                              setNewItem({ 
-                                ...newItem, 
-                                description: e.target.value,
-                                ohadaCodeId: selectedOhadaCode 
-                              });
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div> */}
                 </div>
                 <Button onClick={handleAddItem}>Add Expense</Button>
               </div>
@@ -561,18 +595,22 @@ const Expenses = () => {
                     <TableRow key={dataValues.id}>
                       <TableCell>{new Date(dataValues.date).toLocaleDateString()}</TableCell>
                       <TableCell>{dataValues.description}</TableCell>
-                      <TableCell>{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XAF' }).format(dataValues.amount)}</TableCell>
+                      <TableCell>{formatCurrency(dataValues.amount)}</TableCell>
                       <TableCell style={{ textTransform: 'capitalize' }}>{dataValues.paymentMethod?.replace('_', ' ')}</TableCell>
                       <TableCell>{dataValues.ohadaCode?.name || 'Unknown'}</TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
-                          <Button variant="ghost" size="icon">
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => handleEditClick(item)}
+                          >
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button 
                             variant="ghost" 
-                            size="icon" 
-                            onClick={() => handleDeleteExpense(dataValues.id)}
+                            size="icon"
+                            onClick={() => setExpenseToDelete(item)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -620,6 +658,96 @@ const Expenses = () => {
           </div>
         </div>
       )}
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Expense</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={editingExpense?.date}
+                onChange={(e) =>
+                  setEditingExpense({ ...editingExpense, date: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={editingExpense?.description}
+                onChange={(e) =>
+                  setEditingExpense({ ...editingExpense, description: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label>Amount</Label>
+              <Input
+                type="number"
+                value={editingExpense?.amount}
+                onChange={(e) =>
+                  setEditingExpense({ ...editingExpense, amount: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label>Payment Method</Label>
+              <Select
+                value={editingExpense?.paymentMethod}
+                onValueChange={(value) =>
+                  setEditingExpense({ ...editingExpense, paymentMethod: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select payment method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="mobile_money">Mobile Money</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Category</Label>
+              <Select
+                value={editingExpense?.ohadaCodeId}
+                onValueChange={(value) =>
+                  setEditingExpense({ ...editingExpense, ohadaCodeId: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[200px] overflow-y-auto">
+                  {ohadaCodes.map((code: any) => (
+                    <SelectItem key={code.dataValues.id} value={code.dataValues.id}>
+                      {code.dataValues.code} - {code.dataValues.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleUpdateExpense}>Update Expense</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmationDialog
+        isOpen={!!expenseToDelete}
+        onClose={() => setExpenseToDelete(null)}
+        onConfirm={handleDeleteExpense}
+        title="Delete Expense"
+        description={`Are you sure you want to delete this expense? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+      />
     </div>
   )
 }

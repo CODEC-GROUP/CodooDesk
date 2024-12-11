@@ -11,6 +11,8 @@ import { Search, Plus, Edit, Trash2 } from "lucide-react"
 import Image from 'next/image'
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
+import { toast } from '@/hooks/use-toast';
+import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog';
 
 interface Category {
   id: string;
@@ -40,6 +42,7 @@ const Categories = () => {
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
   const [newCategory, setNewCategory] = useState<Partial<Category>>({ name: "", description: "", image: null })
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -192,20 +195,37 @@ const Categories = () => {
     }
   };
 
-  const handleDeleteCategory = async (categoryId: string) => {
+  const handleDeleteCategory = async (category: Category) => {
+    setCategoryToDelete(category);
+  };
+
+  const confirmDelete = async () => {
     try {
-      const result = await safeIpcInvoke<DeleteCategoryResult>('inventory:category:delete', {
-        categoryId,
-        businessId: business?.id
-      }, { success: false });
+      if (!categoryToDelete) return;
+
+      const result = await safeIpcInvoke<DeleteCategoryResult>(
+        'inventory:category:delete', 
+        { id: categoryToDelete.id },
+        { success: false }
+      );
 
       if (result?.success) {
-        setCategories(categories.filter(cat => cat.id !== categoryId));
+        setCategories(prev => prev.filter(cat => cat.id !== categoryToDelete.id));
+        toast({
+          title: "Success",
+          description: "Category deleted successfully"
+        });
       } else {
-        setError(result?.message || 'Failed to delete category');
+        throw new Error(result?.message || 'Failed to delete category');
       }
-    } catch (err) {
-      setError('Failed to delete category');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete category",
+        variant: "destructive"
+      });
+    } finally {
+      setCategoryToDelete(null);
     }
   };
 
@@ -331,7 +351,7 @@ const Categories = () => {
                       <Button variant="ghost" size="icon" onClick={() => handleEditCategory(category)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteCategory(category.id)}>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteCategory(category)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -342,6 +362,16 @@ const Categories = () => {
           )}
         </div>
       )}
+      <ConfirmationDialog
+        isOpen={!!categoryToDelete}
+        onClose={() => setCategoryToDelete(null)}
+        onConfirm={confirmDelete}
+        title="Delete Category"
+        description={`Are you sure you want to delete ${categoryToDelete?.name}? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+      />
     </div>
   )
 }

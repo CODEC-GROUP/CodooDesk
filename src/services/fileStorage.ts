@@ -2,7 +2,7 @@
 
 import { safeIpcInvoke } from '@/lib/ipc';
 
-type FileCategory = 'shop' | 'product' | 'categories';
+type FileCategory = 'shop' | 'products' | 'categories';
 
 interface FileStorageService {
   storeFile(fileBuffer: Buffer, fileName: string, category: FileCategory): Promise<string>;

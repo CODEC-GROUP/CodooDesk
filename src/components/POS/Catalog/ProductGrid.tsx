@@ -75,42 +75,47 @@ interface ProductCardProps {
   onAddToCart: (product: Product) => void;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => (
-  <Card
-    className="w-full cursor-pointer hover:shadow-md transition-shadow"
-    onClick={() => onAddToCart(product)}
-  >
-    <CardContent className="p-2 relative">
-      <span className={`absolute top-3 right-3 text-[10px] px-1.5 py-0.5 rounded-full 
-        whitespace-nowrap z-10 shadow-sm
-        ${product.status === 'high_stock' ? 'bg-green-100 text-green-800' :
-          product.status === 'medium_stock' ? 'bg-yellow-100 text-yellow-800' :
-            'bg-red-100 text-red-800'}`}
-      >
-        in stock
-      </span>
+const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
+  // Normalize the image path by converting backslashes to forward slashes
+  const normalizedImagePath = product.featuredImage?.replace(/\\/g, '/');
 
-      <div className="flex justify-center mb-2">
-        <Image
-          src={product.featuredImage || '/assets/images/box.png'}
-          alt={product.name}
-          className="w-full h-16 object-contain"
-          width={64}
-          height={64}
-        />
-      </div>
+  return (
+    <Card
+      className="w-full cursor-pointer hover:shadow-md transition-shadow"
+      onClick={() => onAddToCart(product)}
+    >
+      <CardContent className="p-2 relative">
+        <span className={`absolute top-3 right-3 text-[10px] px-1.5 py-0.5 rounded-full 
+          whitespace-nowrap z-10 shadow-sm
+          ${product.status === 'high_stock' ? 'bg-green-100 text-green-800' :
+            product.status === 'medium_stock' ? 'bg-yellow-100 text-yellow-800' :
+              'bg-red-100 text-red-800'}`}
+        >
+          in stock
+        </span>
 
-      <div className="flex flex-col gap-0.5">
-        <h3 className="text-xs font-medium truncate">
-          {product.name}
-        </h3>
-        <p className="text-xs font-semibold">
-          {product.sellingPrice} XAF
-        </p>
-      </div>
-    </CardContent>
-  </Card>
-)
+        <div className="flex justify-center mb-2">
+          <Image
+            src={normalizedImagePath || '/assets/images/box.png'}
+            alt={product.name}
+            className="w-full h-16 object-contain"
+            width={64}
+            height={64}
+          />
+        </div>
+
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-xs font-medium truncate">
+            {product.name}
+          </h3>
+          <p className="text-xs font-semibold">
+            {product.sellingPrice} XAF
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 interface CartItemProps {
   item: CartItem;

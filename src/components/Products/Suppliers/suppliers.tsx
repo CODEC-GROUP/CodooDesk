@@ -16,6 +16,7 @@ import Select from 'react-select'
 import countryList from 'react-select-country-list'
 import { Country, State } from 'country-state-city'
 import { EmptyState } from "./EmptyState"
+import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog'
 
 
 
@@ -82,6 +83,7 @@ const Suppliers = () => {
   });
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [supplierToDelete, setSupplierToDelete] = useState<any>(null);
 
   const itemsPerPage = 10;
 
@@ -231,12 +233,23 @@ const Suppliers = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDeleteSupplier = async (id: string) => {
+  const handleDeleteSupplier = async () => {
     try {
-      const response: SupplierResponse | null = await safeIpcInvoke('entities:supplier:delete', { id });
+      if (!supplierToDelete) return;
 
-      if (response && response.success) {
-        setSuppliers(suppliers.filter(supplier => supplier.id !== id));
+      const response = await safeIpcInvoke<SupplierResponse>(
+        'entities:supplier:delete', 
+        { id: supplierToDelete.id }
+      );
+
+      if (response?.success) {
+        setSuppliers(prevSuppliers => 
+          prevSuppliers.filter(supplier => supplier.id !== supplierToDelete.id)
+        );
+        toast({
+          title: "Success",
+          description: "Supplier deleted successfully",
+        });
       } else {
         throw new Error(response?.message || 'Failed to delete supplier');
       }
@@ -244,9 +257,11 @@ const Suppliers = () => {
       console.error('Error deleting supplier:', error);
       toast({
         title: "Error",
-        description: "Failed to delete supplier",
+        description: error instanceof Error ? error.message : "Failed to delete supplier",
         variant: "destructive",
       });
+    } finally {
+      setSupplierToDelete(null);
     }
   };
 
@@ -457,7 +472,7 @@ const Suppliers = () => {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDeleteSupplier(dataValues.id)}
+                          onClick={() => setSupplierToDelete(dataValues)}
                           aria-label="Delete"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -566,6 +581,17 @@ const Suppliers = () => {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmationDialog
+        isOpen={!!supplierToDelete}
+        onClose={() => setSupplierToDelete(null)}
+        onConfirm={handleDeleteSupplier}
+        title="Delete Supplier"
+        description={`Are you sure you want to delete ${supplierToDelete?.name}? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+      />
 
       {totalPages > 1 && (
         <div className="flex justify-center mt-4 space-x-2">

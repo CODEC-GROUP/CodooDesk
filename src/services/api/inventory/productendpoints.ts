@@ -4,6 +4,7 @@ import Product, { ProductAttributes, ProductInstance } from '../../../models/Pro
 import Shop from '../../../models/Shop.js';
 import Category from '../../../models/Category.js';
 import Supplier from '../../../models/Supplier.js';
+import { sequelize } from '../../database/index.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -80,75 +81,48 @@ function sanitizeProduct(product: any): SanitizedProduct {
 // Register IPC handlers
 export function registerProductHandlers() {
   // Create product handler
-  ipcMain.handle(IPC_CHANNELS.CREATE_PRODUCT, async (event: IpcMainInvokeEvent, { data }) => {
+  ipcMain.handle(IPC_CHANNELS.CREATE_PRODUCT, async (event: IpcMainInvokeEvent, { data, businessId }) => {
+    const t = await sequelize.transaction();
+    
     try {
-      if (!data.businessId) {
-        return { success: false, message: 'Business ID is required' };
-      }
-
-      // Sanitize the input data to ensure it's serializable
+      // Sanitize and prepare data according to ProductAttributes
       const sanitizedData = {
         name: data.name,
-        sku: data.sku,
+        description: data.description || null,
         sellingPrice: Number(data.sellingPrice),
-        quantity: Number(data.quantity),
-        description: data.description,
-        category_id: data.category_id,
+        category_id: data.category_id || null,
         shop_id: data.shop_id,
-        status: (data.quantity <= data.reorderPoint ? 'low_stock' : 
-                data.quantity <= data.reorderPoint * 2 ? 'medium_stock' : 
-                'high_stock') as 'low_stock' | 'medium_stock' | 'high_stock' | 'out_of_stock',
-        unitType: data.unitType,
-        purchasePrice: Number(data.purchasePrice),
-        featuredImage: data.featuredImage,
+        unitType: data.productType || 'physical',
+        featuredImage: data.featuredImage || null,
         additionalImages: Array.isArray(data.additionalImages) ? data.additionalImages : [],
-        reorderPoint: Number(data.reorderPoint),
-        businessId: data.businessId
-      };
+        status: 'high_stock',
+        quantity: Number(data.quantity) || 0,
+        reorderPoint: Number(data.reorderPoint) || 10,
+        purchasePrice: Number(data.purchasePrice)
+      } satisfies Omit<ProductAttributes, 'id' | 'createdAt' | 'updatedAt'>;
 
       // Create the product with sanitized data
-      const product = await Product.create(sanitizedData);
+      const product = await Product.create(sanitizedData, { transaction: t });
 
       // Handle supplier associations separately
       if (data.suppliers && Array.isArray(data.suppliers)) {
-        await product.addSuppliers(data.suppliers);
+        await product.setSuppliers(data.suppliers);
       }
 
-      // Fetch the product with associations, but sanitize the response
-      const productWithAssociations = await Product.findByPk(product.id, {
-        include: [
-          {
-            model: Category,
-            as: 'category',
-            attributes: ['id', 'name', 'description', 'image', 'businessId']
-          },
-          {
-            model: Shop,
-            as: 'shop',
-            attributes: ['id', 'name', 'businessId', 'locationId', 'status', 'type', 'contactInfo']
-          },
-          {
-            model: Supplier,
-            as: 'suppliers',
-            through: { attributes: [] },
-            attributes: ['id', 'name']
-          }
-        ]
-      });
+      await t.commit();
 
-      // Sanitize the response to ensure it's serializable
-      const sanitizedProduct = sanitizeProduct(productWithAssociations);
-
-      return { 
-        success: true, 
-        message: 'Product created successfully', 
-        product: sanitizedProduct
+      return {
+        success: true,
+        product: sanitizeProduct(product),
+        message: 'Product created successfully'
       };
+
     } catch (error) {
+      await t.rollback();
       console.error('Error creating product:', error);
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Error creating product'
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to create product'
       };
     }
   });
@@ -247,24 +221,91 @@ export function registerProductHandlers() {
   });
 
   // Update product handler
-  ipcMain.handle(IPC_CHANNELS.UPDATE_PRODUCT, async (event: IpcMainInvokeEvent, { id, updates }) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATE_PRODUCT, async (event: IpcMainInvokeEvent, { productId, data, businessId }) => {
     try {
-      const product = await Product.findByPk(id);
+      if (!businessId || !productId) {
+        return { success: false, message: 'Business ID and Product ID are required' };
+      }
+
+      const product = await Product.findOne({
+        where: {
+          id: productId,
+          '$shop.businessId$': businessId
+        },
+        include: [{
+          model: Shop,
+          as: 'shop',
+          required: true
+        }]
+      });
+
       if (!product) {
-        return { success: false, message: 'Product not found' };
+        return { success: false, message: 'Product not found or access denied' };
       }
-      
-      // Update status based on new quantity if it's being updated
-      if (updates.quantity !== undefined) {
-        updates.status = updates.quantity <= (product.reorderPoint ?? 10) ? 'low_stock' :
-                        updates.quantity <= (product.reorderPoint ?? 10) * 2 ? 'medium_stock' : 
-                        'high_stock';
+
+      // Calculate new status based on quantity and reorder point
+      const newStatus = (data.quantity <= (data.reorderPoint || product.reorderPoint) ? 'low_stock' :
+                       data.quantity <= (data.reorderPoint || product.reorderPoint) * 2 ? 'medium_stock' : 
+                       'high_stock') as 'low_stock' | 'medium_stock' | 'high_stock' | 'out_of_stock';
+
+      // Sanitize and prepare update data
+      const updateData = {
+        name: data.name,
+        sku: data.sku,
+        sellingPrice: Number(data.sellingPrice),
+        quantity: Number(data.quantity),
+        description: data.description,
+        category_id: data.category_id,
+        shop_id: data.shop_id,
+        status: newStatus,
+        unitType: data.unitType,
+        purchasePrice: Number(data.purchasePrice),
+        featuredImage: data.featuredImage,
+        additionalImages: Array.isArray(data.additionalImages) ? data.additionalImages : [],
+        reorderPoint: Number(data.reorderPoint)
+      };
+
+      await product.update(updateData);
+
+      // Handle supplier associations if provided
+      if (data.suppliers && Array.isArray(data.suppliers)) {
+        await product.setSuppliers(data.suppliers);
       }
-      
-      await product.update(updates);
-      return { success: true, message: 'Product updated successfully', product: sanitizeProduct(product) };
+
+      // Fetch updated product with all associations
+      const updatedProduct = await Product.findByPk(product.id, {
+        include: [
+          {
+            model: Category,
+            as: 'category',
+            attributes: ['id', 'name', 'description', 'image', 'businessId']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name', 'businessId', 'locationId', 'status', 'type', 'contactInfo']
+          },
+          {
+            model: Supplier,
+            as: 'suppliers',
+            through: { attributes: [] },
+            attributes: ['id', 'name']
+          }
+        ]
+      });
+
+      return { 
+        success: true, 
+        message: 'Product updated successfully',
+        product: sanitizeProduct(updatedProduct)
+      };
+
     } catch (error) {
-      return { success: false, message: 'Error updating product', error };
+      console.error('Error updating product:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error updating product'
+      };
     }
   });
 
@@ -286,16 +327,56 @@ export function registerProductHandlers() {
   });
 
   // Delete product handler
-  ipcMain.handle(IPC_CHANNELS.DELETE_PRODUCT, async (event: IpcMainInvokeEvent, { id }) => {
+  ipcMain.handle(IPC_CHANNELS.DELETE_PRODUCT, async (event: IpcMainInvokeEvent, { productId, businessId }) => {
+    const t = await sequelize.transaction();
+    
     try {
-      const product = await Product.findByPk(id);
-      if (!product) {
-        return { success: false, message: 'Product not found' };
+      if (!businessId || !productId) {
+        return { success: false, message: 'Business ID and Product ID are required' };
       }
-      await product.destroy();
-      return { success: true, message: 'Product deleted successfully' };
+
+      // Find product with business verification
+      const product = await Product.findOne({
+        where: {
+          id: productId,
+          '$shop.businessId$': businessId
+        },
+        include: [{
+          model: Shop,
+          as: 'shop',
+          required: true
+        }]
+      });
+
+      if (!product) {
+        return { success: false, message: 'Product not found or access denied' };
+      }
+
+      // Remove all associations first
+      await Promise.all([
+        // Clear supplier associations
+        product.setSuppliers([]),
+        // Add other association clearings here if needed
+      ]);
+      
+      // Delete the product
+      await product.destroy({ transaction: t });
+
+      await t.commit();
+
+      return { 
+        success: true, 
+        message: 'Product deleted successfully',
+        productId
+      };
+
     } catch (error) {
-      return { success: false, message: 'Error deleting product', error };
+      await t.rollback();
+      console.error('Error deleting product:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error deleting product'
+      };
     }
   });
 }

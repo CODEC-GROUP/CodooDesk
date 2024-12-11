@@ -47,8 +47,28 @@ export function AddEditEmployee({ onBack, onSave, employee, isEdit }: AddEditEmp
     businessId: business?.id || '',
   });
 
+  // Add state for password update
+  const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
+  const [passwordUpdate, setPasswordUpdate] = useState({
+    newPassword: '',
+    confirmPassword: ''
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate password update if shown
+    if (showPasswordUpdate) {
+      if (passwordUpdate.newPassword !== passwordUpdate.confirmPassword) {
+        toast({
+          title: "Error",
+          description: "Passwords do not match",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
     try {
       if (!business?.id) {
         toast({
@@ -69,12 +89,16 @@ export function AddEditEmployee({ onBack, onSave, employee, isEdit }: AddEditEmp
       }
 
       if (isEdit && employee) {
+        const updates = {
+          ...formData,
+          ...(showPasswordUpdate && {
+            password_hash: passwordUpdate.newPassword
+          })
+        };
+
         const response = await safeIpcInvoke<EmployeeResponse>('entities:employee:update', {
           id: employee.id,
-          updates: {
-            ...formData,
-            shopId: formData.shopId
-          }
+          updates: updates
         }, { success: false, employee: undefined, message: '' });
 
         if (response?.success && response.employee) {
@@ -280,6 +304,49 @@ export function AddEditEmployee({ onBack, onSave, employee, isEdit }: AddEditEmp
                     onChange={(e) => setFormData({ ...formData, password_hash: e.target.value })}
                   />
                 </label>
+              </div>
+            )}
+
+            {/* Password Update Section */}
+            {isEdit && (
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <h3 className="font-medium">Update Password</h3>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowPasswordUpdate(!showPasswordUpdate)}
+                  >
+                    {showPasswordUpdate ? 'Cancel' : 'Change Password'}
+                  </Button>
+                </div>
+
+                {showPasswordUpdate && (
+                  <>
+                    <label>
+                      New Password
+                      <Input
+                        type="password"
+                        value={passwordUpdate.newPassword}
+                        onChange={(e) => setPasswordUpdate({
+                          ...passwordUpdate,
+                          newPassword: e.target.value
+                        })}
+                      />
+                    </label>
+                    <label>
+                      Confirm Password
+                      <Input
+                        type="password"
+                        value={passwordUpdate.confirmPassword}
+                        onChange={(e) => setPasswordUpdate({
+                          ...passwordUpdate,
+                          confirmPassword: e.target.value
+                        })}
+                      />
+                    </label>
+                  </>
+                )}
               </div>
             )}
           </div>

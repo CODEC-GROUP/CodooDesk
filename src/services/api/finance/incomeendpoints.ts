@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import Income, { IncomeAttributes } from '../../../models/Income.js';
 import OhadaCode from '../../../models/OhadaCode.js';
 import Shop from '../../../models/Shop.js';
+import { sequelize } from '../../database/index.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -109,29 +110,101 @@ export function registerIncomeHandlers() {
 
   // Update income handler
   ipcMain.handle(IPC_CHANNELS.UPDATE_INCOME, async (event, { id, data }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const income = await Income.findByPk(id);
+      const income = await Income.findByPk(id, {
+        include: [
+          {
+            model: OhadaCode,
+            as: 'ohadaCode',
+            attributes: ['id', 'code', 'name', 'description']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name']
+          }
+        ],
+        transaction: t
+      });
+
       if (!income) {
+        await t.rollback();
         return { success: false, message: 'Income not found' };
       }
-      await income.update(data);
-      return { success: true, message: 'Income updated successfully', income };
+
+      // Update the income
+      await income.update({
+        date: data.date,
+        description: data.description,
+        amount: data.amount,
+        paymentMethod: data.paymentMethod,
+        ohadaCodeId: data.ohadaCodeId,
+        shopId: data.shopId
+      }, { transaction: t });
+
+      // Fetch the updated income with all relations
+      const updatedIncome = await Income.findByPk(id, {
+        include: [
+          {
+            model: OhadaCode,
+            as: 'ohadaCode',
+            attributes: ['id', 'code', 'name', 'description']
+          },
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name']
+          }
+        ],
+        transaction: t
+      });
+
+      await t.commit();
+
+      // Convert to plain object to ensure it's serializable
+      const plainIncome = updatedIncome?.get({ plain: true });
+
+      return { 
+        success: true, 
+        message: 'Income updated successfully', 
+        income: plainIncome 
+      };
+
     } catch (error) {
-      return { success: false, message: 'Error updating income', error };
+      await t.rollback();
+      console.error('Error updating income:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error updating income'
+      };
     }
   });
 
   // Delete income handler
   ipcMain.handle(IPC_CHANNELS.DELETE_INCOME, async (event, { id }) => {
+    const t = await sequelize.transaction();
+
     try {
-      const income = await Income.findByPk(id);
+      const income = await Income.findByPk(id, { transaction: t });
+      
       if (!income) {
+        await t.rollback();
         return { success: false, message: 'Income not found' };
       }
-      await income.destroy();
+
+      await income.destroy({ transaction: t });
+      await t.commit();
+
       return { success: true, message: 'Income deleted successfully' };
     } catch (error) {
-      return { success: false, message: 'Error deleting income', error };
+      await t.rollback();
+      console.error('Error deleting income:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error deleting income'
+      };
     }
   });
 }
