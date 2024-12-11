@@ -424,7 +424,7 @@ const Suppliers = () => {
                 <TableHead>Phone</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Total Items</TableHead>
-                <TableHead>Total Sales</TableHead>
+                <TableHead>Total Value</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>

@@ -53,11 +53,12 @@ export function registerSupplierHandlers() {
               'id',
               'name',
               [Sequelize.fn('COUNT', Sequelize.col('supplierProducts.id')), 'productCount'],
-              [Sequelize.fn('SUM', Sequelize.col('Orders.sellingPrice')), 'totalValue']
+              [Sequelize.fn('SUM', Sequelize.col('supplierProducts.purchasePrice')), 'totalValue']
             ],
             include: [{
               model: Order,
-              attributes: []  // Include no direct attributes from Order
+              as: 'orders',
+              attributes: []
             }],
             through: { attributes: [] }
           }
