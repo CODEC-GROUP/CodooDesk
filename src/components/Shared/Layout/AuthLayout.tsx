@@ -112,10 +112,10 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       }, { success: false });
 
       if (response?.success && response.user) {
-        setIsAuthenticated(true);
-        setUser(response.user);
-        setBusiness(response.business || null);
+        console.log('Login Response:', response);
+        console.log('User Data:', response.user);
         
+        // Always update localStorage first
         localStorage.setItem('user', JSON.stringify(response.user));
         if (response.business) {
           localStorage.setItem('business', JSON.stringify(response.business));
@@ -123,7 +123,15 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         if (response.shopId) {
           localStorage.setItem('currentShopId', response.shopId);
         }
-        console.log(business)
+
+        // Then update state
+        setIsAuthenticated(true);
+        setUser(response.user);
+        setBusiness(response.business || null);
+        
+        console.log('Updated User State:', user);
+        console.log('LocalStorage User:', JSON.parse(localStorage.getItem('user') || '{}'));
+        
         toast({
           title: "Success",
           description: "Logged in successfully",
@@ -332,7 +340,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         if (storedBusiness) {
           const parsedBusiness = JSON.parse(storedBusiness);
           setBusiness(parsedBusiness);
-        } 
+        }
       } else {
         setIsAuthenticated(false);
         setUser(null);
@@ -357,7 +365,6 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       setIsLoading(false);
     }
   };
-
 
   useEffect(() => {
     checkAuth();

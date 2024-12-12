@@ -41,6 +41,8 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterRole, setFilterRole] = useState('all');
 
   const fetchEmployees = async () => {
     if (!business?.id) {
@@ -187,6 +189,23 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
     }
   }
 
+  // Add filtering logic
+  const filteredEmployees = employees.filter(employee => {
+    // Search term matching
+    const searchLower = searchTerm.toLowerCase().trim();
+    const matchesSearch = searchTerm.trim() === '' ? true : (
+      `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(searchLower) ||
+      employee.phone?.toLowerCase().includes(searchLower) ||
+      (employee.user?.role || employee.role)?.toLowerCase().includes(searchLower)
+    );
+
+    // Role filtering
+    const matchesRole = filterRole === 'all' || 
+      (employee.user?.role || employee.role)?.toLowerCase() === filterRole.toLowerCase();
+
+    return matchesSearch && matchesRole;
+  });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -229,30 +248,36 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
             <CardHeader>
               <CardTitle>All Employees</CardTitle>
             </CardHeader>
-            <CardContent className="max-h-[400px] overflow-y-auto"> {/* Added scrollable area */}
+            <CardContent className="max-h-[400px] overflow-y-auto">
               <div className="flex flex-col md:flex-row justify-between mb-4">
-                <Select>
+                <Select
+                  value={filterRole}
+                  onValueChange={setFilterRole}
+                >
                   <SelectTrigger className="w-full md:w-[180px] mb-2 md:mb-0">
                     <SelectValue placeholder="Filter Role" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Roles</SelectItem>
                     {roles.map((role) => (
-                      <SelectItem key={role} value={role?.toLowerCase() ?? 'shop_owner'}>{role}</SelectItem>
+                      <SelectItem key={role} value={role?.toLowerCase() ?? 'shop_owner'}>
+                        {role}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <div className="relative w-full md:w-[300px]">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                  <Input placeholder="Search..." className="pl-8" />
+                  <Input 
+                    placeholder="Search..." 
+                    className="pl-8"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
                 </div>
               </div>
+
               <div className="overflow-x-auto">
-                <div className="flex justify-end space-x-2 mb-2">
-                  <Button variant="ghost" size="icon">
-                    <Trash2 className="h-4 w-4 text-gray-500" />
-                  </Button>
-                </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -264,51 +289,64 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {employees.map((employee) => (
-                      <TableRow key={employee.id} onClick={() => handleEmployeeClick(employee)} className="cursor-pointer">
-                        <TableCell>
-                          <Checkbox onClick={(e) => e.stopPropagation()} />
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center space-x-3">
-                            <Avatar className="bg-[#EEF2FF] text-[#3F5BF6]">
-                              <AvatarFallback>{employee.firstName[0]}{employee.lastName[0]}</AvatarFallback>
-                            </Avatar>
-                            <span>{employee.firstName} {employee.lastName}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{employee.phone}</TableCell>
-                        <TableCell>
-                          <Badge className={`font-medium ${getRoleColor(employee.user?.role || employee.role)}`}>
-                            {employee.user?.role || employee.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end space-x-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onEditEmployee(employee);
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEmployeeToDelete(employee);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                    {filteredEmployees.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8">
+                          <div className="flex flex-col items-center justify-center text-gray-500">
+                            <p className="mb-2">No employees found</p>
+                            <p className="text-sm text-gray-400">
+                              Try adjusting your search or filter criteria
+                            </p>
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      filteredEmployees.map((employee) => (
+                        <TableRow key={employee.id} onClick={() => handleEmployeeClick(employee)} className="cursor-pointer">
+                          <TableCell>
+                            <Checkbox onClick={(e) => e.stopPropagation()} />
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center space-x-3">
+                              <Avatar className="bg-[#EEF2FF] text-[#3F5BF6]">
+                                <AvatarFallback>{employee.firstName[0]}{employee.lastName[0]}</AvatarFallback>
+                              </Avatar>
+                              <span>{employee.firstName} {employee.lastName}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{employee.phone}</TableCell>
+                          <TableCell>
+                            <Badge className={`font-medium ${getRoleColor(employee.user?.role || employee.role)}`}>
+                              {employee.user?.role || employee.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditEmployee(employee);
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEmployeeToDelete(employee);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>

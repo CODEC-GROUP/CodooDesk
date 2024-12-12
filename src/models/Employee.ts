@@ -12,7 +12,7 @@ export interface EmployeeAttributes {
   lastName?: string;
   email: string;
   phone?: string;
-  role: 'shop_owner' | 'manager' | 'seller';
+  role: 'shop_owner' | 'manager' | 'seller' | 'admin';
   hireDate: Date;
   status: 'active' | 'inactive' | 'terminated';
   description?: string;
@@ -45,7 +45,7 @@ class Employee extends Model<EmployeeAttributes> implements EmployeeAttributes {
   public lastName?: string;
   public email!: string;
   public phone?: string;
-  public role!: 'shop_owner' | 'manager' | 'seller';
+  public role!: 'shop_owner' | 'manager' | 'seller' | 'admin';
   public hireDate!: Date;
   public status!: 'active' | 'inactive' | 'terminated';
   public description?: string;

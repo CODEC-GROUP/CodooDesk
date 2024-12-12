@@ -91,6 +91,7 @@ export function AddEditEmployee({ onBack, onSave, employee, isEdit }: AddEditEmp
       if (isEdit && employee) {
         const updates = {
           ...formData,
+          role: formData.role,
           ...(showPasswordUpdate && {
             password_hash: passwordUpdate.newPassword
           })

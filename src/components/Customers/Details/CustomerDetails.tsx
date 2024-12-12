@@ -96,38 +96,38 @@ export function CustomerDetails({ customer, onBack }: CustomerDetailsProps) {
     }
   };
 
-  const fetchCustomerOrders = async (customerId: string) => {
-    try {
-      setIsLoadingOrders(true);
-      const response = await safeIpcInvoke('entities:customer:get-orders', {
-        customerId
-      }, { success: false, orders: [] });
+  // const fetchCustomerOrders = async (customerId: string) => {
+  //   try {
+  //     setIsLoadingOrders(true);
+  //     const response = await safeIpcInvoke('entities:customer:get-orders', {
+  //       customerId
+  //     }, { success: false, orders: [] });
 
-      if (response?.success) {
-        setOrders(response.orders);
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to load customer orders",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching customer orders:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load customer orders",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingOrders(false);
-    }
-  };
+  //     if (response?.success) {
+  //       setOrders(response.orders);
+  //     } else {
+  //       toast({
+  //         title: "Error",
+  //         description: "Failed to load customer orders",
+  //         variant: "destructive",
+  //       });
+  //     }
+  //   } catch (error) {
+  //     console.error('Error fetching customer orders:', error);
+  //     toast({
+  //       title: "Error",
+  //       description: "Failed to load customer orders",
+  //       variant: "destructive",
+  //     });
+  //   } finally {
+  //     setIsLoadingOrders(false);
+  //   }
+  // };
 
   useEffect(() => {
     if (customer?.id) {
       fetchCustomerDetails(customer.id.toString());
-      fetchCustomerOrders(customer.id.toString());
+      // fetchCustomerOrders(customer.id.toString());
     }
   }, [customer?.id]);
 
@@ -181,7 +181,7 @@ export function CustomerDetails({ customer, onBack }: CustomerDetailsProps) {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        {/* <Card>
           <CardHeader>
             <CardTitle>Customer Orders</CardTitle>
           </CardHeader>
@@ -211,7 +211,7 @@ export function CustomerDetails({ customer, onBack }: CustomerDetailsProps) {
               </TableBody>
             </Table>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
     </>
   )

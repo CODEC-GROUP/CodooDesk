@@ -61,18 +61,26 @@ interface OrderListProps {
   onAddOrder: () => void;
 }
 
+interface SaleResponse {
+  success: boolean;
+  sale?: SalesAttributes;
+  message?: string;
+}
+
 export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   const { user, business } = useAuthLayout();
   const [sales, setSales] = useState<Sale[]>([]);
+  const [filteredSales, setFilteredSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
   const [filterValue, setFilterValue] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [shopId, setShopId] = useState<string | null>(null);
+  
+  const ITEMS_PER_PAGE = 10;
 
-  const fetchSales = async (page: number) => {
-    console.log('Starting fetchSales...', { user, business });
+  const fetchSales = async () => {
+    console.log('Starting fetchSales...', { user, business, searchTerm, filterValue });
     if (!user) {
       console.error('No user found');
       toast({
@@ -99,27 +107,27 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
       console.log('Making IPC call with:', {
         user,
         shopId: currentShopId,
-        page,
+        page: 1,
         limit: 10,
-        status: filterValue !== 'all' ? filterValue : undefined
+        status: filterValue !== 'all' ? filterValue : undefined,
+        search: searchTerm.trim() || undefined
       });
 
       const result = await safeIpcInvoke('order-management:get-sales', {
         user,
         shopId: currentShopId,
-        page,
+        page: 1,
         limit: 10,
-        status: filterValue !== 'all' ? filterValue : undefined
+        status: filterValue !== 'all' ? filterValue : undefined,
+        search: searchTerm.trim() || undefined
       }, { success: false, sales: [], pages: 0 });
 
       console.log('IPC call result:', result);
 
       setSales(result?.success ? result.sales : []);
-      setTotalPages(result?.pages || 0);
     } catch (error) {
       console.error('Error fetching sales:', error);
       setSales([]);
-      setTotalPages(0);
       toast({
         title: "Error",
         description: "Failed to fetch orders",
@@ -130,88 +138,114 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
     }
   };
 
-  const handleViewDetails = async (saleId: string) => {
-    try {
-      const result = await safeIpcInvoke('order-management:get-sale-details', {
-        saleId
-      }, { success: false, sale: null });
+  useEffect(() => {
+    let result = [...sales];
 
-      if (result?.success) {
-        console.log(result.sale);
+    if (filterValue !== 'all') {
+      result = result.filter(sale => sale.deliveryStatus === filterValue);
+    }
+
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      result = result.filter(sale => 
+        sale.id?.toLowerCase().includes(searchLower) ||
+        sale.customer?.name?.toLowerCase().includes(searchLower) ||
+        sale.deliveryStatus.toLowerCase().includes(searchLower) ||
+        formatCurrency(sale.netAmount).toLowerCase().includes(searchLower)
+      );
+    }
+
+    setFilteredSales(result);
+    setCurrentPage(1);
+  }, [sales, filterValue, searchTerm]);
+
+  const totalFilteredItems = filteredSales.length;
+  const totalPages = Math.ceil(totalFilteredItems / ITEMS_PER_PAGE);
+  const currentPageItems = filteredSales.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  useEffect(() => {
+    fetchSales();
+  }, [business, user]);
+
+  const handleViewDetails = async (saleId: string) => {
+    if (!saleId) {
+      console.error('No sale ID provided');
+      return;
+    }
+
+    try {
+      const result = await safeIpcInvoke<SaleResponse>('order-management:get-sale-details', {
+        id: saleId,
+        user,
+        shopId: shopId || business?.shops?.[0]?.id,
+      });
+
+      if (result?.success && result?.sale) {
+        onOrderClick(saleId);
+      } else {
+        toast({
+          title: "Error",
+          description: result?.message || "Failed to fetch order details",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Error fetching sale details:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch order details",
+        variant: "destructive",
+      });
     }
   };
 
   const handleExport = (format: 'csv' | 'excel' | 'pdf') => {
+    // Get current shop name
+    const currentShopId = shopId || business?.shops?.[0]?.id;
+    const currentShop = business?.shops?.find(shop => shop.id === currentShopId);
+    const shopName = currentShop?.name || 'Shop';
+
     const headers = ['Order ID', 'Customer', 'Date', 'Status', 'Amount', 'Payment'];
     const data = sales.map(sale => ([
-      sale.id,
-      sale.customer?.name || 'Walking Customer',
+      sale.id ?? '',
+      sale.customer?.name ?? 'Walking Customer',
       sale.createdAt ? new Date(sale.createdAt).toLocaleDateString() : 'N/A',
-      sale.deliveryStatus,
+      sale.deliveryStatus ?? 'N/A',
       formatCurrency(sale.netAmount),
-      sale.paymentStatus
-    ]));
+      sale.paymentStatus ?? 'N/A'
+    ])) as string[][];
 
-    if (format === 'csv') {
+    if (format === 'csv' || format === 'excel') {
       const csvContent = [headers, ...data].map(row => row.join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const blob = new Blob([csvContent], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `orders-${new Date().toISOString().split('T')[0]}.csv`;
-      a.click();
-    } else if (format === 'excel') {
-      const csvContent = [headers, ...data].map(row => row.join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `orders-${new Date().toISOString().split('T')[0]}.xls`;
+      a.download = `${shopName}-orders-${new Date().toISOString().split('T')[0]}.${format === 'csv' ? 'csv' : 'xls'}`;
       a.click();
     } else if (format === 'pdf') {
       try {
         const doc = new jsPDF();
         
-        // Add title
-        const title = `Orders Report - ${new Date().toLocaleDateString()}`;
+        // Add title with shop name
+        const title = `${shopName} - Orders Report - ${new Date().toLocaleDateString()}`;
         doc.setFontSize(16);
         doc.text(title, 14, 15);
         
-        // Add business info if available
-        if (business && 'fullBusinessName' in business) {
+        // Add shop info if available
+        if (currentShop?.name) {
           doc.setFontSize(12);
-          doc.text(business.fullBusinessName, 14, 25);
+          doc.text(currentShop.name, 14, 25);
         }
-        
-        // Define headers with proper typing
-        const headers = [
-          { content: "Order ID" },
-          { content: "Customer" },
-          { content: "Date" },
-          { content: "Status" },
-          { content: "Amount" },
-          { content: "Payment" },
-        ];
-        
-        const body = sales.map((sale) => [
-          { content: sale.id },
-          { content: sale.customer?.name || "Walking Customer" },
-          { content: sale.createdAt ? new Date(sale.createdAt).toLocaleDateString() : "N/A" },
-          { content: sale.deliveryStatus },
-          { content: formatCurrency(sale.netAmount) },
-          { content: sale.paymentStatus },
-        ]);
-        
-        
-        // Define table data with proper typing
 
+        // Configure the table
         autoTable(doc, {
-          head: headers,
-          body: body,
-          startY: business?.fullBusinessName ? 30 : 25,
+          head: [headers],
+          body: data,
+          startY: currentShop?.name ? 30 : 25,
           styles: {
             fontSize: 10,
             cellPadding: 3,
@@ -224,6 +258,7 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
           alternateRowStyles: {
             fillColor: [245, 245, 245],
           },
+          margin: { top: 30 },
         });
         
         // Add footer with timestamp
@@ -243,8 +278,8 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
           );
         }
         
-        // Save the PDF
-        doc.save(`orders-${new Date().toISOString().split('T')[0]}.pdf`);
+        // Save with shop name in filename
+        doc.save(`${shopName}-orders-${new Date().toISOString().split('T')[0]}.pdf`);
         
         toast({
           title: "Success",
@@ -265,11 +300,6 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   const handleOrderClick = (orderId: string) => {
     onOrderClick(orderId);
   };
-
-  useEffect(() => {
-    console.log('useEffect triggered with:', { currentPage, filterValue });
-    fetchSales(currentPage);
-  }, [currentPage, filterValue, business, user]);
 
   if (loading) {
     return <div>Loading...</div>;
@@ -355,11 +385,14 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sales.map((sale) => (
+                    {currentPageItems.map((sale) => (
                       <TableRow 
                         key={sale.id}
                         className="cursor-pointer hover:bg-gray-100"
-                        onClick={() => sale.id ? onOrderClick(sale.id) : null}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (sale.id) handleViewDetails(sale.id);
+                        }}
                       >
                         <TableCell>{sale.id}</TableCell>
                         <TableCell>
@@ -376,7 +409,7 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                             {sale.deliveryStatus}
                           </span>
                         </TableCell>
-                        <TableCell>{formatCurrency(sale.netAmount).toLocaleString()}</TableCell>
+                        <TableCell>{formatCurrency(sale.netAmount)}</TableCell>
                         <TableCell>
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold
                             ${sale.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 
@@ -388,7 +421,10 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                           <Button
                             variant="ghost"
                             className="h-8 w-8 p-0"
-                            onClick={() => sale.id ? onOrderClick(sale.id) : null}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (sale.id) handleViewDetails(sale.id);
+                            }}
                           >
                             <span className="sr-only">Open menu</span>
                             <MoreHorizontal className="h-4 w-4" />

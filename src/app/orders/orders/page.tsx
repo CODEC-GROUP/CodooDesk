@@ -18,7 +18,12 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<SalesAttributes | null>(null)
 
   const handleOrderClick = (orderId: string) => {
-    setSelectedOrder({ id: orderId } as SalesAttributes);
+    if (!orderId) return;
+    
+    setSelectedOrder({ 
+      id: orderId,
+      // Add other required fields from SalesAttributes if needed
+    } as SalesAttributes);
     setView("details");
   }
 
@@ -34,14 +39,17 @@ export default function OrdersPage() {
     <DashboardLayout>
       <div className="container mx-auto p-6">
         {view === "list" && (
-          <OrderList onOrderClick={(orderId: string) => handleOrderClick(orderId)} onAddOrder={handleAddOrder} />
+          <OrderList 
+            onOrderClick={handleOrderClick} 
+            onAddOrder={handleAddOrder} 
+          />
         )}
         {view === "add" && (
           <AddOrder onBack={handleBack} />
         )}
-        {view === "details" && selectedOrder && (
+        {view === "details" && selectedOrder && selectedOrder.id && (
           <OrderDetails 
-            orderId={selectedOrder?.id ?? ''} 
+            orderId={selectedOrder.id} 
             onBack={handleBack} 
           />
         )}

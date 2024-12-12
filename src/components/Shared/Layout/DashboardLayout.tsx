@@ -52,17 +52,17 @@ const navigationItems = [
   },
   { name: 'POS', href: '/pos', icon: Monitor },
   { name: 'Customers', href: '/customers', icon: Users },
-  { name: 'Shops', href: '/shops', icon: Home, requiredRoles: ['admin', 'shop_owner'] },
+  { name: 'Shops', href: '/shops', icon: Home, requiredRoles: ['Admin', 'shop_owner'] },
   { 
     name: 'Employees', 
     href: '/employees', 
     icon: UserCheck,
-    requiredRoles: ['admin', 'shop_owner']
+    requiredRoles: ['Admin', 'shop_owner']
   },
   {
     name: 'Finance',
     icon: HandCoins,
-    requiredRoles: ['admin', 'shop_owner'],
+    requiredRoles: ['Admin', 'shop_owner'],
     subItems: [
       { name: 'Income', href: '/reports/income' },
       { name: 'Expenses', href: '/reports/expenses' },
@@ -70,10 +70,10 @@ const navigationItems = [
   },
 ]
 
-const settingsItems = [
-  { name: 'Global Settings', href: '/settings', icon: Settings },
-  { name: 'Help/Support', href: '/help', icon: HelpCircle },
-]
+// const settingsItems = [
+//   { name: 'Global Settings', href: '/settings', icon: Settings },
+//   { name: 'Help/Support', href: '/help', icon: HelpCircle },
+// ]
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, business, logout } = useAuthLayout()
@@ -83,8 +83,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobile, setIsMobile] = useState(false)
 
   const filteredNavigationItems = navigationItems.filter(item => {
+    console.log('Current user role:', user?.role)
     if (item.requiredRoles) {
-      return item.requiredRoles.includes(user?.role || '')
+      return item.requiredRoles.some(role => role === user?.role)
     }
     return true
   })
@@ -234,7 +235,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               {sidebarOpen ? "Settings" : "..."}
             </h3>
             <div className="space-y-1">
-              {settingsItems.map((item) => (
+              {/* {settingsItems.map((item) => (
                 <Button
                   key={item.name}
                   variant={pathname === item.href ? 'secondary' : 'ghost'}
@@ -247,7 +248,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   <item.icon className={cn('h-5 w-5', !sidebarOpen && 'mr-0')} />
                   {sidebarOpen && <span className="ml-2">{item.name}</span>}
                 </Button>
-              ))}
+              ))} */}
               <Button
                 variant="ghost"
                 className={cn(

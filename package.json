@@ -23,7 +23,7 @@
     "dist": "npm run clean && npm run electron-build && electron-builder",
     "clean": "rimraf dist out build",
     "build-static": "next build && npm run format-html && npm run build-static-repair-index ",
-    "build-static-repair-index": "replace-in-files --string \"/_next/static\" --replacement \"../_next/static\" \"out/**/*.html\" && replace-in-files --string \"\\\"/assets/\" --replacement \"\\\"../assets/\" \"out/**/*.html\" && replace-in-files --string \"href=\\\"/\" --replacement \"href=\\\"./\" \"out/**/*.html\" && replace-in-files --string \"src=\\\"/\" --replacement \"src=\\\"./\" \"out/**/*.html\" && replace-in-files --string \"\\\"/assets/\" --replacement \"\\\"../../assets/\" \"out/**/**/*.html\" && node fix-nested-paths.js",
+    "build-static-repair-index": "node scripts/copy-splash.js && replace-in-files --string \"/_next/static\" --replacement \"../_next/static\" \"out/**/*.html\" && replace-in-files --string \"\\\"/assets/\" --replacement \"\\\"../assets/\" \"out/**/*.html\" && replace-in-files --string \"href=\\\"/\" --replacement \"href=\\\"./\" \"out/**/*.html\" && replace-in-files --string \"src=\\\"/\" --replacement \"src=\\\"./\" \"out/**/*.html\" && replace-in-files --string \"\\\"/assets/\" --replacement \"\\\"../../assets/\" \"out/**/**/*.html\" && node fix-nested-paths.js",
     "electron-rebuild": "electron-rebuild",
     "format-html": "node scripts/format-html.js",
     "postinstall": "electron-builder install-app-deps"
@@ -48,6 +48,7 @@
     "bcrypt": "^5.1.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "copy-webpack-plugin": "^12.0.2",
     "country-state-city": "^3.2.1",
     "date-fns": "^3.6.0",
     "electron-is-dev": "^3.0.1",

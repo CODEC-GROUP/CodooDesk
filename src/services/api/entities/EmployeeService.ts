@@ -7,6 +7,11 @@ import { sequelize } from '../../database/index.js';
 import bcrypt from 'bcrypt';
 import Shop from '../../../models/Shop.js';
 
+// Add this interface at the top of the file
+interface EmployeeWithAssociations extends Employee {
+  user?: User;
+  shop?: Shop;
+}
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -16,7 +21,8 @@ const IPC_CHANNELS = {
   UPDATE_EMPLOYEE: 'entities:employee:update',
   DELETE_EMPLOYEE: 'entities:employee:delete',
   GET_EMPLOYEE_SALES: 'entities:employee:get-sales',
-  GET_EMPLOYEE_INCOME: 'entities:employee:get-income'
+  GET_EMPLOYEE_INCOME: 'entities:employee:get-income',
+  UPDATE_EMPLOYEE_ROLE: 'entities:employee:update-role',
 };
 
 // Register IPC handlers
@@ -228,8 +234,11 @@ export function registerEmployeeHandlers() {
         return { success: false, message: 'Employee not found' };
       }
 
-      // Update employee data
-      await employee.update(updates, { transaction: t });
+      // Update employee data including role
+      await employee.update({
+        ...updates,
+        role: updates.role // Make sure role is updated in Employee table
+      }, { transaction: t });
 
       // Update associated user data if provided
       if (employee.userId) {
@@ -237,6 +246,7 @@ export function registerEmployeeHandlers() {
         
         if (updates.email) userUpdates.email = updates.email;
         if (updates.username) userUpdates.username = updates.username;
+        if (updates.role) userUpdates.role = updates.role; // Update role in User table
         if (updates.password_hash) {
           userUpdates.password_hash = await bcrypt.hash(updates.password_hash, 10);
         }
@@ -258,7 +268,7 @@ export function registerEmployeeHandlers() {
           as: 'user',
           attributes: ['username', 'email', 'role']
         }]
-      }) as Employee & { user: User };
+      }) as EmployeeWithAssociations | null;
 
       if (!updatedEmployee) {
         return {
@@ -267,16 +277,20 @@ export function registerEmployeeHandlers() {
         };
       }
 
+      // Include both roles in serialized response
       const serializedEmployee = {
         id: updatedEmployee.id,
         firstName: updatedEmployee.firstName,
         lastName: updatedEmployee.lastName,
         phone: updatedEmployee.phone,
-        role: updatedEmployee.user?.role || updatedEmployee.role,
+        role: updatedEmployee.role, // Employee role
+        employmentStatus: updatedEmployee.employmentStatus,
+        salary: updatedEmployee.salary,
+        shopId: updatedEmployee.shopId,
         user: updatedEmployee.user ? {
           username: updatedEmployee.user.username,
           email: updatedEmployee.user.email,
-          role: updatedEmployee.user.role
+          role: updatedEmployee.user.role // User role
         } : null
       };
 
@@ -414,6 +428,55 @@ export function registerEmployeeHandlers() {
   //     return { success: false, message: 'Error fetching employee income', error };
   //   }
   // });
+
+  // Update employee role handler
+  ipcMain.handle(IPC_CHANNELS.UPDATE_EMPLOYEE_ROLE, async (event, { employeeId, userId, newRole }) => {
+    const t = await sequelize.transaction();
+    
+    try {
+      // Update both employee and user records
+      await Promise.all([
+        Employee.update(
+          { role: newRole },
+          { 
+            where: { id: employeeId },
+            transaction: t 
+          }
+        ),
+        User.update(
+          { role: newRole },
+          { 
+            where: { id: userId },
+            transaction: t 
+          }
+        )
+      ]);
+
+      await t.commit();
+
+      // Fetch updated employee with associations
+      const updatedEmployee = await Employee.findByPk(employeeId, {
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['username', 'email', 'role']
+        }]
+      });
+
+      return {
+        success: true,
+        message: 'Role updated successfully',
+        employee: updatedEmployee
+      };
+    } catch (error) {
+      await t.rollback();
+      console.error('Error updating role:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Error updating role'
+      };
+    }
+  });
 }
 
 // Export channel names for use in renderer process

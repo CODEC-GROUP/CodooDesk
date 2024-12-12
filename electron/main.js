@@ -78,13 +78,69 @@ const loadURL = serve({
   scheme: 'app'
 });
 
-async function createWindow() {
+// Add these constants at the top
+const MAX_DB_INIT_RETRIES = 5;  // Increased retries for cold start
+const INITIAL_DB_DELAY = 3000;  // Initial delay to wait for DB service
+const DB_INIT_RETRY_DELAY = 2000;
+
+async function waitForDatabaseService() {
+  console.log('Waiting for database service to be ready...');
+  await new Promise(resolve => setTimeout(resolve, INITIAL_DB_DELAY));
+}
+
+async function initDatabaseWithRetry(retryCount = 0) {
   try {
-    // Initialize database first
+    // On first attempt, wait for database service
+    if (retryCount === 0) {
+      await waitForDatabaseService();
+    }
+
     const dbInitialized = await initDatabase();
     if (!dbInitialized) {
-      throw new Error('Database initialization failed');
+      throw new Error('Database initialization returned false');
     }
+    console.log('Database initialized successfully');
+    return true;
+  } catch (error) {
+    console.error(`Database initialization attempt ${retryCount + 1} failed:`, error);
+    
+    if (retryCount < MAX_DB_INIT_RETRIES) {
+      const delay = DB_INIT_RETRY_DELAY * (retryCount + 1); // Progressive delay
+      console.log(`Retrying database initialization in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return initDatabaseWithRetry(retryCount + 1);
+    }
+    
+    // If all retries fail, show a user-friendly error dialog
+    dialog.showErrorBox(
+      'Database Connection Error',
+      'Unable to connect to the database. Please ensure your system has completely started and try launching the application again.'
+    );
+    throw new Error(`Failed to initialize database after ${MAX_DB_INIT_RETRIES} attempts: ${error.message}`);
+  }
+}
+
+async function createWindow() {
+  try {
+    // Create splash window
+    const splashWindow = new BrowserWindow({
+      width: 400,
+      height: 400,
+      transparent: true,
+      frame: false,
+      alwaysOnTop: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    });
+
+    // Load splash screen from out directory
+    await splashWindow.loadFile(path.join(__dirname, '../out/splash/splash.html'));
+    splashWindow.center();
+
+    // Initialize database with retry mechanism
+    await initDatabaseWithRetry();
 
     // Check if data already exists before populating
     const existingCodes = await OhadaCode.findOne();
@@ -99,6 +155,42 @@ async function createWindow() {
     } else {
       console.log('Initial data already populated, skipping...');
     }
+
+    // Create main window but don't show it yet
+    mainWindow = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      show: false,  // Don't show until ready
+      webPreferences: {
+        nodeIntegration: false,
+        sandbox: false,
+        contextIsolation: true,
+        preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
+        webSecurity: false,
+        allowRunningInsecureContent: false,
+        devTools: true
+      },
+    });
+
+    // Set security headers
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' file: data:;",
+            "img-src 'self' file: data: https: http: file://*;"
+          ]
+        }
+      });
+    });
+
+    // Register global shortcut for DevTools
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+        mainWindow.webContents.toggleDevTools();
+      }
+    });
 
     // Register all IPC handlers
     registerInventoryHandlers();
@@ -125,89 +217,31 @@ async function createWindow() {
     registerOhadaCodeHandlers();
     registerPrinterHandlers();
 
-    ipcMain.handle('navigate', async (event, path) => {
-      console.log('Navigation requested to:', path);
-      return navigateTo(path);
-    });
-    
-    mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
-      webPreferences: {
-        nodeIntegration: false,
-        sandbox: false,
-        contextIsolation: true,
-        preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
-        webSecurity: false,
-        allowRunningInsecureContent: false,
-        devTools: true
-      },
-    });
-
-
-    // Set security headers
-    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-      callback({
-        responseHeaders: {
-          ...details.responseHeaders,
-          'Content-Security-Policy': [
-            "default-src 'self' 'unsafe-inline' 'unsafe-eval' file: data:;",
-            "img-src 'self' file: data: https: http: file://*;"
-          ]
-        }
-      });
-    });
-
-    // Register global shortcut for DevTools
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      if (input.control && input.shift && input.key.toLowerCase() === 'i') {
-        mainWindow.webContents.toggleDevTools();
-      }
-    });
-
-    // // Always open DevTools when window is created
-    // mainWindow.webContents.openDevTools();
-
-    // Watch for file changes and reload
-    // const watchPaths = [
-    //   path.join(__dirname, '../src'),
-    //   path.join(__dirname, '../dist'),
-    //   path.join(__dirname, '../out')
-    // ];
-
-    // watchPaths.forEach(watchPath => {
-    //   if (fs.existsSync(watchPath)) {
-    //     watch(watchPath, { recursive: true }, (eventType, filename) => {
-    //       if (filename && !filename.includes('node_modules')) {
-    //         const now = Date.now();
-    //         if (now - lastNavigationTime >= NAVIGATION_COOLDOWN && !isNavigating) {
-    //           console.log(`File changed: ${filename}`);
-    //           if (mainWindow && !mainWindow.isDestroyed()) {
-    //             mainWindow.webContents.reloadIgnoringCache();
-    //           }
-    //           lastNavigationTime = now;
-    //           isNavigating = true;
-    //           setTimeout(() => {
-    //             isNavigating = false;
-    //           }, NAVIGATION_COOLDOWN);
-    //         }
-    //       }
-    //     });
-    //   }
-    // });
-
+    // Load the app
     const isDevelopment = process.env.NODE_ENV === 'development';
-    
     if (isDevelopment) {
       await mainWindow.loadURL('http://localhost:3000');
     } else {
-      // No need to set ASSET_PREFIX when using app:// protocol
       await loadURL(mainWindow);
     }
 
-    mainWindow.on('closed', () => {
-      mainWindow = null;
+    // Ensure splash screen is closed and main window is shown
+    mainWindow.once('ready-to-show', () => {
+      mainWindow.show();
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.destroy();
+      }
     });
+
+    // Add error handler for if main window fails to show
+    setTimeout(() => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.destroy();
+        if (!mainWindow.isVisible()) {
+          mainWindow.show();
+        }
+      }
+    }, 10000); // 10 second fallback
 
     // Add error handler for webContents
     mainWindow.webContents.on('render-process-gone', (event, details) => {

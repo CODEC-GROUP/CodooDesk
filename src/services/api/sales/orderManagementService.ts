@@ -382,10 +382,6 @@ export function registerOrderManagementHandlers() {
   // Get sale details with formatted receipt data
   ipcMain.handle(IPC_CHANNELS.GET_SALE_DETAILS, async (event, { id }) => {
     try {
-      if (!id) {
-        return { success: false, message: 'Sale ID is required' };
-      }
-
       const sale = await Sales.findOne({
         where: { id: id },
         include: [
@@ -413,7 +409,6 @@ export function registerOrderManagementHandlers() {
       });
 
       if (!sale) {
-        console.error(`Sale not found with ID: ${id}`);
         return { success: false, message: 'Sale not found' };
       }
 
@@ -422,7 +417,7 @@ export function registerOrderManagementHandlers() {
       // Format receipt data
       const receiptData = {
         saleId: plainSale.id,
-        receiptId: plainSale.receipt_id || plainSale.invoice_id || null,
+        receiptId: plainSale.receipt_id || plainSale.invoice_id,
         customerName: plainSale.customer ? 
           `${plainSale.customer.first_name} ${plainSale.customer.last_name}` : 
           'Walk-in Customer',
@@ -432,12 +427,12 @@ export function registerOrderManagementHandlers() {
           quantity: order.quantity,
           sellingPrice: order.sellingPrice
         })) || [],
-        subtotal: plainSale.netAmount + (plainSale.discount || 0) - (plainSale.deliveryFee || 0),
-        discount: plainSale.discount || 0,
-        deliveryFee: plainSale.deliveryFee || 0,
+        subtotal: plainSale.netAmount + plainSale.discount - plainSale.deliveryFee,
+        discount: plainSale.discount,
+        deliveryFee: plainSale.deliveryFee,
         total: plainSale.netAmount,
-        amountPaid: plainSale.amountPaid || 0,
-        change: plainSale.changeGiven || 0,
+        amountPaid: plainSale.amountPaid,
+        change: plainSale.changeGiven,
         date: plainSale.createdAt,
         paymentMethod: plainSale.paymentMethod,
         salesPersonId: plainSale.salesPersonId
@@ -445,16 +440,14 @@ export function registerOrderManagementHandlers() {
 
       return {
         success: true,
-        data: {
-          sale: plainSale,
-          receiptData
-        }
+        sale: plainSale,
+        data: { receiptData }
       };
-    } catch (error: any) {
-      console.error('Error fetching sale details:', error);
+    } catch (error) {
+      console.error('Error in get-sale-details:', error);
       return { 
         success: false, 
-        message: error.message || 'Failed to fetch sale details'
+        message: error instanceof Error ? error.message : 'Failed to fetch sale details'
       };
     }
   });
@@ -512,40 +505,12 @@ export function registerOrderManagementHandlers() {
         salesPersonId: plainSale.salesPersonId
       };
 
-      // Sanitize the response
-      const sanitizedSale = {
-        id: plainSale.id,
-        createdAt: plainSale.createdAt,
-        updatedAt: plainSale.updatedAt,
-        netAmount: plainSale.netAmount,
-        deliveryStatus: plainSale.deliveryStatus,
-        paymentStatus: plainSale.status,
-        paymentMethod: plainSale.paymentMethod,
-        customer: plainSale.customer ? {
-          id: plainSale.customer.id,
-          name: `${plainSale.customer.first_name} ${plainSale.customer.last_name}`,
-          phone: plainSale.customer.phone_number
-        } : null,
-        orders: plainSale.orders?.map((order: any) => ({
-          id: order.id,
-          quantity: order.quantity,
-          product: order.product ? {
-            id: order.product.id,
-            name: order.product.name,
-            price: order.product.sellingPrice
-          } : {
-            name: order.productName,
-            price: order.sellingPrice
-          }
-        }))
-      };
-
       return {
         success: true,
-        sale: sanitizedSale,
-        receiptData
+        sale: plainSale,
+        data: { receiptData }
       };
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Error updating sale status:', error);
       return {
         success: false,

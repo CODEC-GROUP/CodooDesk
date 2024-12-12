@@ -121,6 +121,7 @@ const Income = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [newItem, setNewItem] = useState<NewIncomeItem>({})
   const [selectedShopId, setSelectedShopId] = useState<string>("");
+  const [filterValue, setFilterValue] = useState("all"); // Add this state
 
   const [selectedOhadaCode, setSelectedOhadaCode] = useState<string>("");
   const [isCustomCategory, setIsCustomCategory] = useState(false);
@@ -129,6 +130,49 @@ const Income = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingIncome, setEditingIncome] = useState<any>(null);
   const [incomeToDelete, setIncomeToDelete] = useState<any>(null);
+
+  const [filteredIncomes, setFilteredIncomes] = useState<IncomeAttributes[]>([]);
+  const itemsPerPage = 10;
+
+  // Add useEffect for filtering
+  useEffect(() => {
+    let result = [...incomes];
+
+    // Filter by OHADA code
+    if (filterValue !== 'all') {
+      result = result.filter(income => income.ohadaCodeId === filterValue);
+    }
+
+    // Search functionality
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim();
+      result = result.filter(income => {
+        return (
+          // Search in description
+          income.description?.toLowerCase().includes(searchLower) ||
+          // Search in OHADA code name
+          income.ohadaCode?.name?.toLowerCase().includes(searchLower) ||
+          // Search in amount
+          formatCurrency(Number(income.amount)).toLowerCase().includes(searchLower) ||
+          // Search in payment method
+          income.paymentMethod?.toLowerCase().replace('_', ' ').includes(searchLower) ||
+          // Search in date
+          new Date(income.date).toLocaleDateString().toLowerCase().includes(searchLower)
+        );
+      });
+    }
+
+    setFilteredIncomes(result);
+    setCurrentPage(1); // Reset to first page when search/filter changes
+  }, [incomes, filterValue, searchTerm]);
+
+  // Update pagination calculations
+  const totalFilteredItems = filteredIncomes.length;
+  const totalPages = Math.ceil(totalFilteredItems / itemsPerPage);
+  const currentItems = filteredIncomes.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handleOhadaCodeSelection = (value: string) => {
     setSelectedOhadaCode(value);
@@ -420,14 +464,6 @@ const Income = () => {
     }
   };
 
-  const filteredItems = incomes.filter((item: any) => {
-    const dataValues = item.dataValues || item;
-    return dataValues.description?.toLowerCase().includes(searchTerm.toLowerCase());
-  });
-
-  const currentItems = filteredItems.slice((currentPage - 1) * 10, currentPage * 10)
-  const totalPages = Math.ceil(filteredItems.length / 10)
-
   const handlePageChange = (pageNumber: number) => {
     setCurrentPage(pageNumber)
   }
@@ -437,6 +473,11 @@ const Income = () => {
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     )
   }
+
+  // Update the search input to handle empty values properly
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
 
   return (
     <div className="flex-1 space-y-4">
@@ -609,29 +650,37 @@ const Income = () => {
         <div className="space-y-4">
           {/* Search and Filter Section */}
           <div className="flex items-center py-4">
-            <Select>
+            <Select
+              value={filterValue}
+              onValueChange={setFilterValue}
+            >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filter" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Income</SelectItem>
                 {ohadaCodes.map((code: any) => (
-                  <SelectItem key={code.dataValues.id} value={code.dataValues.id as string}>
+                  <SelectItem 
+                    key={code.dataValues.id} 
+                    value={code.dataValues.id}
+                  >
                     {code.dataValues.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Input
-              placeholder="Search..."
-              value={searchTerm ?? ''}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="ml-2"
-            />
-            <Button variant="ghost" className="ml-2">
-              <Search className="h-4 w-4" />
-            </Button>
+            <div className="relative flex-1 ml-2">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search by description, amount, date..."
+                value={searchTerm}
+                onChange={handleSearch}
+                className="pl-8"
+              />
+            </div>
           </div>
+
+          {/* Table Section */}
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -657,50 +706,51 @@ const Income = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentItems.map((item: any) => {
-                  const dataValues = item.dataValues || item;
-                  return (
-                    <TableRow key={dataValues.id}>
-                      <TableCell>
-                        <Checkbox
-                          checked={dataValues.id ? selectedItems.includes(dataValues.id) : false}
-                          onCheckedChange={() => dataValues.id && handleCheckboxChange(dataValues.id)}
-                        />
-                      </TableCell>
-                      <TableCell>{new Date(dataValues.date).toLocaleDateString()}</TableCell>
-                      <TableCell>{dataValues.description}</TableCell>
-                      <TableCell>{formatCurrency(dataValues.amount)}</TableCell>
-                      <TableCell>{dataValues.ohadaCode?.name || 'Unknown'}</TableCell>
-                      <TableCell style={{ textTransform: 'capitalize' }}>{dataValues.paymentMethod?.replace('_', ' ')}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end space-x-2">
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => handleEditClick(item)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => setIncomeToDelete(item)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {currentItems.map((item: IncomeAttributes) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={item.id ? selectedItems.includes(item.id) : false}
+                        onCheckedChange={() => item.id && handleCheckboxChange(item.id)}
+                      />
+                    </TableCell>
+                    <TableCell>{new Date(item.date).toLocaleDateString()}</TableCell>
+                    <TableCell>{item.description}</TableCell>
+                    <TableCell>{formatCurrency(Number(item.amount))}</TableCell>
+                    <TableCell>{item.ohadaCode?.name || 'Unknown'}</TableCell>
+                    <TableCell style={{ textTransform: 'capitalize' }}>
+                      {item.paymentMethod?.replace('_', ' ')}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end space-x-2">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => handleEditClick(item)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => setIncomeToDelete(item)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination */}
           <div className="mt-4">
             <div className="flex items-center justify-between">
-              <Button
-                variant="outline"
-                onClick={() => handlePageChange(currentPage - 1)}
+              <Button 
+                variant="outline" 
+                onClick={() => handlePageChange(currentPage - 1)} 
                 disabled={currentPage === 1}
                 className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
               >
@@ -708,21 +758,21 @@ const Income = () => {
               </Button>
               <div className="flex items-center gap-2">
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <Button
-                    key={page}
-                    variant={currentPage === page ? "default" : "outline"}
+                  <Button 
+                    key={page} 
+                    variant={currentPage === page ? "default" : "outline"} 
                     onClick={() => handlePageChange(page)}
-                    className={currentPage === page
-                      ? "bg-blue-600 text-white hover:bg-blue-700"
+                    className={currentPage === page 
+                      ? "bg-blue-600 text-white hover:bg-blue-700" 
                       : "text-blue-600 hover:text-blue-700 hover:bg-blue-50"}
                   >
                     {page}
                   </Button>
                 ))}
               </div>
-              <Button
-                variant="outline"
-                onClick={() => handlePageChange(currentPage + 1)}
+              <Button 
+                variant="outline" 
+                onClick={() => handlePageChange(currentPage + 1)} 
                 disabled={currentPage === totalPages}
                 className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
               >

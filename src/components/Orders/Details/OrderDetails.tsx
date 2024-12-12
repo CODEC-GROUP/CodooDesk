@@ -27,10 +27,13 @@ import { PrinterService, PrinterBusinessInfo, PrinterReceiptData } from "@/servi
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { SalesAttributes } from "@/models/Sales"
 
-interface IpcResponse<T = any> {
+interface IpcResponse {
   success: boolean;
-  data?: T;
+  sale?: SalesAttributes;
   message?: string;
+  data?: {
+    receiptData: PrinterReceiptData;
+  };
 }
 
 interface SaleResponse {
@@ -50,7 +53,7 @@ interface ReceiptData {
   }>;
   subtotal: number;
   discount: number;
-  deliveryFee: number;
+  deliveryFee?: number;
   total: number;
   amountPaid: number;
   change: number;
@@ -72,17 +75,21 @@ const OrderDetails = ({ orderId, onBack }: OrderDetailsProps) => {
   const [hasPrinter, setHasPrinter] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
 
   useEffect(() => {
     const fetchOrderDetails = async () => {
       try {
-        const result = await safeIpcInvoke<IpcResponse<SaleResponse>>('order-management:get-sale-details', { id: orderId });
+        console.log('Fetching order details for ID:', orderId);
+        const result = await safeIpcInvoke<IpcResponse>('order-management:get-sale-details', { id: orderId });
         
-        if (!result?.success || !result?.data?.sale) {
+        console.log('Order details result:', result);
+        
+        if (!result?.success || !result?.sale) {
           throw new Error(result?.message || "Failed to fetch order details");
         }
 
-        setOrder(result.data.sale);
+        setOrder(result.sale);
       } catch (error) {
         console.error('Error fetching order details:', error);
         toast({
@@ -107,12 +114,16 @@ const OrderDetails = ({ orderId, onBack }: OrderDetailsProps) => {
         status
       });
 
-      if (!result) {
-        throw new Error(`Failed to update ${type} status: No response received`);
+      if (!result?.success) {
+        throw new Error(result?.message || `Failed to update ${type} status`);
       }
 
-      if (!result.success) {
-        throw new Error(result.message || `Failed to update ${type} status`);
+      if (result.sale) {
+        setOrder(result.sale);
+      }
+
+      if (result.data?.receiptData) {
+        setReceiptData(result.data.receiptData as unknown as ReceiptData);
       }
 
       toast({
@@ -163,28 +174,19 @@ const OrderDetails = ({ orderId, onBack }: OrderDetailsProps) => {
       }
     };
 
-    // Get receipt data from backend
-    const result = await safeIpcInvoke<IpcResponse<SaleResponse>>('order-management:get-sale-details', { id: order?.id });
-    
-    if (!result?.success || !result?.data?.receiptData) {
-      toast({
-        title: "Error",
-        description: "Failed to get receipt data",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Add salesperson information to receipt data
-    const receiptData: PrinterReceiptData = {
-      ...result.data.receiptData,
-      receiptId: result.data.receiptData.receiptId ?? '',
-      salesPersonId: user?.id ?? '',
-      salesPersonName: user?.username ?? '',
-      date: new Date(result.data.receiptData.date)
-    };
-
     try {
+      const result = await safeIpcInvoke<IpcResponse>('order-management:get-sale-details', { id: order?.id });
+      
+      if (!result?.success || !result?.data?.receiptData) {
+        throw new Error("Failed to get receipt data");
+      }
+
+      const receiptData: PrinterReceiptData = {
+        ...result.data.receiptData,
+        salesPersonId: user?.id ?? '',
+        salesPersonName: user?.username ?? 'Unknown'
+      };
+
       const printerService = new PrinterService();
       await printerService.printReceipt(businessInfo, receiptData);
     } catch (error) {
@@ -339,9 +341,11 @@ const OrderDetails = ({ orderId, onBack }: OrderDetailsProps) => {
                 <TableRow key={item.id}>
                   <TableCell>{item.productName}</TableCell>
                   <TableCell className="text-right">{item.quantity}</TableCell>
-                  <TableCell className="text-right">{item.unitPrice.toLocaleString()} FCFA</TableCell>
                   <TableCell className="text-right">
-                    {(item.quantity * item.unitPrice).toLocaleString()} FCFA
+                    {(item.sellingPrice || 0).toLocaleString()} FCFA
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {((item.quantity || 0) * (item.sellingPrice || 0)).toLocaleString()} FCFA
                   </TableCell>
                 </TableRow>
               ))}

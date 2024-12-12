@@ -181,6 +181,13 @@ const CartItem: React.FC<CartItemProps> = ({
   </div>
 )
 
+// Define the default walk-in customer
+const defaultCustomer: Customer = {
+  id: 0,
+  name: 'Walk-in Customer',
+  phone: ''
+};
+
 export function Pos() {
   const { user, business } = useAuthLayout();
   const [shopId, setShopId] = useState<string | null>(null);
@@ -190,7 +197,7 @@ export function Pos() {
   const [currentPage, setCurrentPage] = useState(1)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
   const itemsPerPage = 36
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(defaultCustomer);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   // const [selectedAccount, setSelectedAccount] = useState<TreasuryAccount | null>(null);
   const [amountPaid, setAmountPaid] = useState<number>(0);
@@ -681,13 +688,14 @@ export function Pos() {
                   value={selectedCustomer?.id.toString()}
                   onValueChange={(value) => {
                     const customer = customers.find(c => c.id.toString() === value);
-                    setSelectedCustomer(customer || null);
+                    setSelectedCustomer(customer || defaultCustomer);
                   }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select Customer" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="0">Walk-in Customer</SelectItem>
                     {customers.map((customer) => (
                       <SelectItem key={customer.id} value={customer.id.toString()}>
                         {customer.name} - {customer.phone}

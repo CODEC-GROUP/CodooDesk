@@ -127,6 +127,8 @@ const Expenses = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<any>(null);
   const [expenseToDelete, setExpenseToDelete] = useState<any>(null);
+  const [filterValue, setFilterValue] = useState("all");
+  const [filteredExpenses, setFilteredExpenses] = useState<ExpenseAttributes[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -180,17 +182,33 @@ const Expenses = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    let result = [...expenses];
+
+    if (filterValue !== 'all') {
+      result = result.filter(expense => expense.ohadaCodeId === filterValue);
+    }
+
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      result = result.filter(expense => 
+        expense.description?.toLowerCase().includes(searchLower) ||
+        expense.ohadaCode?.name?.toLowerCase().includes(searchLower) ||
+        formatCurrency(Number(expense.amount)).toLowerCase().includes(searchLower)
+      );
+    }
+
+    setFilteredExpenses(result);
+    setCurrentPage(1);
+  }, [expenses, filterValue, searchTerm]);
+
   const itemsPerPage = 10
-  const indexOfLastItem = currentPage * itemsPerPage
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage
-
-  const filteredItems = expenses.filter((item: any) => {
-    const dataValues = item.dataValues || item;
-    return dataValues.description?.toLowerCase().includes(searchTerm.toLowerCase());
-  });
-
-  const currentItems = filteredItems.slice((currentPage - 1) * 10, currentPage * 10);
-  const totalPages = Math.ceil(filteredItems.length / 10);
+  const totalFilteredItems = filteredExpenses.length;
+  const totalPages = Math.ceil(totalFilteredItems / itemsPerPage);
+  const currentItems = filteredExpenses.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handlePageChange = (pageNumber: number) => {
     setCurrentPage(pageNumber)
@@ -555,14 +573,22 @@ const Expenses = () => {
         <div className="space-y-4">
           {/* Search and Filter Section */}
           <div className="flex items-center py-4">
-            <Select>
+            <Select
+              value={filterValue}
+              onValueChange={setFilterValue}
+            >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filter" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Expenses</SelectItem>
-                {Object.entries(expenseTypes).map(([key, value]) => (
-                  <SelectItem key={key} value={key}>{value.name}</SelectItem>
+                {ohadaCodes.map((code: any) => (
+                  <SelectItem 
+                    key={code.dataValues.id} 
+                    value={code.dataValues.id}
+                  >
+                    {code.dataValues.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -589,36 +615,35 @@ const Expenses = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentItems.map((item: any) => {
-                  const dataValues = item.dataValues || item;
-                  return (
-                    <TableRow key={dataValues.id}>
-                      <TableCell>{new Date(dataValues.date).toLocaleDateString()}</TableCell>
-                      <TableCell>{dataValues.description}</TableCell>
-                      <TableCell>{formatCurrency(dataValues.amount)}</TableCell>
-                      <TableCell style={{ textTransform: 'capitalize' }}>{dataValues.paymentMethod?.replace('_', ' ')}</TableCell>
-                      <TableCell>{dataValues.ohadaCode?.name || 'Unknown'}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => handleEditClick(item)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => setExpenseToDelete(item)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {currentItems.map((item: ExpenseAttributes) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{new Date(item.date).toLocaleDateString()}</TableCell>
+                    <TableCell>{item.description}</TableCell>
+                    <TableCell>{formatCurrency(Number(item.amount))}</TableCell>
+                    <TableCell style={{ textTransform: 'capitalize' }}>
+                      {item.paymentMethod?.replace('_', ' ')}
+                    </TableCell>
+                    <TableCell>{item.ohadaCode?.name || 'Unknown'}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => handleEditClick(item)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => setExpenseToDelete(item)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>

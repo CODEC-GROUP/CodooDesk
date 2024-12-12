@@ -222,9 +222,17 @@ export function ProductList({ onAddProduct }: ProductListProps) {
   };
 
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         product.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    // Search term matching
+    const matchesSearch = searchTerm.trim() === '' ? true : (
+      product.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      product.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(product.sellingPrice).includes(searchTerm)
+    );
+
+    // Category filtering
     const matchesCategory = selectedCategory === 'all' || product.category_id === selectedCategory;
+
     return matchesSearch && matchesCategory;
   });
 
@@ -273,7 +281,7 @@ export function ProductList({ onAddProduct }: ProductListProps) {
 
   return (
     <div className="container mx-auto p-6">
-      {filteredProducts.length === 0 && !isLoading ? (
+      {products.length === 0 && !isLoading ? (
         <EmptyState onAddProduct={onAddProduct} />
       ) : (
         <>
@@ -349,52 +357,65 @@ export function ProductList({ onAddProduct }: ProductListProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredProducts.map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center space-x-3">
-                            <Image
-                              src={normalizeImagePath(product.featuredImage)}
-                              alt={product.name}
-                              width={40}
-                              height={40}
-                              className="rounded-md object-cover"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.src = '/assets/images/box.png';
-                              }}
-                            />
-                            <span>{product.name}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{product.category_id ? categories[product.category_id] : 'Uncategorized'}</TableCell>
-                        <TableCell>{product.quantity}</TableCell>
-                        <TableCell>{product.sellingPrice.toLocaleString()} FCFA</TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(product.status)}`}>
-                            {product.status.replace('_', ' ')}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end space-x-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEdit(product)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteClick(product)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                    {filteredProducts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8">
+                          <div className="flex flex-col items-center justify-center text-gray-500">
+                            <p className="mb-2">No products found</p>
+                            <p className="text-sm text-gray-400">
+                              Try adjusting your search or filter criteria
+                            </p>
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      filteredProducts.map((product) => (
+                        <TableRow key={product.id}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center space-x-3">
+                              <Image
+                                src={normalizeImagePath(product.featuredImage)}
+                                alt={product.name}
+                                width={40}
+                                height={40}
+                                className="rounded-md object-cover"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.src = '/assets/images/box.png';
+                                }}
+                              />
+                              <span>{product.name}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{product.category_id ? categories[product.category_id] : 'Uncategorized'}</TableCell>
+                          <TableCell>{product.quantity}</TableCell>
+                          <TableCell>{product.sellingPrice.toLocaleString()} FCFA</TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(product.status)}`}>
+                              {product.status.replace('_', ' ')}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleEdit(product)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteClick(product)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>

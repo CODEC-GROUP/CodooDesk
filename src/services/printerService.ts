@@ -153,25 +153,14 @@ export class PrinterService {
           body {
             font-family: 'Arial', sans-serif;
             margin: 0;
-            padding: 20px;
-            max-width: 300px;
+            padding: 10px;
+            width: 100%;
+            max-width: 80mm; /* Default max width for 80mm printers */
             margin: 0 auto;
           }
-          .header {
-            text-align: center;
-            margin-bottom: 20px;
-          }
-          .logo {
-            max-width: 150px;
-            margin-bottom: 10px;
-          }
-          .business-name {
-            font-size: 1.2em;
-            font-weight: bold;
-            margin-bottom: 5px;
-          }
-          .receipt-info {
-            margin-bottom: 20px;
+          .header, .footer, .totals, .receipt-info {
+            width: 100%;
+            box-sizing: border-box;
           }
           .items {
             width: 100%;
@@ -182,22 +171,9 @@ export class PrinterService {
             text-align: left;
             padding: 5px;
           }
-          .totals {
-            margin-bottom: 20px;
-          }
-          .total-line {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-          }
-          .footer {
-            text-align: center;
-            font-size: 0.9em;
-            margin-top: 20px;
-          }
           @media print {
+            @page { margin: 0; }
             body {
-              width: 80mm;
               margin: 0;
               padding: 5mm;
             }
@@ -207,10 +183,9 @@ export class PrinterService {
       <body>
         <div class="header">
           ${shopLogo ? `<img src="${shopLogo}" class="logo" alt="Shop Logo"/>` : ''}
-          <div class="business-name">${fullBusinessName}</div>
           <div>${shop.name}</div>
           <div>${address.street}</div>
-          <div>${address.city}, ${address.state} ${address.postalCode}</div>
+          <div>${address.city}, ${address.state}</div>
           <div>${address.country}</div>
         </div>
 
