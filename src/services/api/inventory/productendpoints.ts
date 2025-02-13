@@ -106,8 +106,10 @@ export function registerProductHandlers() {
         purchasePrice: Number(data.purchasePrice),
         valuationMethod: data.valuationMethod || 'FIFO',
         hasExpiryDate: data.hasExpiryDate || false,
-        hasBatchTracking: data.hasBatchTracking || false
-      } satisfies Omit<ProductAttributes, 'id' | 'createdAt' | 'updatedAt'>;
+        hasBatchTracking: data.hasBatchTracking || false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } satisfies Omit<ProductAttributes, 'id'>;
 
       // Create the product with sanitized data
       const product = await Product.create(sanitizedData, { transaction: t });

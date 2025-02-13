@@ -20,6 +20,7 @@ export interface SupplierAttributes {
     productCount?: number;
     totalValue?: number;
   }[];
+  shopId: string;
 }
 
 class Supplier extends Model<SupplierAttributes> implements SupplierAttributes {
@@ -32,6 +33,7 @@ class Supplier extends Model<SupplierAttributes> implements SupplierAttributes {
   public region!: string | null;
   public country!: string;
   public businessId!: string;
+  public shopId!: string;
 
   static initModel(sequelize: Sequelize): typeof Supplier {
     return this.init(
@@ -76,6 +78,11 @@ class Supplier extends Model<SupplierAttributes> implements SupplierAttributes {
             model: 'BusinessInformation',
             key: 'id',
           },
+        },
+        shopId: {
+          type: DataTypes.UUID,
+          allowNull: false,
+          field: 'shop_id'
         },
       },
       {

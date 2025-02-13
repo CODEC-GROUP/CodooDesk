@@ -11,14 +11,12 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("general");
 
   return (
-    <div className="container mx-auto py-6">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
-      
+    <div className="container mx-auto py-6">      
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="general">General Settings</TabsTrigger>
           {/* Only show shop settings for admin/owner */}
-          {(user?.role === 'admin' || user?.role === 'owner') && (
+          {(user?.role === 'admin' || user?.role === 'shop_owner') && (
             <TabsTrigger value="shops">Shop Settings</TabsTrigger>
           )}
         </TabsList>
@@ -27,7 +25,7 @@ export default function SettingsPage() {
           <GeneralSettings />
         </TabsContent>
 
-        {(user?.role === 'admin' || user?.role === 'owner') && (
+        {(user?.role === 'admin' || user?.role === 'shop_owner') && (
           <TabsContent value="shops">
             <ShopSettings />
           </TabsContent>

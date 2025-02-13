@@ -56,8 +56,8 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
   public hasExpiryDate!: boolean;
   public hasBatchTracking!: boolean;
   public suppliers?: Array<{ id: string, name: string }>;
-  public createdAt?: Date;
-  public updatedAt?: Date;
+  public createdAt!: Date;
+  public updatedAt!: Date;
 
   public addSuppliers!: (supplierIds: string[]) => Promise<void>;
   public getSuppliers!: () => Promise<any[]>;
@@ -151,11 +151,24 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
           allowNull: false,
           defaultValue: false,
         },
+        createdAt: {
+          type: DataTypes.DATE,
+          allowNull: false,
+          defaultValue: DataTypes.NOW
+        },
+        updatedAt: {
+          type: DataTypes.DATE,
+          allowNull: false,
+          defaultValue: DataTypes.NOW
+        }
       },
       {
         sequelize,
         modelName: 'Product',
+        tableName: 'Products',
         timestamps: true,
+        createdAt: 'createdAt',
+        updatedAt: 'updatedAt',
         hooks: {
           beforeValidate: async (product: Product) => {
             // Auto-generate SKU if not provided

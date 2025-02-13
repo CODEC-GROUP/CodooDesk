@@ -126,13 +126,27 @@ export function registerDashboardHandlers() {
         raw: true
       });
 
+      // Add low stock calculation
+      const lowStockItems = await InventoryItem.count({
+        where: {
+          quantity: {
+            [Op.lt]: col('reorder_point')
+          }
+        }
+      });
+
       return {
         success: true,
         data: {
-          stats: inventoryStats[0],
+          stats: {
+            total_products: (inventoryStats[0] as unknown as { total_quantity: number }).total_quantity,
+            total_value: (inventoryStats[0] as unknown as { total_value: number }).total_value,
+            low_stock_items: lowStockItems,
+            total_sku: (inventoryStats[0] as unknown as { total_items: number }).total_items
+          },
           trends: dailyMovements,
-          topSuppliers,
-          topProducts
+          topSuppliers: topSuppliers,
+          topProducts: topProducts
         }
       };
 
@@ -172,13 +186,34 @@ export function registerDashboardHandlers() {
         raw: true
       }) as unknown as SalesAggregateResult[];
 
+      // Add daily trends
+      const dailyTrends = await Sales.findAll({
+        attributes: [
+          [fn('date_trunc', 'day', col('createdAt')), 'date'],
+          [fn('sum', col('netAmount')), 'total_sales'],
+          [fn('count', col('id')), 'transaction_count']
+        ],
+        group: ['date'],
+        order: [['date', 'ASC']]
+      });
+
       return {
         success: true,
         data: {
           weeklyStats: {
             totalItems: salesStats?.total_orders || 0,
             totalRevenue: salesStats?.total_sales || 0
-          }
+          },
+          weeklyTrends: dailyTrends.map(t => ({
+            date: t.get('date'),
+            sales: t.get('total_sales'),
+            transactions: t.get('transaction_count')
+          })),
+          dailyTrends: dailyTrends.map(t => ({
+            date: t.get('date'),
+            sales: t.get('total_sales'),
+            transactions: t.get('transaction_count')
+          })),
         }
       };
     } catch (error) {
@@ -220,53 +255,50 @@ async function getTopCategories(
   view: 'daily' | 'weekly' | 'monthly' = 'daily',
   limit = 5
 ) {
-  const whereClause: any = {
-    businessId
-  };
+  const whereClauses: string[] = ['shop.businessId = :businessId'];
+  const replacements: Record<string, any> = { businessId, limit };
 
   if (shopId) {
-    whereClause.shopId = shopId;
+    whereClauses.push('shop.id = :shopId');
+    replacements.shopId = shopId;
   }
 
   if (dateRange) {
-    whereClause.createdAt = {
-      [Op.between]: [dateRange.start, dateRange.end]
-    };
+    whereClauses.push('shop.createdAt BETWEEN :start AND :end');
+    replacements.start = dateRange.start;
+    replacements.end = dateRange.end;
   }
 
-  // Add time grouping based on view
-  const timeGrouping = view === 'monthly' 
-    ? sequelizeFn('strftime', '%Y-%m', sequelizeCol('products.createdAt'))
-    : view === 'weekly'
-    ? sequelizeFn('strftime', '%Y-%W', sequelizeCol('products.createdAt'))
-    : sequelizeFn('date', sequelizeCol('products.createdAt'));
+  // Determine date formatting based on view
+  const dateFormat = view === 'weekly' 
+    ? "STRFTIME('%Y-%W', products.createdAt)" 
+    : view === 'monthly' 
+      ? "STRFTIME('%Y-%m', products.createdAt)" 
+      : "DATE(products.createdAt)";
 
-  const topCategories = await Category.findAll({
-    attributes: [
-      'id',
-      'name',
-      [timeGrouping, 'period'],
-      [sequelizeFn('COUNT', sequelizeCol('products.id')), 'product_count'],
-      [sequelizeFn('SUM', sequelizeCol('products.quantity')), 'total_items'],
-      [sequelizeFn('SUM', sequelizeLiteral('products.quantity * products.sellingPrice')), 'total_value']
-    ],
-    include: [{
-      model: Product,
-      as: 'products',
-      attributes: [],
-      include: [{
-        model: Shop,
-        as: 'shop',
-        where: whereClause
-      }]
-    }],
-    group: ['Category.id', 'period'],
-    order: [[sequelizeLiteral('total_value'), 'DESC']],
-    limit,
-    raw: true
+  const query = `
+    SELECT 
+      Category.id,
+      Category.name,
+      ${dateFormat} AS period,
+      COUNT(products.id) AS product_count,
+      SUM(products.quantity) AS total_items,
+      SUM(products.quantity * products.sellingPrice) AS total_value
+    FROM Categories AS Category
+    INNER JOIN Products AS products ON Category.id = products.category_id
+    INNER JOIN Shops AS shop ON products.shop_id = shop.id
+    WHERE ${whereClauses.join(' AND ')}
+    GROUP BY Category.id, ${dateFormat}
+    ORDER BY total_value DESC
+    LIMIT :limit
+  `;
+
+  const results = await sequelize.query(query, {
+    replacements,
+    type: 'SELECT',
   });
 
-  return (topCategories as unknown as CategoryAggregateResult[]).map((category) => ({
+  return (results as unknown as CategoryAggregateResult[]).map((category) => ({
     id: category.id,
     name: category.name,
     period: category.period,

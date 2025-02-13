@@ -87,18 +87,17 @@ export function InventoryDashboard() {
 
   if (isLoading) return <LoadingSpinner />;
   if (queryError) return <ErrorAlert message={queryError.message} />;
-  if (!inventoryDataQuery) return null;
 
   const {
     stats,
     weeklyInventory,
     inventoryValueOverTime,
     last7DaysInventory,
-    topSuppliers,
-    topProducts,
-    categoryDistribution,
+    topSuppliers = [],
+    topProducts = [],
+    categoryDistribution = [],
     trends
-  } = inventoryDataQuery;
+  } = inventoryDataQuery || {};
 
   return (
     <div className="p-8 bg-gray-100 min-h-screen">
@@ -118,7 +117,7 @@ export function InventoryDashboard() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Products</p>
               <h3 className="text-2xl font-bold text-gray-700">
-                {stats.total_products}
+                {stats?.total_products ?? 0}
               </h3>
             </div>
           </CardContent>
@@ -130,7 +129,7 @@ export function InventoryDashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Items Sold</p>
-              <h3 className="text-2xl font-bold text-gray-700">{formatNumber(stats.itemsSold)}</h3>
+              <h3 className="text-2xl font-bold text-gray-700">{formatNumber(stats?.itemsSold ?? 0)}</h3>
             </div>
           </CardContent>
         </Card>
@@ -141,7 +140,7 @@ export function InventoryDashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Low Stock Items</p>
-              <h3 className="text-2xl font-bold text-gray-700">{stats.lowStockItems}</h3>
+              <h3 className="text-2xl font-bold text-gray-700">{stats?.lowStockItems ?? 0}</h3>
             </div>
           </CardContent>
         </Card>
@@ -153,9 +152,9 @@ export function InventoryDashboard() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Inventory Value</p>
               <h3 className="text-2xl font-bold text-gray-700">
-                {formatNumber(stats.inventoryValue)} XAF
+                {formatNumber(stats?.inventoryValue ?? 0)} XAF
               </h3>
-              <p className="text-sm text-green-500">↑ {stats.inventoryValueChange}%</p>
+              <p className="text-sm text-green-500">↑ {stats?.inventoryValueChange ?? 0}%</p>
             </div>
           </CardContent>
         </Card>
@@ -171,7 +170,7 @@ export function InventoryDashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={weeklyInventory}>
+              <BarChart data={weeklyInventory || []}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
@@ -252,7 +251,7 @@ export function InventoryDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {topSuppliers.map((supplier, index) => (
+              {(topSuppliers || []).map((supplier, index) => (
                 <div key={index} className="flex items-center">
                   <div className={`w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold mr-4`}>
                     {supplier.name.charAt(0)}
@@ -304,15 +303,15 @@ export function InventoryDashboard() {
             <div className="mb-4 flex justify-between">
               <div>
                 <h4 className="text-2xl font-bold">
-                  {formatNumber(stats.valueOnLatest)} XAF
+                  {formatNumber(stats?.valueOnLatest ?? 0)} XAF
                 </h4>
-                <p className="text-sm text-gray-500">Value on {stats.latestDate}</p>
+                <p className="text-sm text-gray-500">Value on {stats?.latestDate ?? 'N/A'}</p>
               </div>
               <div>
                 <h4 className="text-2xl font-bold">
-                  {formatNumber(stats.valueOnPrevious)} XAF
+                  {formatNumber(stats?.valueOnPrevious ?? 0)} XAF
                 </h4>
-                <p className="text-sm text-gray-500">Value on {stats.previousDate}</p>
+                <p className="text-sm text-gray-500">Value on {stats?.previousDate ?? 'N/A'}</p>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={300}>
@@ -333,10 +332,10 @@ export function InventoryDashboard() {
           </CardHeader>
           <CardContent>
             <div className="mb-4">
-              <h4 className="text-2xl font-bold">{formatNumber(stats.itemsAdded)}</h4>
+              <h4 className="text-2xl font-bold">{formatNumber(stats?.itemsAdded ?? 0)}</h4>
               <p className="text-sm text-gray-500">Items Added</p>
               <h4 className="text-2xl font-bold mt-2">
-                {formatNumber(stats.valueAdded)} XAF
+                {formatNumber(stats?.valueAdded ?? 0)} XAF
               </h4>
               <p className="text-sm text-gray-500">Value Added</p>
             </div>

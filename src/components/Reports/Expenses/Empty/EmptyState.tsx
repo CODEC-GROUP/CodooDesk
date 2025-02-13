@@ -7,24 +7,28 @@ interface EmptyStateProps {
 
 export default function EmptyState({ onAddClick }: EmptyStateProps) {
   return (
-    <div className="flex h-[450px] shrink-0 items-center justify-center rounded-md border border-dashed">
-      <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
-          <TrendingDown className="h-10 w-10 text-red-500" />
-        </div>
-        
-        <h3 className="mt-4 text-lg font-semibold">No Expense Records</h3>
-        <p className="mb-4 mt-2 text-sm text-muted-foreground">
-          Start tracking your business expenses. Record purchases, bills, and other costs to monitor your spending and generate expense reports.
-        </p>
-        
-        <div className="flex gap-2">
-          <Button className="gap-2" onClick={onAddClick}>
-            <PlusCircle className="h-4 w-4" />
-            Add Expense
-          </Button>
+    <div className="flex flex-col items-center justify-center h-full py-16 bg-gray-50">
+      <div className="relative mb-8 group">
+        <div className="w-24 h-24 rounded-full bg-red-50/50 flex items-center justify-center border-2 border-red-100">
+          <TrendingDown className="w-12 h-12 text-red-600" />
+          <Receipt className="w-8 h-8 text-red-600 bg-red-100 p-1.5 rounded-full border-2 border-red-200 absolute -bottom-2 -right-2" />
         </div>
       </div>
+      <h3 className="text-3xl font-semibold tracking-tight mb-3 text-gray-900">
+        No Expense Records
+      </h3>
+      <p className="text-muted-foreground mb-8 text-center max-w-md text-lg leading-relaxed">
+        Track business expenditures. Monitor purchases and bills to maintain clear financial oversight and generate expense reports.
+      </p>
+      <Button 
+        onClick={onAddClick}
+        variant="default"
+        size="lg"
+        className="rounded-full px-8 py-6 text-lg gap-2 shadow-lg hover:shadow-md transition-shadow"
+      >
+        <PlusCircle className="w-6 h-6" />
+        Add Expense
+      </Button>
     </div>
   );
 }

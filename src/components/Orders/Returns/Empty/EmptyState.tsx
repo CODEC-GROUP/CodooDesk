@@ -9,21 +9,27 @@ interface EmptyStateProps {
 
 export function EmptyState({ onCreateReturn }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50/30">
-      <div className="relative mb-4">
-        <PackageX className="w-20 h-20 text-gray-400" />
-        <RotateCcw className="w-10 h-10 text-gray-400 absolute -bottom-2 -right-2" />
+    <div className="flex flex-col items-center justify-center h-full py-16 bg-gray-50">
+      <div className="relative mb-8 group">
+        <div className="w-24 h-24 rounded-full bg-blue-50/50 flex items-center justify-center border-2 border-blue-100">
+          <PackageX className="w-12 h-12 text-blue-600" />
+          <RotateCcw className="w-8 h-8 text-blue-600 bg-blue-100 p-1.5 rounded-full border-2 border-blue-200 absolute -bottom-2 -right-2" />
+        </div>
       </div>
-      <h2 className="text-3xl font-bold mb-2">No Returns Processed</h2>
-      <p className="text-gray-600 mb-6 text-center max-w-md text-lg">
-        Track and manage your product returns here.
-        All processed returns will be listed in this section.
+      <h3 className="text-3xl font-semibold tracking-tight mb-3 text-gray-900">
+        No Returns Processed
+      </h3>
+      <p className="text-muted-foreground mb-8 text-center max-w-md text-lg leading-relaxed">
+        Track and manage product returns. Processed returns will appear here with detailed status updates and customer communications.
       </p>
       <Button 
         onClick={onCreateReturn}
-        className="bg-[#1A7DC0] text-white shadow-lg hover:bg-[#1A7DC0]/90 px-8 py-6 text-lg h-auto"
+        variant="default"
+        size="lg"
+        className="rounded-full px-8 py-6 text-lg gap-2 shadow-lg hover:shadow-md transition-shadow"
       >
-        Process a Return
+        <RotateCcw className="w-6 h-6" />
+        Process Return
       </Button>
     </div>
   )

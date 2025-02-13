@@ -4,6 +4,7 @@ import Product from '../../../models/Product.js';
 import { Sequelize } from 'sequelize';
 import Order from '../../../models/Order.js';
 import { sequelize } from '../../database/index.js';
+import { Op } from 'sequelize';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -24,14 +25,8 @@ export function registerSupplierHandlers() {
       }
 
       const supplier = await Supplier.create({
-        name: supplierData.name,
-        email: supplierData.email,
-        phone: supplierData.phone,
-        address: supplierData.address,
-        city: supplierData.city,
-        region: supplierData.region,
-        country: supplierData.country,
-        businessId: supplierData.businessId,
+        ...supplierData,
+        shopId: supplierData.shopId
       });
 
       return { success: true, supplier };
@@ -42,10 +37,14 @@ export function registerSupplierHandlers() {
   });
 
   // Get all suppliers handler
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_SUPPLIERS, async (event, { businessId }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_SUPPLIERS, async (event, { shopIds }) => {
     try {
       const suppliers = await Supplier.findAll({
-        where: { businessId },
+        where: {
+          shopId: {
+            [Op.in]: shopIds
+          }
+        },
         include: [
           {
             model: Product,
@@ -53,6 +52,8 @@ export function registerSupplierHandlers() {
             attributes: [
               'id',
               'name',
+              'createdAt',
+              'updatedAt',
               [Sequelize.fn('COUNT', Sequelize.col('supplierProducts.id')), 'productCount'],
               [Sequelize.fn('SUM', Sequelize.col('supplierProducts.purchasePrice')), 'totalValue']
             ],
@@ -65,7 +66,7 @@ export function registerSupplierHandlers() {
             through: { attributes: [] }
           }
         ],
-        group: ['Supplier.id', 'supplierProducts.id'],
+        group: ['Supplier.id']
       });
       
       // Convert Sequelize models to plain objects

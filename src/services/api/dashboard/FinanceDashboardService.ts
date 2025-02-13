@@ -306,17 +306,37 @@ export function registerFinanceDashboardHandlers() {
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 5);
 
+      // Add profit calculation
+      const profit = (incomeStats.total_income || 0) - (expenseStats.total_expenses || 0);
+      
+      // Use the existing results from earlier queries:
+      const prevIncomeTotal = prevIncomeStats?.total_income || 0;
+      const prevExpenseTotal = prevExpenseStats?.total_expenses || 0;
+
       return {
         success: true,
         data: {
           overview: {
-            total_income: incomeStats.total_income || 0,
+            total_income: incomeStats.total_income,
+            total_expenses: expenseStats.total_expenses,
+            total_profit: profit,
+            revenue_growth: prevIncomeTotal > 0 
+              ? ((incomeStats.total_income - prevIncomeTotal) / prevIncomeTotal) * 100
+              : 0,
+            expense_growth: prevExpenseTotal > 0 
+              ? ((expenseStats.total_expenses - prevExpenseTotal) / prevExpenseTotal) * 100
+              : 0,
             totalOrders: incomeStats.totalOrders || 0,
-            total_expenses: expenseStats.total_expenses || 0,
           },
-          monthlyTrends,
-          expenseCategories,
-          topIncomeSources,
+          monthlyData: monthlyTrends,
+          expenseCategories: expenseCategories.map(c => ({ 
+            name: (c as any).category,
+            value: c.amount 
+          })),
+          topIncomeSources: topIncomeSources.map(s => ({
+            name: (s as any).source,
+            value: s.amount
+          })),
           recentTransactions: allTransactions
         }
       };

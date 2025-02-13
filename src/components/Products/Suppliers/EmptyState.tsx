@@ -9,21 +9,27 @@ interface EmptyStateProps {
 
 export function EmptyState({ onAddSupplier }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)]">
-      <div className="relative mb-4">
-        <Building2 className="w-16 h-16 text-gray-400" />
-        <TruckIcon className="w-8 h-8 text-gray-400 absolute -bottom-2 -right-2" />
+    <div className="flex flex-col items-center justify-center h-full py-16 bg-gray-50">
+      <div className="relative mb-8 group">
+        <div className="w-24 h-24 rounded-full bg-blue-50/50 flex items-center justify-center border-2 border-blue-100">
+          <Building2 className="w-12 h-12 text-blue-600" />
+          <TruckIcon className="w-8 h-8 text-blue-600 bg-blue-100 p-1.5 rounded-full border-2 border-blue-200 absolute -bottom-2 -right-2" />
+        </div>
       </div>
-      <h2 className="text-2xl font-bold mb-2">No Suppliers Added</h2>
-      <p className="text-gray-600 mb-4 text-center max-w-md">
-        Start building your supply chain by adding your first supplier. 
-        Keep track of your vendors and manage your inventory sources effectively.
+      <h3 className="text-3xl font-semibold tracking-tight mb-3 text-gray-900">
+        No Suppliers Added
+      </h3>
+      <p className="text-muted-foreground mb-8 text-center max-w-md text-lg leading-relaxed">
+        Build your vendor network by adding suppliers. Manage contacts, lead times, and procurement details in one place.
       </p>
       <Button 
         onClick={onAddSupplier}
-        className="bg-[#1A7DC0] text-white shadow hover:bg-[#1A7DC0]/90"
+        variant="default"
+        size="lg"
+        className="rounded-full px-8 py-6 text-lg gap-2 shadow-lg hover:shadow-md transition-shadow"
       >
-        Add Your First Supplier
+        <TruckIcon className="w-6 h-6" />
+        Add Supplier
       </Button>
     </div>
   )

@@ -9,21 +9,25 @@ interface EmptyStateProps {
 
 export function EmptyState({ onAddProduct }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50/30">
-      <div className="relative mb-4">
-        <Package className="w-20 h-20 text-gray-400" />
-        <PlusCircle className="w-10 h-10 text-gray-400 absolute -bottom-2 -right-2" />
+    <div className="flex flex-col items-center justify-center h-full bg-gray-50 py-12 px-4 rounded-xl">
+      <div className="relative mb-6">
+        <Package className="w-24 h-24 text-gray-400/90" />
+        <PlusCircle className="w-12 h-12 text-[#1A7DC0] absolute -bottom-3 -right-3 bg-background rounded-full" />
       </div>
-      <h2 className="text-3xl font-bold mb-2">No Products Added</h2>
-      <p className="text-gray-600 mb-6 text-center max-w-md text-lg">
+      <h2 className="text-4xl font-bold mb-3 text-gray-900 tracking-tight">
+        No Products Found
+      </h2>
+      <p className="text-gray-600 mb-8 text-center max-w-lg text-base">
         Start building your inventory by adding your first product. 
         Keep track of your items and manage your stock effectively.
       </p>
       <Button 
         onClick={onAddProduct}
-        className="bg-[#1A7DC0] text-white shadow-lg hover:bg-[#1A7DC0]/90 px-8 py-6 text-lg h-auto"
+        size="lg"
+        className="gap-1.5 text-lg px-6 py-5 transition-transform hover:scale-[1.02]"
       >
-        Add Your First Product
+        <PlusCircle className="w-5 h-5" />
+        Add First Product
       </Button>
     </div>
   )

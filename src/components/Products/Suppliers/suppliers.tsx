@@ -29,6 +29,7 @@ interface Supplier {
   city: string;
   region: string;
   country: string;
+  shopId: string;
   businessId: string;
   supplierProducts: {
     id: string;
@@ -91,22 +92,31 @@ const Suppliers = () => {
   useEffect(() => {
     const fetchSuppliers = async () => {
       try {
+        if (!business) return;
+        
         setIsLoading(true);
         const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
           ? business?.shops?.map(shop => shop.id) || []
           : [business?.shops?.[0]?.id].filter(Boolean) as string[];
-        
-        if (!business) {
-          throw new Error('Business ID is required');
-        }
 
         const response = await safeIpcInvoke<SuppliersListResponse>('entities:supplier:get-all', {
-          shopIds,
-          userRole: user?.role
+          shopIds
         }, { success: false, suppliers: [] });
 
-        if (response?.success && response.suppliers) {
-          setSuppliers(response.suppliers);
+        if (response?.success) {
+          const receivedSuppliers = response.suppliers || [];
+          const formattedSuppliers = receivedSuppliers.map(supplier => ({
+            ...supplier,
+            createdAt: new Date(supplier.createdAt),
+            updatedAt: new Date(supplier.updatedAt),
+            supplierProducts: supplier.supplierProducts?.map(p => ({
+              ...p,
+              productCount: Number(p.productCount) || 0,
+              totalValue: Number(p.totalValue) || 0
+            })) || []
+          }));
+          
+          setSuppliers(formattedSuppliers);
         }
       } catch (error) {
         console.error('Error fetching suppliers:', error);
@@ -122,7 +132,7 @@ const Suppliers = () => {
     };
 
     fetchSuppliers();
-  }, [business?.id, user?.role]);
+  }, [business, user?.role]);
 
   const calculateSupplierSales = (supplier: Supplier) => {
     return supplier.supplierProducts?.reduce((total, product) => total + product.totalValue, 0) || 0;
@@ -132,21 +142,20 @@ const Suppliers = () => {
     return supplier.supplierProducts?.reduce((total, product) => total + product.productCount, 0) || 0;
   };
 
-  const filteredSuppliers = suppliers?.filter((supplier: any) => {
-    const dataValues = supplier.dataValues || supplier;
+  const filteredSuppliers = suppliers.filter((supplier: Supplier) => {
     const matchesSearch = (
-      dataValues.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      dataValues.phone?.includes(searchTerm) ||
-      dataValues.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      [dataValues.address, dataValues.city, dataValues.region, dataValues.country]
+      supplier.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      supplier.phone?.includes(searchTerm) ||
+      supplier.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      [supplier.address, supplier.city, supplier.region, supplier.country]
         .filter(Boolean)
         .join(', ')
         .toLowerCase()
         .includes(searchTerm.toLowerCase())
     );
-    const matchesShop = selectedShopId === 'all' || dataValues.shopId === selectedShopId;
+    const matchesShop = selectedShopId === 'all' || supplier.shopId === selectedShopId;
     return matchesSearch && matchesShop;
-  }) || [];
+  });
 
   const currentSuppliers = filteredSuppliers.slice(
     (currentPage - 1) * itemsPerPage,
@@ -168,8 +177,10 @@ const Suppliers = () => {
         isEditing ? 'entities:supplier:update' : 'entities:supplier:create',
         {
           supplierData: {
-            id: editingId,
             ...newSupplier,
+            shopId: selectedShopId === 'all' 
+              ? business?.shops?.[0]?.id 
+              : selectedShopId,
             businessId: business?.id
           }
         }

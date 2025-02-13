@@ -73,7 +73,10 @@ const CircularProgressBar = ({ percentage, color }: { percentage: number, color:
   </div>
 )
 
-const formatNumber = (num: number): string => {
+// Add null check and number validation
+function formatNumber(num: number | null): string {
+  if (typeof num !== 'number' || isNaN(num)) return '0' // Handle NaN/undefined
+  
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1) + 'M'
   } else if (num >= 1000) {
@@ -97,6 +100,14 @@ const EmptyChart = ({ message }: { message: string }) => (
       <h3 className="mt-4 text-lg font-semibold">{message}</h3>
     </div>
   </EmptyPlaceholder>
+);
+
+// Add this generic empty state component
+const EmptyData = ({ message }: { message: string }) => (
+  <div className="flex flex-col items-center justify-center h-full p-8">
+    <Package className="h-12 w-12 text-muted-foreground mb-4" />
+    <p className="text-muted-foreground text-center">{message}</p>
+  </div>
 );
 
 // Update the categories chart component
@@ -250,6 +261,11 @@ const formatTimeLabel = (value: string, view: TimeView) => {
       return value;
   }
 };
+
+// Add these constants at the top
+const CARD_CLASSES = "rounded-xl shadow-sm hover:shadow-md transition-shadow";
+const CHART_CONTAINER = "h-[300px] mt-4";
+const GRID_LAYOUT = "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6";
 
 export function Dashboard() {
   const { business, user } = useAuthLayout();
@@ -534,278 +550,302 @@ export function Dashboard() {
         <CardTitle>Top Products</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {inventory?.trends?.topProducts?.map((product, index) => (
-            <div key={index} className="flex items-center">
-              {product.featuredImage ? (
-                <Image
-                  src={product.featuredImage}
-                  alt={product.name}
-                  width={40}
-                  height={40}
-                  className="rounded-lg object-cover mr-4"
-                />
-              ) : (
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-4">
-                  <Package className="h-6 w-6 text-gray-600" />
-                </div>
-              )}
-              <div className="flex-1">
-                <h3 className="font-medium">{product.name}</h3>
-                <p className="text-sm text-gray-500">{formatNumber(product.value)} FCFA</p>
-              </div>
-              <div className="text-right">
-                <p className="font-medium">{product.quantity} units in stock</p>
-                {product.quantity <= (product.reorderPoint ?? 10) && (
-                  <p className="text-sm text-red-500">Low Stock</p>
+        {!inventory?.trends?.topProducts?.length ? (
+          <EmptyData message="No product data available" />
+        ) : (
+          <div className="space-y-4">
+            {inventory?.trends?.topProducts?.map((product, index) => (
+              <div key={index} className="flex items-center">
+                {product.featuredImage ? (
+                  <Image
+                    src={product.featuredImage}
+                    alt={product.name}
+                    width={40}
+                    height={40}
+                    className="rounded-lg object-cover mr-4"
+                  />
+                ) : (
+                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-4">
+                    <Package className="h-6 w-6 text-gray-600" />
+                  </div>
                 )}
+                <div className="flex-1">
+                  <h3 className="font-medium">{product.name}</h3>
+                  <p className="text-sm text-gray-500">{formatNumber(product.value)} FCFA</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-medium">{product.quantity} units in stock</p>
+                  {product.quantity <= (product.reorderPoint ?? 10) && (
+                    <p className="text-sm text-red-500">Low Stock</p>
+                  )}
+                </div>
               </div>
-            </div>
-          )) ?? []}
-        </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 
   return (
-    <div className="p-4 md:p-8 bg-gray-100 min-h-screen">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">{t('Dashboard')}</h1>
-        <FilterControls 
-          date={date} 
-          setDate={setDate}
-          currentView={currentView}
-          setCurrentView={setCurrentView}
-          currentShopId={currentShopId}
-          setCurrentShopId={setCurrentShopId}
-          availableShops={availableShops}
-          user={user}
-        />
-      </div>
+    <div className="p-4 md:p-8 bg-muted/40 min-h-screen">
+      <div className="max-w-screen-2xl mx-auto">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t('Dashboard')}</h1>
+          <FilterControls 
+            date={date} 
+            setDate={setDate}
+            currentView={currentView}
+            setCurrentView={setCurrentView}
+            currentShopId={currentShopId}
+            setCurrentShopId={setCurrentShopId}
+            availableShops={availableShops}
+            user={user}
+          />
+        </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="bg-blue-100 p-3 rounded-full">
-              <DollarSign className="h-8 w-8 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total Revenue</p>
-              <h3 className="text-2xl font-bold text-gray-700">
-                {formatNumber(finance.overview.total_income)} FCFA
-              </h3>
-              <p className={`text-sm ${finance.overview.revenue_growth >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {finance.overview.revenue_growth >= 0 ? '↑' : '↓'} {Math.abs(finance.overview.revenue_growth).toFixed(1)}%
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="bg-green-100 p-3 rounded-full">
-              <ShoppingCart className="h-8 w-8 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total Orders</p>
-              <h3 className="text-2xl font-bold text-gray-700">
-                {formatNumber(finance.overview.totalOrders)}
-              </h3>
-            </div>
-          </CardContent>
-        </Card>
-
-        {renderInventoryCard()}
-
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="bg-red-100 p-3 rounded-full">
-              <CreditCard className="h-8 w-8 text-red-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total Expenses</p>
-              <h3 className="text-2xl font-bold text-gray-700">
-                {formatNumber(finance.overview.total_expenses)} FCFA
-              </h3>
-              <p className={`text-sm ${finance.overview.expense_growth >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-                {finance.overview.expense_growth >= 0 ? '↑' : '↓'} {Math.abs(finance.overview.expense_growth).toFixed(1)}%
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <Card className="col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>
-              {currentView === 'daily' ? 'Daily' : 
-               currentView === 'weekly' ? 'Weekly' : 'Monthly'} Sales Trend
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={sales?.weeklyTrends || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="day"
-                  tickFormatter={(value) => {
-                    if (currentView === 'daily') return new Date(value).toLocaleDateString();
-                    if (currentView === 'weekly') return `Week ${value}`;
-                    return value; // monthly
-                  }}
-                />
-                <YAxis />
-                <Tooltip 
-                  formatter={(value) => `${formatNumber(value as number)} FCFA`}
-                  labelFormatter={(label) => {
-                    if (currentView === 'daily') return new Date(label).toLocaleDateString();
-                    if (currentView === 'weekly') return `Week ${label}`;
-                    return label; // monthly
-                  }}
-                />
-                <Bar 
-                  dataKey="sales" 
-                  fill="#10B981"
-                  name={t('Sales')}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <div className="grid grid-rows-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Categories Overview</CardTitle>
-            </CardHeader>
-            <CardContent className="flex justify-between items-center">
-              <CircularProgressBar 
-                percentage={
-                  categoriesData?.length 
-                    ? Math.round((categoriesData[0]?.totalValue / 
-                        categoriesData.reduce((sum, cat) => sum + cat.totalValue, 0)) * 100)
-                    : 0
-                } 
-                color="text-blue-400" 
-              />
-              <div className="space-y-2">
-                {categoriesData?.slice(0, 3).map((category) => (
-                  <div key={category.id} className="flex justify-between text-sm">
-                    <span className="flex items-center">
-                      <span 
-                        className="w-2 h-2 rounded-full mr-2" 
-                        style={{ backgroundColor: category.color }}
-                      />
-                      {category.name}:
-                    </span>
-                    <span className="font-medium">
-                      {((category.totalValue / 
-                        categoriesData.reduce((sum, cat) => sum + cat.totalValue, 0)) * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                ))}
+        {/* Overview Cards */}
+        <div className={GRID_LAYOUT}>
+          <Card className={CARD_CLASSES}>
+            <CardContent className="p-4 md:p-6 flex items-center gap-4">
+              <div className="bg-blue-100/80 p-2 rounded-lg">
+                <DollarSign className="h-6 w-6 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Revenue</p>
+                <h3 className="text-2xl font-semibold">
+                  {formatNumber(finance.overview.total_income)} 
+                  <span className="text-sm font-normal ml-1">FCFA</span>
+                </h3>
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Top Categories</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CategoryChart 
-                data={categoriesData} 
-                isLoading={isCategoriesLoading}
-                error={categoriesError as Error}
-              />
+          <Card className={CARD_CLASSES}>
+            <CardContent className="p-4 md:p-6 flex items-center gap-4">
+              <div className="bg-green-100/80 p-2 rounded-lg">
+                <ShoppingCart className="h-6 w-6 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Orders</p>
+                <h3 className="text-2xl font-semibold">
+                  {formatNumber(finance.overview.totalOrders)}
+                </h3>
+              </div>
+            </CardContent>
+          </Card>
+          {renderInventoryCard()}
+          <Card className={CARD_CLASSES}>
+            <CardContent className="p-4 md:p-6 flex items-center gap-4">
+              <div className="bg-red-100/80 p-2 rounded-lg">
+                <CreditCard className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Expenses</p>
+                <h3 className="text-2xl font-semibold">
+                  {formatNumber(finance.overview.total_expenses)} FCFA
+                </h3>
+              </div>
             </CardContent>
           </Card>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Customers</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {customers?.topCustomers.map((customer, index) => (
-                <div key={index} className="flex items-center">
-                  <div className={`w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold mr-4`}>
-                    {customer.name.charAt(0)}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-medium">{customer.name}</h3>
-                    <p className="text-sm text-gray-500">{customer.orders} orders</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">{formatNumber(customer.spent)} FCFA</p>
-                  </div>
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mt-6">
+          <Card className={`${CARD_CLASSES} col-span-2`}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Sales Trend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!sales?.weeklyTrends?.length ? (
+                <EmptyData message="No sales data available" />
+              ) : (
+                <div className={CHART_CONTAINER}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={sales?.weeklyTrends}>
+                      <CartesianGrid strokeDasharray="3 3" className="text-muted" />
+                      <XAxis
+                        tick={{ fill: '#6b7280' }}
+                        tickLine={{ stroke: '#e5e7eb' }}
+                      />
+                      <YAxis
+                        tick={{ fill: '#6b7280' }}
+                        tickLine={{ stroke: '#e5e7eb' }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: 'hsl(var(--background))',
+                          borderColor: 'hsl(var(--border))',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                        }}
+                      />
+                      <Bar 
+                        dataKey="sales" 
+                        fill="hsl(var(--primary))" 
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        {renderTopProducts()}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Income Over Time</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 flex justify-between">
-              <div>
-                <h4 className="text-2xl font-bold">{formatNumber(finance.overview.totalOrders)}</h4>
-                <p className="text-sm text-gray-500">Orders Today</p>
+              )}
+            </CardContent>
+          </Card>
+          <Card className={CARD_CLASSES}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Categories Overview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={CHART_CONTAINER}>
+                {isCategoriesLoading ? (
+                  <ChartSkeleton />
+                ) : categoriesError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{categoriesError.message}</AlertDescription>
+                  </Alert>
+                ) : !categoriesData?.length ? (
+                  <EmptyChart message="No category data available" />
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categoriesData}
+                        dataKey="totalValue"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={60}
+                      >
+                        {categoriesData?.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value) => `${formatNumber(value as number)} FCFA`}
+                        contentStyle={{ 
+                          background: 'hsl(var(--background))',
+                          borderColor: 'hsl(var(--border))',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                        }}
+                      />
+                      <Legend 
+                        layout="vertical"
+                        align="right"
+                        verticalAlign="middle"
+                        formatter={(value, entry) => {
+                          const total = categoriesData?.reduce((sum, cat) => sum + cat.totalValue, 0) || 1;
+                          const percent = ((entry.value as number) / total) * 100;
+                          return (
+                            <span className="text-sm text-muted-foreground">
+                              {value} - {percent.toFixed(1)}%
+                            </span>
+                          );
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
               </div>
-              <div>
-                <h4 className="text-2xl font-bold">{formatNumber(finance.overview.total_income)} FCFA</h4>
-                <p className="text-sm text-gray-500">Revenue Today</p>
-              </div>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={finance.monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="name" 
-                  tickFormatter={(value) => formatTimeLabel(value, currentView)}
-                />
-                <YAxis />
-                <Tooltip 
-                  formatter={(value) => `${formatNumber(value as number)} FCFA`}
-                  labelFormatter={(label) => formatTimeLabel(label, currentView)}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="income" stroke="#8884d8" name="Income" />
-                <Line type="monotone" dataKey="expenses" stroke="#82ca9d" name="Expenses" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Last 7 Days Sales</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4">
-              <h4 className="text-2xl font-bold">{formatNumber(sales?.weeklyStats.totalItems || 0)}</h4>
-              <p className="text-sm text-gray-500">Items Sold</p>
-              <h4 className="text-2xl font-bold mt-2">{formatNumber(sales?.weeklyStats.totalRevenue || 0)} FCFA</h4>
-              <p className="text-sm text-gray-500">Revenue</p>
-            </div>
-            <ResponsiveContainer width="100%" height={150}>
-              <BarChart data={sales?.dailyTrends || []}>
-                <Bar dataKey="sales" fill="#10B981" />
-                <Tooltip />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Top Customers</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!customers?.topCustomers?.length ? (
+                <EmptyData message="No customer data available" />
+              ) : (
+                <div className="space-y-4">
+                  {customers?.topCustomers.map((customer, index) => (
+                    <div key={index} className="flex items-center">
+                      <div className={`w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold mr-4`}>
+                        {customer.name.charAt(0)}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium">{customer.name}</h3>
+                        <p className="text-sm text-gray-500">{customer.orders} orders</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium">{formatNumber(customer.spent)} FCFA</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          {renderTopProducts()}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card className="col-span-2">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Income Over Time</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 flex justify-between">
+                <div>
+                  <h4 className="text-2xl font-bold">{formatNumber(finance.overview.totalOrders)}</h4>
+                  <p className="text-sm text-gray-500">Orders Today</p>
+                </div>
+                <div>
+                  <h4 className="text-2xl font-bold">{formatNumber(finance.overview.total_income)} FCFA</h4>
+                  <p className="text-sm text-gray-500">Revenue Today</p>
+                </div>
+              </div>
+              {!finance.monthlyData?.length ? (
+                <EmptyData message="No financial data available" />
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={finance.monthlyData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="name" 
+                      tickFormatter={(value) => formatTimeLabel(value, currentView)}
+                    />
+                    <YAxis />
+                    <Tooltip 
+                      formatter={(value) => `${formatNumber(value as number)} FCFA`}
+                      labelFormatter={(label) => formatTimeLabel(label, currentView)}
+                    />
+                    <Legend />
+                    <Line type="monotone" dataKey="income" stroke="#8884d8" name="Income" />
+                    <Line type="monotone" dataKey="expenses" stroke="#82ca9d" name="Expenses" />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Last 7 Days Sales</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4">
+                <h4 className="text-2xl font-bold">{formatNumber(sales?.weeklyStats.totalItems || 0)}</h4>
+                <p className="text-sm text-gray-500">Items Sold</p>
+                <h4 className="text-2xl font-bold mt-2">{formatNumber(sales?.weeklyStats.totalRevenue || 0)} FCFA</h4>
+                <p className="text-sm text-gray-500">Revenue</p>
+              </div>
+              {!sales?.dailyTrends?.length ? (
+                <EmptyData message="No recent sales data" />
+              ) : (
+                <ResponsiveContainer width="100%" height={150}>
+                  <BarChart data={sales?.dailyTrends || []}>
+                    <Bar dataKey="sales" fill="#10B981" />
+                    <Tooltip />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

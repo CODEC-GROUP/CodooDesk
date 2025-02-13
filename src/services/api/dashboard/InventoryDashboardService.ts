@@ -7,6 +7,7 @@ import Supplier from '../../../models/Supplier.js';
 import Shop from '../../../models/Shop.js';
 import { createErrorResponse, createSuccessResponse } from '../../../utils/errorHandling.js';
 import { sequelize } from '../../database/index.js';
+import Category from '../../../models/Category.js';
 
 const IPC_CHANNELS = {
   GET_INVENTORY_DASHBOARD: 'inventory:dashboard:get',
@@ -74,6 +75,13 @@ async function getTopSuppliers(businessId: string) {
     items: supplier.items,
     color: '#' + Math.floor(Math.random()*16777215).toString(16) // Random color for now
   }));
+}
+
+// Add this interface near the top
+interface InventoryWithCategory extends Inventory {
+  percentage: number;
+  total_value: number;
+  name: string;
 }
 
 export function registerInventoryDashboardHandlers() {
@@ -178,10 +186,43 @@ export function registerInventoryDashboardHandlers() {
         raw: true
       });
 
+      // Add category composition analysis
+      const categoryBreakdown = await Inventory.findAll({
+        attributes: [
+          [fn('SUM', literal('Product.quantity * Product.value')), 'total_value'],
+          [literal('ROUND((SUM(Product.quantity * Product.value) / (SELECT SUM(quantity * value) FROM products)) * 100, 1)'), 'percentage'],
+          [col('Product.category.name'), 'name']
+        ],
+        include: [{
+          model: Product,
+          attributes: [],
+          required: true,
+          include: [{
+            model: Category,
+            attributes: [],
+            required: true
+          }]
+        }],
+        where: {
+          shopId: {
+            [Op.in]: shopIds
+          }
+        },
+        group: ['Product.category.id'],
+        order: [[literal('total_value'), 'DESC']],
+        raw: true
+      }) as unknown as InventoryWithCategory[];
+
       return createSuccessResponse({
         stats: {
           ...summary,
-          shop_stats: shopStats
+          shop_stats: shopStats,
+          category_composition: categoryBreakdown.map(cat => ({
+            name: cat.name,
+            percentage: cat.percentage,
+            value: cat.total_value,
+            color: `hsl(${Math.random() * 360}, 70%, 50%)` // Generate vibrant colors
+          }))
         },
         trends: {
           weekly,

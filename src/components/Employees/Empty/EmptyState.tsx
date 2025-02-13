@@ -9,21 +9,27 @@ interface EmptyStateProps {
 
 export function EmptyState({ onAddEmployee }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50/30">
-      <div className="relative mb-4">
-        <Users2 className="w-20 h-20 text-gray-400" />
-        <UserPlus className="w-10 h-10 text-gray-400 absolute -bottom-2 -right-2" />
+    <div className="flex flex-col items-center justify-center h-full py-16 bg-gray-50">
+      <div className="relative mb-8 group">
+        <div className="w-24 h-24 rounded-full bg-orange-50/50 flex items-center justify-center border-2 border-orange-100">
+          <Users2 className="w-12 h-12 text-orange-600" />
+          <UserPlus className="w-8 h-8 text-orange-600 bg-orange-100 p-1.5 rounded-full border-2 border-orange-200 absolute -bottom-2 -right-2" />
+        </div>
       </div>
-      <h2 className="text-3xl font-bold mb-2">No Employees Added</h2>
-      <p className="text-gray-600 mb-6 text-center max-w-md text-lg">
-        Start building your team by adding your first employee. 
-        Manage your staff and track their performance effectively.
+      <h3 className="text-3xl font-semibold tracking-tight mb-3 text-gray-900">
+        No Team Members
+      </h3>
+      <p className="text-muted-foreground mb-8 text-center max-w-md text-lg leading-relaxed">
+        Build your team by adding employees. Manage roles, schedules, and access levels in one centralized location.
       </p>
       <Button 
         onClick={onAddEmployee}
-        className="bg-[#1A7DC0] text-white shadow-lg hover:bg-[#1A7DC0]/90 px-8 py-6 text-lg h-auto"
+        variant="default"
+        size="lg"
+        className="rounded-full px-8 py-6 text-lg gap-2 shadow-lg hover:shadow-md transition-shadow"
       >
-        Add Your First Employee
+        <UserPlus className="w-6 h-6" />
+        Add First Employee
       </Button>
     </div>
   )

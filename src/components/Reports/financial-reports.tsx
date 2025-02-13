@@ -65,7 +65,6 @@ interface FinanceData {
   overview: {
     total_income: number;
     totalOrders: number;
-    totalItems: number;
     total_expenses: number;
     revenue_growth: number;
     expense_growth: number;
@@ -214,10 +213,27 @@ export function FinancialReports() {
   if (!financeData) return null
 
   return (
-    <div className="container mx-auto p-6 opacity-90 blur-sm">
+    <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Financial Reports</h1>
         <div className="flex gap-2">
+          {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+            <Select
+              value={selectedShopId || ''}
+              onValueChange={(value) => setSelectedShopId(value)}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select Shop" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableShops.map((shop) => (
+                  <SelectItem key={shop.id} value={shop.id}>
+                    {shop.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Select 
             value="This Month"
             onValueChange={(value) => {
@@ -267,30 +283,31 @@ export function FinancialReports() {
 
       <div className="grid gap-6 mb-8 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Revenue"
-          value={`${financeData.overview.total_income.toLocaleString()} FCFA`}
+          title="Total Income"
+          value={`${(financeData.overview.total_income ?? 0).toLocaleString()} FCFA`}
           icon={DollarSign}
           color="bg-blue-100"
-          trend="up"
+          trend={financeData.overview.revenue_growth > 0 ? 'up' : 'down'}
         />
         <StatCard
-          title="Total Orders"
-          value={financeData.overview.totalOrders.toLocaleString()}
+          title="Income Transactions"
+          value={(financeData.overview.totalOrders ?? 0).toLocaleString()}
           icon={ShoppingCart}
           color="bg-green-100"
         />
         <StatCard
-          title="Inventory Levels"
-          value={financeData.overview.totalItems.toLocaleString()}
+          title="Revenue Growth"
+          value={`${(financeData.overview.revenue_growth || 0).toFixed(2)}%`}
           icon={Users}
           color="bg-red-100"
+          trend={financeData.overview.revenue_growth > 0 ? 'up' : 'down'}
         />
         <StatCard
-          title="Total expenses"
+          title="Total Expenses"
           value={`${financeData.overview.total_expenses.toLocaleString()} FCFA`}
           icon={CreditCard}
           color="bg-purple-100"
-          trend="down"
+          trend={(financeData.overview.expense_growth || 0) > 0 ? 'down' : 'up'}
         />
       </div>
 
