@@ -8,6 +8,8 @@ import Location from './Location.js';
 import Sales from './Sales.js';
 import Inventory from './Inventory.js';
 import Return from './Return.js';
+// import PerformanceMetric from './PerformanceMetric.js';
+import ShopSettings from './ShopSettings.js';
 
 export interface ShopAttributes {
   id?: string;
@@ -144,7 +146,11 @@ class Shop extends Model<ShopAttributes> implements ShopAttributes {
       otherKey: 'customer_id',
       as: 'customers'
     });
-    this.belongsToMany(models.Product, { through: 'ShopProducts', foreignKey: 'shopId', as: 'products' });
+    this.belongsToMany(models.Product, { 
+      through: 'ShopProducts', 
+      foreignKey: 'shopId', 
+      as: 'products' 
+    });
     this.hasMany(models.Sales, {
       foreignKey: 'shopId',
       as: 'sales',
@@ -166,6 +172,10 @@ class Shop extends Model<ShopAttributes> implements ShopAttributes {
     this.hasMany(models.Return, {
       foreignKey: 'shopId',
       as: 'returns',
+    });
+    this.hasOne(models.ShopSettings, {
+      foreignKey: 'shopId',
+      as: 'settings'
     });
   }
 }

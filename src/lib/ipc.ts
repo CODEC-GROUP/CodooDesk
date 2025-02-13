@@ -24,12 +24,12 @@ export async function safeIpcInvoke<T>(
     
     // Check if we're in an Electron context
     if (typeof window === 'undefined') {
-      console.warn('[IPC] Window is undefined, using fallback');
+      console.error('[IPC] Failed: Window is undefined');
       return fallback;
     }
     
     if (!window.electron) {
-      console.warn('[IPC] Electron is not available in window context, using fallback');
+      console.error('[IPC] Failed: Electron context not available in window. Make sure preload script is properly configured.');
       return fallback;
     }
     
@@ -38,18 +38,20 @@ export async function safeIpcInvoke<T>(
     
     const result = await window.electron.invoke(channel, data);
     
-    // Log the result
-    console.log(`[IPC] Response received for channel ${channel}:`, result);
+    // Log the result (but be careful not to log sensitive data)
+    console.log(`[IPC] Success: Response received for channel ${channel}`);
     
     return result;
   } catch (error) {
-    // Log detailed error information
+    // Enhanced error logging
     console.error(`[IPC] Error invoking channel ${channel}:`, {
       error,
       errorMessage: error instanceof Error ? error.message : String(error),
       errorStack: error instanceof Error ? error.stack : undefined,
-      data
+      channel,
+      data: typeof data === 'object' ? Object.keys(data) : typeof data // Log data structure without sensitive values
     });
+    
     return fallback;
   }
 }

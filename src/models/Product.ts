@@ -19,7 +19,14 @@ export interface ProductAttributes {
   featuredImage: string | null;
   additionalImages: string[] | null;
   reorderPoint?: number;
+  minimumStockLevel?: number;
+  maximumStockLevel?: number;
+  valuationMethod: 'FIFO' | 'LIFO' | 'AVERAGE_COST';
+  hasExpiryDate: boolean;
+  hasBatchTracking: boolean;
   suppliers?: Array<{ id: string, name: string }>;
+  createdAt?: Date;
+  updatedAt?: Date;  
 }
 
 export interface ProductInstance extends Model<ProductAttributes>, ProductAttributes {
@@ -43,7 +50,14 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
   public featuredImage!: string | null;
   public additionalImages!: string[] | null;
   public reorderPoint?: number;
+  public minimumStockLevel?: number;
+  public maximumStockLevel?: number;
+  public valuationMethod!: 'FIFO' | 'LIFO' | 'AVERAGE_COST';
+  public hasExpiryDate!: boolean;
+  public hasBatchTracking!: boolean;
   public suppliers?: Array<{ id: string, name: string }>;
+  public createdAt?: Date;
+  public updatedAt?: Date;
 
   public addSuppliers!: (supplierIds: string[]) => Promise<void>;
   public getSuppliers!: () => Promise<any[]>;
@@ -113,7 +127,30 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
           type: DataTypes.INTEGER,
           allowNull: true,
           defaultValue: 10
-        }
+        },
+        minimumStockLevel: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        maximumStockLevel: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        valuationMethod: {
+          type: DataTypes.ENUM('FIFO', 'LIFO', 'AVERAGE_COST'),
+          allowNull: false,
+          defaultValue: 'FIFO',
+        },
+        hasExpiryDate: {
+          type: DataTypes.BOOLEAN,
+          allowNull: false,
+          defaultValue: false,
+        },
+        hasBatchTracking: {
+          type: DataTypes.BOOLEAN,
+          allowNull: false,
+          defaultValue: false,
+        },
       },
       {
         sequelize,
@@ -146,13 +183,19 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
   static associate(models: any) {
     this.belongsTo(models.Category, { foreignKey: 'category_id', as: 'category' });
     this.belongsTo(models.Shop, { foreignKey: 'shop_id', as: 'shop' });
-    this.belongsToMany(models.Supplier, { 
-      through: 'SupplierProducts',
-      foreignKey: 'productId',
-      otherKey: 'supplierId',
+    this.hasMany(models.Order, {
+      foreignKey: 'product_id',
+      as: 'orders'
+    });
+    this.belongsToMany(models.Supplier, {
+      through: models.SupplierProducts,
+      foreignKey: 'product_id',
+      otherKey: 'supplier_id',
       as: 'suppliers'
     });
-    this.hasMany(models.Order, { foreignKey: 'product_id', as: 'orders' });
+    this.hasMany(models.ProductVariant, { foreignKey: 'product_id', as: 'variants' });
+    this.hasMany(models.BatchTracking, { foreignKey: 'product_id', as: 'batches' });
+    this.hasMany(models.PriceHistory, { foreignKey: 'product_id', as: 'priceHistory' });
   }
 }
 

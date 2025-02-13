@@ -20,6 +20,15 @@ import Shop from './Shop.js';
 import Supplier from './Supplier.js';
 import SupplierProducts from './SupplierProducts.js';
 import User from './User.js';
+import AuditLog from './AuditLog.js';
+import BusinessSettings from './BusinessSettings.js';
+import ShopSettings from './ShopSettings.js';
+import StockMovement from './StockMovement.js';
+import ProductVariant from './ProductVariant.js';
+import BatchTracking from './BatchTracking.js';
+import PriceHistory from './PriceHistory.js';
+import CustomerSegment from './CustomerSegment.js';
+import SecurityLog from './SecurityLog.js';
 
 // Create models type
 interface Models {
@@ -44,6 +53,15 @@ interface Models {
     Supplier: typeof Supplier;
     SupplierProducts: typeof SupplierProducts;
     User: typeof User;
+    AuditLog: typeof AuditLog;
+    BusinessSettings: typeof BusinessSettings;
+    ShopSettings: typeof ShopSettings;
+    StockMovement: typeof StockMovement;
+    ProductVariant: typeof ProductVariant;
+    BatchTracking: typeof BatchTracking;
+    PriceHistory: typeof PriceHistory;
+    CustomerSegment: typeof CustomerSegment;
+    SecurityLog: typeof SecurityLog;
 }
 
 export function initializeModels(sequelize: any): Models {
@@ -69,6 +87,15 @@ export function initializeModels(sequelize: any): Models {
         Supplier: Supplier.initModel(sequelize),
         SupplierProducts: SupplierProducts.initModel(sequelize),
         User: User.initModel(sequelize),
+        AuditLog: AuditLog.initModel(sequelize),
+        BusinessSettings: BusinessSettings.initModel(sequelize),
+        ShopSettings: ShopSettings.initModel(sequelize),
+        StockMovement: StockMovement.initModel(sequelize),
+        ProductVariant: ProductVariant.initModel(sequelize),
+        BatchTracking: BatchTracking.initModel(sequelize),
+        PriceHistory: PriceHistory.initModel(sequelize),
+        CustomerSegment: CustomerSegment.initModel(sequelize),
+        SecurityLog: SecurityLog.initModel(sequelize),
     };
 
     // Call associate methods for all models
@@ -80,3 +107,12 @@ export function initializeModels(sequelize: any): Models {
 
     return models;
 }
+
+// Update the exports to use default exports
+export { default as CustomerSegment } from './CustomerSegment.js';
+export { default as Customer } from './Customer.js';
+export { default as Sales } from './Sales.js';
+export { default as BatchTracking } from './BatchTracking.js';
+export { default as Product } from './Product.js';
+export { default as Supplier } from './Supplier.js';
+export { default as Shop } from './Shop.js';

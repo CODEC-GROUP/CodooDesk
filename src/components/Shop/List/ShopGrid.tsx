@@ -92,58 +92,19 @@ interface UpdateShopResponse {
 }
 
 export function Shops() {
-  const [shops, setShops] = useState<Shop[]>([]);
   const [isAddingShop, setIsAddingShop] = useState<boolean>(false);
   const [editingShop, setEditingShop] = useState<Shop | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { business, user } = useAuthLayout();
+  const { business, user, availableShops, checkAuth } = useAuthLayout();
 
-  // Fetch shops on mount
-  useEffect(() => {
-    if (!business?.id || !user?.id) {
-      return;
-    }
+  // Get shops from availableShops or business.shops
+  const shops = availableShops || business?.shops || [];
 
-    const loadShops = async () => {
-      if (business?.shops && Array.isArray(business.shops)) {
-        setShops(business.shops);
-        console.log(business.shops)
-      } else {
-        await fetchShops();
-      }
-    };
-
-    loadShops();
-  }, [business?.id, user?.id, business?.shops]);
-
+  // Simplified fetch logic
   const fetchShops = async () => {
     try {
       setIsLoading(true);
-
-      // Different query based on user role
-      const queryParams = {
-        businessId: business?.id,
-        userId: user?.id,
-        role: user?.role
-      };
-
-      const response = await safeIpcInvoke('entities:shop:get-all', queryParams, {
-        success: false,
-        shops: []
-      });
-
-      console.log(response)
-
-      if (response?.success) {
-        setShops(response.shops);
-      }
-    } catch (error) {
-      console.error('Error fetching shops:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load shops",
-        variant: "destructive",
-      });
+      await checkAuth(); // Refresh auth data
     } finally {
       setIsLoading(false);
     }
@@ -293,11 +254,7 @@ export function Shops() {
       }, { success: false, message: '' });
 
       if (response?.success) {
-        setShops(prevShops =>
-          prevShops.map(s =>
-            s.id === shopId ? { ...s, status: newStatus } : s
-          )
-        );
+        fetchShops();
       } else {
         throw new Error(response?.message ?? 'Failed to update shop status');
       }

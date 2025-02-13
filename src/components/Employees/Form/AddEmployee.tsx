@@ -27,11 +27,19 @@ interface EmployeeResponse {
 }
 
 export function AddEditEmployee({ onBack, onSave, employee, isEdit }: AddEditEmployeeProps) {
-  const { business } = useAuthLayout();
+  const { business, user, availableShops } = useAuthLayout();
   
   // Log for debugging
   console.log('Business in AddEmployee:', business);
   console.log('Shops available:', business?.shops);
+
+  if (!['admin', 'shop_owner', 'manager'].includes(user?.role || '')) {
+    return (
+      <div className="p-4 text-center text-red-500">
+        Unauthorized access
+      </div>
+    );
+  }
 
   const [formData, setFormData] = useState({
     firstName: employee?.firstName || '',
@@ -41,7 +49,9 @@ export function AddEditEmployee({ onBack, onSave, employee, isEdit }: AddEditEmp
     role: employee?.role || 'seller',
     employmentStatus: employee?.employmentStatus || 'full-time',
     salary: employee?.salary || 0,
-    shopId: employee?.shopId || '',
+    shopId: employee?.shopId || (user?.role !== 'admin' && user?.role !== 'shop_owner') 
+      ? availableShops?.[0]?.id || ''
+      : '',
     username: employee?.user?.username || '',
     password_hash: '',
     businessId: business?.id || '',
@@ -79,7 +89,7 @@ export function AddEditEmployee({ onBack, onSave, employee, isEdit }: AddEditEmp
         return;
       }
 
-      if (formData.shopId === '') {
+      if (!formData.shopId) {
         toast({
           title: "Error",
           description: "Please select a shop",

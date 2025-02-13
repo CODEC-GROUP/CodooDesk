@@ -68,7 +68,7 @@ interface SaleResponse {
 }
 
 export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
-  const { user, business } = useAuthLayout();
+  const { user, business, availableShops } = useAuthLayout();
   const [sales, setSales] = useState<Sale[]>([]);
   const [filteredSales, setFilteredSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,6 +78,11 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   const [shopId, setShopId] = useState<string | null>(null);
   
   const ITEMS_PER_PAGE = 10;
+
+  // Get shop IDs based on user role
+  const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+    ? business?.shops?.map(shop => shop.id) || []
+    : [availableShops?.[0]?.id].filter(Boolean) as string[];
 
   const fetchSales = async () => {
     console.log('Starting fetchSales...', { user, business, searchTerm, filterValue });
@@ -370,6 +375,26 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                   />
                 </div>
               </div>
+
+              {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+                <div className="space-y-4">
+                  <h3 className="font-medium">Filter by Shops</h3>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline">
+                        Select Shop
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {shopIds.map((id) => (
+                        <DropdownMenuItem key={id} onClick={() => setShopId(id)}>
+                          {id}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
 
               <div className="overflow-x-auto">
                 <Table>

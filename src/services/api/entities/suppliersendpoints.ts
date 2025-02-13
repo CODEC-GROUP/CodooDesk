@@ -59,7 +59,8 @@ export function registerSupplierHandlers() {
             include: [{
               model: Order,
               as: 'orders',
-              attributes: []
+              attributes: [],
+              foreignKey: 'product_id'
             }],
             through: { attributes: [] }
           }

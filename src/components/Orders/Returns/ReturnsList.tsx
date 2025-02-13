@@ -41,6 +41,7 @@ interface ReturnedItem {
 
 interface Return {
   id: string;
+  shopId: string;
   orderId: string;
   items: ReturnedItem[];
   total: number;
@@ -134,6 +135,7 @@ const Returns = () => {
   const [sale, setSale] = useState<Sale | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const [selectedShopId, setSelectedShopId] = useState("all");
 
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
@@ -181,7 +183,9 @@ const Returns = () => {
       filterValue === "all" ||
       returnItem.status.toLowerCase() === filterValue.toLowerCase()
 
-    return matchesSearch && matchesFilter
+    const matchesShop = selectedShopId === 'all' || returnItem.shopId === selectedShopId;
+
+    return matchesSearch && matchesFilter && matchesShop;
   })
 
   const currentReturns = filteredReturns.slice(indexOfFirstItem, indexOfLastItem)
@@ -215,7 +219,10 @@ const Returns = () => {
         return;
       }
 
-      const shopIds = business?.shops?.map(shop => shop.id) || [];
+      const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? business?.shops?.map(shop => shop.id) || []
+        : [business?.shops?.[0]?.id].filter(Boolean) as string[];
+
       if (shopIds.length === 0) {
         console.error('No shops found');
         toast({
@@ -228,9 +235,8 @@ const Returns = () => {
 
       const response = await safeIpcInvoke<ReturnResponse>('entities:return:get-all',
         {
-          userRole: user.role,
           shopIds,
-          shopId: shopIds[0]
+          userRole: user?.role
         },
         {
           success: false,
@@ -372,7 +378,9 @@ const Returns = () => {
     try {
       const returnData = {
         saleId: sale.id,
-        shopId: sale.shopId, // Add shop ID from sale
+        shopId: (user?.role === 'admin' || user?.role === 'shop_owner')
+          ? selectedShopId
+          : business?.shops?.[0]?.id,
         items: [
           {
             orderId: selectedProduct.id, // Move orderId to item level
@@ -646,6 +654,26 @@ const Returns = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* Add shop filter UI */}
+                  {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+                    <Select
+                      value={selectedShopId}
+                      onValueChange={setSelectedShopId}
+                    >
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Filter by Shop" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Shops</SelectItem>
+                        {business?.shops?.map((shop: any) => (
+                          <SelectItem key={shop.id} value={shop.id}>
+                            {shop.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
 
                   {/* Returns Table */}
                   <div className="rounded-md border">

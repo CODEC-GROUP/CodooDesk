@@ -26,7 +26,7 @@ export function Register() {
   const [showPassword, setShowPassword] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault() // Prevent form submission
+    e.preventDefault()
     if (!formData.acceptTerms) {
       setError('Please accept the terms and conditions')
       return
@@ -40,11 +40,12 @@ export function Register() {
         password: formData.password
       })
 
-      if (!result.success) {
+      if (result.success) {
+        // After successful registration, redirect to account setup
+        router.push('/account-setup')
+      } else {
         setError(result.message || 'Registration failed')
-        return
       }
-
     } catch (err: any) {
       const errorMessage = err.message || err.toString()
       setError(`Registration error: ${errorMessage}`)
@@ -52,7 +53,6 @@ export function Register() {
         error: errorMessage,
         details: err
       })
-      return
     }
   }
 

@@ -68,7 +68,7 @@ interface OrderDetailsProps {
 }
 
 const OrderDetails = ({ orderId, onBack }: OrderDetailsProps) => {
-  const { user, business } = useAuthLayout();
+  const { user, business, availableShops } = useAuthLayout();
   const [order, setOrder] = useState<SalesAttributes | null>(null);
   const [loading, setLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -152,8 +152,13 @@ const OrderDetails = ({ orderId, onBack }: OrderDetailsProps) => {
       return;
     }
 
-    const currentShopId = business?.shops?.[0]?.id;
-    const currentShop = business.shops?.find(shop => shop.id === currentShopId);
+    const currentShopId = (user?.role === 'admin' || user?.role === 'shop_owner')
+      ? business?.shops?.[0]?.id
+      : availableShops?.[0]?.id;
+
+    const currentShop = (user?.role === 'admin' || user?.role === 'shop_owner')
+      ? business.shops?.find(shop => shop.id === currentShopId)
+      : availableShops?.[0];
 
     if (!currentShop) {
       toast({

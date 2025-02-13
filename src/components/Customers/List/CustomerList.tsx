@@ -42,6 +42,7 @@ interface Customer {
   phone: string;
   orders: number;
   spent: string;
+  shopId: string;
 }
 
 interface CustomerListProps {
@@ -71,20 +72,21 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [loading, setLoading] = useState(false)
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedShopId, setSelectedShopId] = useState("all");
 
   const fetchCustomers = async () => {
     try {
       setIsLoading(true);
-      const currentShopId = business?.shops?.[0]?.id || localStorage.getItem('currentShopId');
       
+      // Get shop IDs based on user role
+      const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? business?.shops?.map(shop => shop.id) || []
+        : [business?.shops?.[0]?.id].filter(Boolean) as string[];
+
       const response = await safeIpcInvoke('entities:customer:get-all', {
-        userId: user?.id,
-        role: user?.role,
-        shopId: currentShopId
-      }, {
-        success: false,
-        customers: []
-      });
+        shopIds,
+        userRole: user?.role
+      }, { success: false, customers: [] });
 
       if (response?.success) {
         setCustomers(response.customers);
@@ -173,7 +175,8 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
   const filteredCustomers = customers.filter(customer => {
     const matchesSearch = customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          customer.phone.includes(searchQuery)
-    return matchesSearch
+    const matchesShop = selectedShopId === 'all' || customer.shopId === selectedShopId;
+    return matchesSearch && matchesShop;
   })
 
   const toggleCustomerSelection = (customerId: number) => {
@@ -329,6 +332,25 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
                   <TrashIcon className="h-4 w-4" />
                 </Button>
               </div>
+
+              {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+                <Select
+                  value={selectedShopId}
+                  onValueChange={setSelectedShopId}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by Shop" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Shops</SelectItem>
+                    {business?.shops?.map((shop: any) => (
+                      <SelectItem key={shop.id} value={shop.id}>
+                        {shop.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             {/* Desktop Table View */}

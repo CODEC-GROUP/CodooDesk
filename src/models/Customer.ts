@@ -13,6 +13,7 @@ export interface CustomerAttributes {
   region: string | null;
   country: string;
   dateOfBirth: Date;
+  segment_id?: string;
 }
 
 class Customer extends Model<CustomerAttributes> implements CustomerAttributes {
@@ -25,6 +26,8 @@ class Customer extends Model<CustomerAttributes> implements CustomerAttributes {
   public region!: string | null;
   public country!: string;
   public dateOfBirth!: Date;
+  public segment_id?: string;
+  public sales?: Sales[];
 
   public setShops!: BelongsToManyAddAssociationsMixin<Shop, string>;
 
@@ -90,6 +93,11 @@ class Customer extends Model<CustomerAttributes> implements CustomerAttributes {
     this.hasMany(models.Sales, {
       foreignKey: 'customer_id',
       as: 'sales'
+    });
+
+    this.belongsTo(models.CustomerSegment, {
+      foreignKey: 'segment_id',
+      as: 'segment'
     });
   }
 }

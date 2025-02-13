@@ -32,6 +32,7 @@ type InventoryItem = {
   supplier: string
   lastUpdated: string
   status: 'In Stock' | 'Low Stock' | 'Out of Stock'
+  sellingPrice: number
 }
 
 const mockInventoryItem: InventoryItem = {
@@ -45,11 +46,29 @@ const mockInventoryItem: InventoryItem = {
   totalValue: 7999,
   supplier: 'TechAudio Inc.',
   lastUpdated: '2023-06-15',
-  status: 'In Stock'
+  status: 'In Stock',
+  sellingPrice: 79.99
 }
 
 interface InventoryDetailsProps {
-  item: InventoryItem;
+  item: {
+    sellingPrice: number;
+    id: string
+    name: string
+    sku: string
+    description: string
+    category: string
+    quantity: number
+    unitPrice: number
+    totalValue: number
+    supplier: string
+    lastUpdated: string
+    status: 'In Stock' | 'Low Stock' | 'Out of Stock'
+    productsSold?: number
+    productsLeft?: number
+    returnsToShop?: number
+    returnsToSupplier?: number
+  };
   onClose: () => void;
 }
 
@@ -161,7 +180,7 @@ const InventoryDetails: React.FC<InventoryDetailsProps> = ({ item, onClose }) =>
           </Card>
         </TabsContent>
         <TabsContent value="stock">
-          <StockMovementTable />
+          <StockMovementTable inventoryId={item.id} />
         </TabsContent>
       </Tabs>
       <button onClick={onClose}>Close</button>

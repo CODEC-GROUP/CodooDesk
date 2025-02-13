@@ -1,0 +1,309 @@
+{
+  "auth": {
+    "login": "Connexion",
+    "register": "S'inscrire",
+    "forgotPassword": "Mot de passe oublié",
+    "resetPassword": "Réinitialiser le mot de passe",
+    "verifyEmail": "Vérifier l'email",
+    "twoFactor": "Authentification à deux facteurs"
+  },
+  "navigation": {
+    "dashboard": "Tableau de bord",
+    "pos": "Point de vente",
+    "products": "Produits",
+    "categories": "Catégories",
+    "suppliers": "Fournisseurs",
+    "customers": "Clients",
+    "employees": "Employés",
+    "orders": "Commandes",
+    "returns": "Retours",
+    "reports": "Rapports"
+  },
+  "reports": {
+    "expenses": "Dépenses",
+    "income": "Revenus",
+    "performance": "Performance",
+    "treasury": "Trésorerie",
+    "financialReports": "Rapports financiers"
+  },
+  "products": {
+    "addProduct": "Ajouter un produit",
+    "productList": "Liste des produits",
+    "categories": "Catégories",
+    "suppliers": "Fournisseurs"
+  },
+  "customers": {
+    "addCustomer": "Ajouter un client",
+    "customerList": "Liste des clients",
+    "customerDetails": "Détails du client",
+    "orders": "Commandes",
+    "spent": "Total dépensé"
+  },
+  "orders": {
+    "addOrder": "Ajouter une commande",
+    "orderList": "Liste des commandes",
+    "orderDetails": "Détails de la commande",
+    "returns": "Retours"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "general": "Paramètres Généraux",
+    "shops": "Paramètres de la Boutique",
+    "profile": {
+      "title": "Détails du Profil",
+      "description": "Entrez vos informations de profil",
+      "firstName": "Prénom",
+      "lastName": "Nom",
+      "email": "Adresse Email",
+      "phone": "Numéro de Téléphone"
+    },
+    "notifications": {
+      "title": "Préférences de Notification",
+      "description": "Gérez vos paramètres de notification",
+      "offers": "Offres Personnalisées",
+      "features": "Nouvelles Fonctionnalités",
+      "security": "Sécurité et Facturation"
+    },
+    "security": {
+      "title": "Paramètres de Sécurité",
+      "description": "Gérez la sécurité de votre compte",
+      "currentPassword": "Mot de Passe Actuel",
+      "newPassword": "Nouveau Mot de Passe",
+      "confirmPassword": "Confirmer le Nouveau Mot de Passe",
+      "twoFactor": "Authentification à Deux Facteurs",
+      "loginHistory": "Historique des Connexions"
+    },
+    "units": {
+      "title": "Paramètres des Unités de Produit",
+      "description": "Gérez les unités pour différents types de produits",
+      "weight": "Unité de Poids",
+      "volume": "Unité de Volume",
+      "length": "Unité de Longueur"
+    }
+  },
+  "common": {
+    "actions": {
+      "add": "Ajouter",
+      "edit": "Modifier",
+      "delete": "Supprimer",
+      "cancel": "Annuler",
+      "save": "Enregistrer les modifications",
+      "close": "Fermer",
+      "export": "Exporter",
+      "search": "Rechercher",
+      "filter": "Filtrer",
+      "transfer": "Transférer",
+      "confirm": "Confirmer",
+      "back": "Retour"
+    }
+  },
+  "inventory": {
+    "stockMovement": {
+      "title": "Suivi des mouvements de stock",
+      "addMovement": "Ajouter un mouvement de stock",
+      "movementType": "Type de mouvement",
+      "quantity": "Quantité",
+      "date": "Date",
+      "direction": "Entrée/Sortie",
+      "reason": "Motif",
+      "destination": "Destination",
+      "performedBy": "Effectué par"
+    }
+  },
+  "setup": {
+    "accountSetup": "Configuration du compte",
+    "businessSetup": "Configuration de l'entreprise"
+  },
+  "messages": {
+    "loading": "Chargement...",
+    "noData": "Aucune donnée disponible",
+    "error": "Une erreur est survenue",
+    "success": "Opération réussie"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Tableau de bord",
+      "welcome": "Bienvenue sur votre tableau de bord"
+    },
+    "pos": {
+      "title": "Point de vente",
+      "catalog": "Catalogue des produits"
+    },
+    "customers": {
+      "title": "Clients",
+      "view": {
+        "list": "Liste des clients",
+        "details": "Détails du client",
+        "add": "Ajouter un nouveau client"
+      },
+      "noCustomers": "Aucun client trouvé"
+    },
+    "employees": {
+      "title": "Employés",
+      "view": {
+        "list": "Liste des employés",
+        "details": "Détails de l'employé",
+        "add": "Ajouter un nouvel employé",
+        "edit": "Modifier l'employé"
+      },
+      "noEmployees": "Aucun employé trouvé"
+    },
+    "orders": {
+      "title": "Commandes",
+      "view": {
+        "list": "Liste des commandes",
+        "details": "Détails de la commande",
+        "add": "Nouvelle commande"
+      },
+      "returns": {
+        "title": "Retours",
+        "list": "Liste des retours",
+        "add": "Nouveau retour"
+      },
+      "noOrders": "Aucune commande trouvée"
+    },
+    "products": {
+      "title": "Produits",
+      "view": {
+        "list": "Liste des produits",
+        "categories": "Catégories",
+        "suppliers": "Fournisseurs"
+      },
+      "noProducts": "Aucun produit trouvé"
+    },
+    "reports": {
+      "title": "Rapports",
+      "sections": {
+        "expenses": "Rapport des dépenses",
+        "income": "Rapport des revenus",
+        "performance": "Rapport de performance",
+        "treasury": "Rapport de trésorerie"
+      },
+      "noData": "Aucune donnée de rapport disponible"
+    },
+    "auth": {
+      "login": {
+        "title": "Connexion",
+        "welcome": "Bon retour",
+        "emailLabel": "Email",
+        "passwordLabel": "Mot de passe",
+        "rememberMe": "Se souvenir de moi",
+        "forgotPassword": "Mot de passe oublié ?",
+        "submit": "Se connecter",
+        "noAccount": "Vous n'avez pas de compte ?"
+      },
+      "register": {
+        "title": "Inscription",
+        "welcome": "Créez votre compte",
+        "nameLabel": "Nom complet",
+        "emailLabel": "Email",
+        "passwordLabel": "Mot de passe",
+        "confirmPasswordLabel": "Confirmer le mot de passe",
+        "submit": "S'inscrire",
+        "haveAccount": "Vous avez déjà un compte ?"
+      },
+      "forgotPassword": {
+        "title": "Mot de passe oublié",
+        "description": "Entrez votre email pour réinitialiser votre mot de passe",
+        "emailLabel": "Email",
+        "submit": "Envoyer le lien de réinitialisation",
+        "backToLogin": "Retour à la connexion"
+      },
+      "resetPassword": {
+        "title": "Réinitialiser le mot de passe",
+        "description": "Entrez votre nouveau mot de passe",
+        "submit": "Réinitialiser le mot de passe"
+      },
+      "verifyEmail": {
+        "title": "Vérifier l'email",
+        "description": "Veuillez vérifier votre email pour le lien de vérification",
+        "resend": "Renvoyer l'email de vérification"
+      },
+      "twoFactor": {
+        "title": "Authentification à deux facteurs",
+        "description": "Entrez le code envoyé à votre appareil",
+        "codeLabel": "Code de vérification",
+        "submit": "Vérifier"
+      }
+    }
+  },
+  "business": {
+    "setup": {
+      "title": "Configuration de l'entreprise",
+      "companyName": "Nom de l'entreprise",
+      "companyType": "Type d'entreprise",
+      "taxId": "Numéro de TVA",
+      "address": "Adresse de l'entreprise",
+      "phone": "Téléphone de l'entreprise",
+      "email": "Email de l'entreprise",
+      "currency": "Devise par défaut",
+      "timezone": "Fuseau horaire"
+    }
+  },
+  "validation": {
+    "required": "Ce champ est obligatoire",
+    "email": "Veuillez entrer un email valide",
+    "minLength": "Doit contenir au moins {{count}} caractères",
+    "maxLength": "Doit contenir moins de {{count}} caractères",
+    "passwordMatch": "Les mots de passe doivent correspondre",
+    "invalidCredentials": "Email ou mot de passe invalide",
+    "phoneNumber": "Veuillez entrer un numéro de téléphone valide"
+  },
+  "print": {
+    "receipt": "Reçu",
+    "invoice": "Facture",
+    "report": "Rapport",
+    "preview": "Aperçu avant impression",
+    "download": "Télécharger PDF"
+  },
+  "status": {
+    "active": "Actif",
+    "inactive": "Inactif",
+    "pending": "En attente",
+    "completed": "Terminé",
+    "cancelled": "Annulé",
+    "processing": "En cours",
+    "failed": "Échoué"
+  },
+  "errors": {
+    "404": {
+      "title": "Page Non Trouvée",
+      "message": "La page que vous recherchez n'existe pas ou a été déplacée"
+    },
+    "500": {
+      "title": "Erreur Serveur",
+      "message": "Une erreur s'est produite de notre côté"
+    },
+    "offline": {
+      "title": "Pas de Connexion Internet",
+      "message": "Veuillez vérifier votre connexion internet et réessayer"
+    }
+  },
+  "dateTime": {
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "tomorrow": "Demain",
+    "formats": {
+      "short": "DD/MM/YYYY",
+      "long": "D MMMM YYYY",
+      "time": "HH:mm",
+      "dateTime": "DD/MM/YYYY HH:mm"
+    }
+  },
+  "currency": {
+    "formats": {
+      "USD": "${amount}",
+      "EUR": "{amount}€",
+      "GBP": "£{amount}",
+      "XAF": "{amount} FCFA"
+    }
+  },
+  "tooltips": {
+    "save": "Enregistrer les modifications",
+    "delete": "Supprimer l'élément",
+    "edit": "Modifier l'élément",
+    "print": "Imprimer le document",
+    "export": "Exporter les données",
+    "help": "Obtenir de l'aide"
+  }
+} 

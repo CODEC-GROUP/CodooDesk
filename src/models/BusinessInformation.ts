@@ -134,6 +134,15 @@ class BusinessInformation extends Model<BusinessInformationAttributes> implement
       foreignKey: 'businessId',
       as: 'employees'
     });
+    // Removing non-existent model associations:
+    // this.hasMany(models.AnalyticsReport, {
+    //   foreignKey: 'businessId',
+    //   as: 'analytics'
+    // });
+    // this.hasMany(models.BusinessGoal, {
+    //   foreignKey: 'businessId',
+    //   as: 'goals'
+    // });
   }
 }
 

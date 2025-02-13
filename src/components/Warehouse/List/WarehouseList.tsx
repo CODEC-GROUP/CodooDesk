@@ -25,6 +25,7 @@ import { DeleteConfirmationModal } from '@/components/Shared/ui/Modal/delete-con
 import { Card, CardContent } from "@/components/Shared/ui/card"
 import AddWarehouse from '../Form/AddWarehouse'
 import { InventoryList } from '@/components/Inventory/InventoryList/Inventory-list'
+import { useAppTranslation } from '@/hooks/useAppTranslation'
 
 type WarehouseItem = {
   id: string
@@ -41,12 +42,19 @@ const warehouseData: WarehouseItem[] = [
 ]
 
 export function WarehouseList() {
+  const { t } = useAppTranslation()
   const [warehouses, setWarehouses] = useState<WarehouseItem[]>(warehouseData)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<string | null>(null)
   const [showAddWarehouse, setShowAddWarehouse] = useState(false)
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
+
+  const statusTranslations = {
+    Low: t('warehouse.status.low'),
+    Medium: t('warehouse.status.medium'),
+    High: t('warehouse.status.high')
+  };
 
   const toggleItemSelection = (itemId: string) => {
     setSelectedItems(prev =>

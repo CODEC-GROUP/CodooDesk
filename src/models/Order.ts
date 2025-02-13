@@ -73,7 +73,10 @@ class Order extends Model<OrderAttributes> implements OrderAttributes {
     this.belongsTo(models.Sales, { foreignKey: 'saleId', as: 'sale' });
     this.hasOne(models.Return, { foreignKey: 'orderId', as: 'return' });
     this.belongsTo(models.Inventory, { foreignKey: 'inventoryId', as: 'inventory' });
-    this.belongsTo(models.Product, { foreignKey: 'product_id', as: 'product' });
+    this.belongsTo(models.Product, {
+      foreignKey: 'product_id',
+      as: 'product'
+    });
   }
 }
 

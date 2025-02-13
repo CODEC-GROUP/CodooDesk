@@ -30,13 +30,47 @@ interface Business {
   shops?: Array<any>;
 }
 
+interface Shop {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  contactInfo: any;
+  manager: string;
+  managerId: string;
+  businessId: string;
+  location?: {
+    address: string;
+    city: string;
+    country: string;
+    region: string;
+    postalCode?: string;
+  };
+  operatingHours: any;
+  employees?: Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+  }>;
+}
+
 interface AuthResponse {
   success: boolean;
-  user?: User;
-  business?: Business;
   message?: string;
-  shopId?: string;
+  user?: {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    locationId?: string;
+    isActive: boolean;
+  };
+  business?: Business | null;
+  shops?: Shop[];
+  shop?: Shop;
   isSetupComplete?: boolean;
+  token?: string;
 }
 
 interface LogoutResponse {
@@ -69,17 +103,19 @@ interface AuthLayoutContextType {
   isAuthenticated: boolean;
   user: User | null;
   business: Business | null;
-  setupAccount: (setupData: {
-    businessData: any;
-    locationData: any;
-    shopData: any;
-    userId?: string;
-  }) => Promise<{ success: boolean; message?: string }>;
+  currentShopId: string | null;
+  availableShops: Array<{
+    id: string;
+    name: string;
+    type: string;
+  }> | null;
+  setCurrentShop: (shopId: string) => void;
+  setupAccount: (setupData: any) => Promise<{ success: boolean; message?: string }>;
   checkSetupStatus: () => Promise<boolean>;
-  login: (email: string, password: string) => Promise<{ success: boolean; message?: string; user?: User; business?: Business }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   updateUser: (userData: Partial<User>) => void;
-  register: (userData: { username: string; email: string; password: string }) => Promise<{ success: boolean; message?: string; user?: User; business?: Business }>;
+  register: (userData: any) => Promise<{ success: boolean; message?: string }>;
   checkAuth: () => Promise<void>;
 }
 
@@ -101,51 +137,80 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [business, setBusiness] = useState<Business | null>(null);
+  const [currentShopId, setCurrentShopId] = useState<string | null>(null);
+  const [availableShops, setAvailableShops] = useState<Array<{
+    id: string;
+    name: string;
+    type: string;
+  }> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
+  const setCurrentShop = (shopId: string) => {
+    setCurrentShopId(shopId);
+    localStorage.setItem('currentShopId', shopId);
+  };
+
   const login = async (email: string, password: string) => {
     try {
-      const response = await safeIpcInvoke<AuthResponse>('auth:login', {
-        email,
-        password
-      }, { success: false });
+      console.log('[Auth] Starting login process...');
+      console.log('[Auth] Checking window.electron availability:', !!window.electron);
+      
+      const response = await safeIpcInvoke<AuthResponse>('auth:login', { email, password });
 
+      console.log('[Auth] Login response received:', {
+        success: response?.success,
+        hasUser: !!response?.user,
+        hasBusiness: !!response?.business,
+        error: response?.message
+      });
+      
       if (response?.success && response.user) {
-        console.log('Login Response:', response);
-        console.log('User Data:', response.user);
-        
-        // Always update localStorage first
+        // Unified shop handling for admin/shop_owner
+        if (response.shops) {
+          setAvailableShops(response.shops);
+          localStorage.setItem('availableShops', JSON.stringify(response.shops));
+        }
+
+        // Common data storage
         localStorage.setItem('user', JSON.stringify(response.user));
+        localStorage.setItem('isAuthenticated', 'true');
+        
         if (response.business) {
           localStorage.setItem('business', JSON.stringify(response.business));
         }
-        if (response.shopId) {
-          localStorage.setItem('currentShopId', response.shopId);
-        }
 
-        // Then update state
+        // Unified state update
         setIsAuthenticated(true);
         setUser(response.user);
         setBusiness(response.business || null);
-        
-        console.log('Updated User State:', user);
-        console.log('LocalStorage User:', JSON.parse(localStorage.getItem('user') || '{}'));
-        
+
         toast({
           title: "Success",
           description: "Logged in successfully",
         });
 
+        // Navigation logic
         setTimeout(() => {
-          if (!response.isSetupComplete) {
-            router.push('/account-setup');
-          } else {
-            router.push('/dashboard');
+          if (response.user?.role === 'admin') {
+            router.push('/admin/dashboard');
           }
-        }, 100);
+          else if (response.user?.role === 'shop_owner') {
+            response.isSetupComplete ? router.push('/dashboard') : router.push('/account-setup');
+          }
+          else {
+            response.shop ? router.push('/dashboard') : router.push('/shop-selection');
+          }
+        }, 1000);
 
-        return { success: true, user: response.user, business: response.business };
+        return {
+          success: true,
+          user: response.user,
+          business: response.business,
+          shopId: response.shop?.id,
+          isSetupComplete: response.isSetupComplete,
+          token: response.token
+        };
       }
       
       toast({
@@ -166,15 +231,19 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   };
 
   const handleLogout = () => {
+    console.log('Logging out, clearing all state and storage');
+    // Clear all state
     setUser(null);
     setBusiness(null);
     setIsAuthenticated(false);
+    setAvailableShops(null);
+    setCurrentShopId(null);
+    
+    // Clear all storage in one go
     localStorage.clear();
+    
+    // Redirect to login
     router.push('/auth/login');
-    toast({
-      title: "Success",
-      description: "Logged out successfully",
-    });
   };
 
   const updateUser = async (userData: Partial<User>) => {
@@ -213,17 +282,20 @@ export function AuthLayout({ children }: AuthLayoutProps) {
     }
   };
 
-  const register = async (userData: { username: string; email: string; password: string }) => {
+  const register = async (userData: any) => {
     try {
       const response = await safeIpcInvoke<AuthResponse>('auth:register', userData, { success: false });
 
       if (response?.success && response.user) {
+        // Save data to localStorage first
+        localStorage.setItem('user', JSON.stringify(response.user));
+        localStorage.setItem('isAuthenticated', 'true');
+        
+        // Then update state
         setIsAuthenticated(true);
         setUser(response.user);
-        setBusiness(response.business || null);
-        
-        localStorage.setItem('user', JSON.stringify(response.user))
-        
+        setBusiness(null); // New user won't have business yet
+
         toast({
           title: "Success", 
           description: "Registration successful",
@@ -232,7 +304,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         console.log('Registration successful, navigating to account setup...');
         
         router.push('/account-setup');
-        return { success: true, user: response.user, business: response.business };
+        return { success: true, user: response.user };
       }
 
       toast({
@@ -252,11 +324,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
     }
   };
 
-  const setupAccount = async (setupData: {
-    businessData: any;
-    locationData: any;
-    shopData: any;
-  }) => {
+  const setupAccount = async (setupData: any) => {
     try {
       if (!user?.id) {
         throw new Error('User not authenticated');
@@ -331,36 +399,59 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       setIsLoading(true);
       const storedUser = localStorage.getItem('user');
       const storedBusiness = localStorage.getItem('business');
+      const isAuthenticated = localStorage.getItem('isAuthenticated');
+      const storedShops = localStorage.getItem('availableShops');
+      const currentShopId = localStorage.getItem('currentShopId');
       
-      if (storedUser) {
+      // Log what we found in localStorage
+      console.log('Retrieved auth data from localStorage:', {
+        hasUser: !!storedUser,
+        hasBusiness: !!storedBusiness,
+        isAuthenticated,
+        hasShops: !!storedShops,
+        currentShopId
+      });
+      
+      if (storedUser && isAuthenticated === 'true') {
         const parsedUser = JSON.parse(storedUser);
+        
+        // Simple auth check just to validate user exists
+        const sessionValid = await safeIpcInvoke<{ success: boolean, isAuthenticated: boolean }>('auth:check', 
+          { userId: parsedUser.id },
+          { success: false, isAuthenticated: false }
+        );
+
+        if (!sessionValid?.success || !sessionValid?.isAuthenticated) {
+          console.log('Session invalid, logging out');
+          handleLogout();
+          return;
+        }
+
+        const parsedBusiness = storedBusiness ? JSON.parse(storedBusiness) : null;
+        const parsedShops = storedShops ? JSON.parse(storedShops) : null;
+        
+        // Log parsed data
+        console.log('Parsed auth data:', {
+          hasUser: !!parsedUser,
+          hasBusiness: !!parsedBusiness,
+          hasShops: !!parsedShops,
+          currentShopId
+        });
+
+        // Set all state at once to avoid race conditions
         setUser(parsedUser);
+        setBusiness(parsedBusiness);
         setIsAuthenticated(true);
-        
-        if (storedBusiness) {
-          const parsedBusiness = JSON.parse(storedBusiness);
-          setBusiness(parsedBusiness);
-        }
-      } else {
-        setIsAuthenticated(false);
-        setUser(null);
-        setBusiness(null);
-        
-        const authPages = ['/auth/login', '/auth/register', '/account-setup'];
-        if (!authPages.includes(window.location.pathname)) {
-          router.push('/auth/login');
-        }
+        setAvailableShops(parsedShops);
+        setCurrentShopId(currentShopId);
+        return;
       }
+
+      console.log('No valid auth data found, logging out');
+      handleLogout();
     } catch (error) {
       console.error('Auth check failed:', error);
-      setIsAuthenticated(false);
-      setUser(null);
-      setBusiness(null);
-      
-      const authPages = ['/auth/login', '/auth/register', '/account-setup'];
-      if (!authPages.includes(window.location.pathname)) {
-        router.push('/auth/login');
-      }
+      handleLogout();
     } finally {
       setIsLoading(false);
     }
@@ -371,15 +462,37 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   }, []);
 
   useEffect(() => {
-    if (user) {
+    if (isAuthenticated && user) {
+      // Log what we're persisting
+      console.log('Persisting auth state:', {
+        isAuthenticated,
+        user,
+        business,
+        availableShops,
+        currentShopId
+      });
+
+      localStorage.setItem('isAuthenticated', 'true');
       localStorage.setItem('user', JSON.stringify(user));
+      if (business) {
+        localStorage.setItem('business', JSON.stringify(business));
+      }
+      if (availableShops) {
+        localStorage.setItem('availableShops', JSON.stringify(availableShops));
+      }
+      if (currentShopId) {
+        localStorage.setItem('currentShopId', currentShopId);
+      }
     }
-  }, [user]);
+  }, [isAuthenticated, user, business, availableShops, currentShopId]);
 
   const value = {
     isAuthenticated,
     user,
     business,
+    currentShopId,
+    availableShops,
+    setCurrentShop,
     setupAccount,
     checkSetupStatus,
     login,

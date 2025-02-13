@@ -18,8 +18,14 @@ export interface StockMovementAttributes {
   transaction_reference: string | null;
   cost_per_unit: number;
   total_cost: number;
+  adjustment_reason?: string | null;
+  physical_count?: number | null;
+  system_count?: number | null;
+  discrepancy?: number | null;
+  adjusted_by_user_id?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
+  reference?: string | number;
 }
 
 class StockMovement extends Model<StockMovementAttributes> implements StockMovementAttributes {
@@ -38,6 +44,13 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
   public total_cost!: number;
   public createdAt?: Date;
   public updatedAt?: Date;
+
+  // Add new fields for tracking adjustments
+  public adjustment_reason!: string | null;
+  public physical_count!: number | null;
+  public system_count!: number | null;
+  public discrepancy!: number | null;
+  public adjusted_by_user_id!: string | null;
 
   static initModel(sequelize: Sequelize): typeof StockMovement {
     return this.init(
@@ -112,6 +125,30 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           type: DataTypes.DECIMAL(10, 2),
           allowNull: false,
           defaultValue: 0,
+        },
+        adjustment_reason: {
+          type: DataTypes.STRING,
+          allowNull: true,
+        },
+        physical_count: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        system_count: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        discrepancy: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        adjusted_by_user_id: {
+          type: DataTypes.UUID,
+          allowNull: true,
+          references: {
+            model: 'User',
+            key: 'id',
+          },
         },
       },
       {

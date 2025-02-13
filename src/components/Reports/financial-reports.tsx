@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent } from "@/components/Shared/ui/card"
 import { Button } from "@/components/Shared/ui/button"
 //import { Input } from "@/components/ui/input"
@@ -10,47 +10,22 @@ import { ArrowDown, ArrowUp, DollarSign, ShoppingCart, Users, CreditCard } from 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { PieChart, Pie, Cell } from 'recharts'
 import { BarChart, Bar } from 'recharts'
+import { useDashboard } from '@/hooks/useDashboard'
+import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
+import { LoadingSpinner } from '@/components/Shared/ui/LoadingSpinner'
+import { ErrorAlert } from '@/components/Shared/ui/ErrorAlert'
+import { safeIpcInvoke } from '@/lib/ipc'
+import { DASHBOARD_CHANNELS } from '@/constants/ipcChannels'
+import { Shop } from '@/types/Shop'
 
-// Mock data
-const financialData = {
-  totalRevenue: 100000,
-  totalOrders: 1056,
-  inventoryLevels: 48,
-  totalExpenses: 5420,
+interface FinanceOverview {
+  total_income: number;
+  totalOrders: number;
+  totalItems: number;
+  total_expenses: number;
+  revenue_growth: number;
+  expense_growth: number;
 }
-
-const monthlyData = [
-  { name: 'Jan', income: 20000, expenses: 15000 },
-  { name: 'Feb', income: 22000, expenses: 16000 },
-  { name: 'Mar', income: 25000, expenses: 18000 },
-  { name: 'Apr', income: 27000, expenses: 19000 },
-  { name: 'May', income: 30000, expenses: 22000 },
-  { name: 'Jun', income: 32000, expenses: 24000 },
-]
-
-const expenseCategories = [
-  { name: 'Salaries', value: 80000 },
-  { name: 'Rent', value: 30000 },
-  { name: 'Utilities', value: 20000 },
-  { name: 'Supplies', value: 30000 },
-  { name: 'Marketing', value: 20000 },
-]
-
-const topIncomeSources = [
-  { name: 'Product Sales', value: 150000 },
-  { name: 'Services', value: 80000 },
-  { name: 'Subscriptions', value: 20000 },
-]
-
-const recentTransactions = [
-  { id: 1, date: '2023-05-01', description: 'Product Sale', amount: 5000, type: 'income' },
-  { id: 2, date: '2023-05-02', description: 'Office Rent', amount: 2500, type: 'expense' },
-  { id: 3, date: '2023-05-03', description: 'Consulting Service', amount: 3000, type: 'income' },
-  { id: 4, date: '2023-05-04', description: 'Utility Bill', amount: 500, type: 'expense' },
-  { id: 5, date: '2023-05-05', description: 'Product Sale', amount: 4000, type: 'income' },
-]
-
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8']
 
 // Define an interface for the props
 interface StatCardProps {
@@ -85,15 +60,192 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, color, tr
   </Card>
 )
 
+// Add before FinanceDashboardResponse
+interface FinanceData {
+  overview: {
+    total_income: number;
+    totalOrders: number;
+    totalItems: number;
+    total_expenses: number;
+    revenue_growth: number;
+    expense_growth: number;
+  };
+  monthlyData: Array<{
+    name: string;
+    income: number;
+    expenses: number;
+  }>;
+  expenseCategories: Array<{
+    name: string;
+    value: number;
+  }>;
+  topIncomeSources: Array<{
+    name: string;
+    value: number;
+  }>;
+  recentTransactions: Array<{
+    id: string;
+    date: string;
+    description: string;
+    amount: number;
+    type: 'income' | 'expense';
+  }>;
+}
+
+interface FinanceDashboardResponse {
+  success: boolean;
+  message?: string;
+  data?: FinanceData | null;
+}
+
+// Add near the top with other constants
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+
+interface ShopResponse {
+  success: boolean;
+  shops: Shop[];
+}
+
 export function FinancialReports() {
-  const [dateRange, setDateRange] = useState('This Month')
+  const { business, user } = useAuthLayout()
+  const [selectedShopId, setSelectedShopId] = useState<string | null>(null)
+  const [availableShops, setAvailableShops] = useState<Shop[]>([])
+  const [dateRange, setDateRange] = useState<[Date, Date]>([
+    new Date(new Date().setDate(1)), // First day of current month
+    new Date()
+  ])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Similar shop fetching logic as Dashboard
+  useEffect(() => {
+    const fetchShops = async () => {
+      if (!business?.id || !user) return
+      
+      try {
+        const response = await safeIpcInvoke<ShopResponse>('entities:shop:get-all', {
+          businessId: business.id,
+          userId: user.id,
+          role: user.role
+        }, { success: false, shops: [] })
+
+        if (response?.success) {
+          setAvailableShops(response.shops)
+          if (response.shops.length === 1) {
+            setSelectedShopId(response.shops[0].id)
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching shops:', err)
+      }
+    }
+
+    fetchShops()
+  }, [business?.id, user])
+
+  const [financeData, setFinanceData] = useState<FinanceData | null>(null)
+
+  // Add data refresh functionality
+  const refreshData = useCallback(async () => {
+    if (!business?.id) return
+    
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Determine shop filter based on role and selection
+      const shopFilter = user?.role === 'admin' || user?.role === 'owner' 
+        ? { shopIds: availableShops.map(shop => shop.id) }
+        : { shopId: selectedShopId }
+
+      const response = await safeIpcInvoke<FinanceDashboardResponse>(
+        DASHBOARD_CHANNELS.GET_FINANCE_DASHBOARD,
+        {
+          businessId: business.id,
+          ...shopFilter,
+          dateRange: {
+            start: dateRange[0].toISOString(),
+            end: dateRange[1].toISOString()
+          }
+        },
+        { success: false, data: null, message: '' }
+      )
+
+      if (!response?.success) {
+        throw new Error(response?.message || 'Failed to fetch finance data')
+      }
+
+      setFinanceData(response.data || null)
+    } catch (err) {
+      console.error('Error fetching finance data:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch financial data')
+    } finally {
+      setLoading(false)
+    }
+  }, [business?.id, selectedShopId, dateRange, user?.role, availableShops])
+
+  // Add auto-refresh interval
+  useEffect(() => {
+    refreshData()
+    const interval = setInterval(refreshData, 300000) // Refresh every 5 minutes
+    return () => clearInterval(interval)
+  }, [refreshData])
+
+  // Add export functionality
+  const handleExport = async () => {
+    try {
+      await safeIpcInvoke(
+        'finance:export-report',
+        {
+          businessId: business?.id,
+          dateRange,
+          data: financeData
+        },
+        { success: false, message: '' }
+      )
+    } catch (err) {
+      console.error('Export failed:', err)
+      // Show error toast or message
+    }
+  }
+
+  if (loading) return <LoadingSpinner />
+  if (error) return <ErrorAlert message={error} />
+  if (!financeData) return null
 
   return (
     <div className="container mx-auto p-6 opacity-90 blur-sm">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Financial Reports</h1>
         <div className="flex gap-2">
-          <Select value={dateRange} onValueChange={setDateRange}>
+          <Select 
+            value="This Month"
+            onValueChange={(value) => {
+              const now = new Date();
+              let start = new Date();
+              let end = new Date();
+
+              switch (value) {
+                case "This Week":
+                  start = new Date(now.setDate(now.getDate() - now.getDay()));
+                  end = new Date();
+                  break;
+                case "This Month":
+                  start = new Date(now.getFullYear(), now.getMonth(), 1);
+                  end = new Date();
+                  break;
+                case "This Quarter":
+                  start = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+                  end = new Date();
+                  break;
+                case "This Year":
+                  start = new Date(now.getFullYear(), 0, 1);
+                  end = new Date();
+                  break;
+              }
+              setDateRange([start, end]);
+            }}
+          >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Select Date Range" />
             </SelectTrigger>
@@ -104,33 +256,38 @@ export function FinancialReports() {
               <SelectItem value="This Year">This Year</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline">Export</Button>
+          <Button variant="outline" onClick={refreshData}>
+            Refresh
+          </Button>
+          <Button variant="outline" onClick={handleExport}>
+            Export
+          </Button>
         </div>
       </div>
 
       <div className="grid gap-6 mb-8 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total Revenue"
-          value={`${financialData.totalRevenue.toLocaleString()} FCFA`}
+          value={`${financeData.overview.total_income.toLocaleString()} FCFA`}
           icon={DollarSign}
           color="bg-blue-100"
           trend="up"
         />
         <StatCard
           title="Total Orders"
-          value={financialData.totalOrders.toLocaleString()}
+          value={financeData.overview.totalOrders.toLocaleString()}
           icon={ShoppingCart}
           color="bg-green-100"
         />
         <StatCard
           title="Inventory Levels"
-          value={financialData.inventoryLevels.toLocaleString()}
+          value={financeData.overview.totalItems.toLocaleString()}
           icon={Users}
           color="bg-red-100"
         />
         <StatCard
           title="Total expenses"
-          value={`${financialData.totalExpenses.toLocaleString()} FCFA`}
+          value={`${financeData.overview.total_expenses.toLocaleString()} FCFA`}
           icon={CreditCard}
           color="bg-purple-100"
           trend="down"
@@ -142,7 +299,7 @@ export function FinancialReports() {
           <CardContent className="p-6">
             <h3 className="text-lg font-semibold mb-4">Income vs Expenses</h3>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={monthlyData}>
+              <LineChart data={financeData.monthlyData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis />
@@ -160,7 +317,7 @@ export function FinancialReports() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={expenseCategories}
+                  data={financeData.expenseCategories}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -168,7 +325,7 @@ export function FinancialReports() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {expenseCategories.map((entry, index) => (
+                  {financeData.expenseCategories.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -185,7 +342,7 @@ export function FinancialReports() {
           <CardContent className="p-6">
             <h3 className="text-lg font-semibold mb-4">Top Income Sources</h3>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={topIncomeSources}>
+              <BarChart data={financeData.topIncomeSources}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis />
@@ -209,7 +366,7 @@ export function FinancialReports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentTransactions.map((transaction) => (
+                {financeData.recentTransactions.map((transaction) => (
                   <TableRow key={transaction.id}>
                     <TableCell>{transaction.date}</TableCell>
                     <TableCell>{transaction.description}</TableCell>

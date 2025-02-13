@@ -1,0 +1,309 @@
+{
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "forgotPassword": "Forgot Password",
+    "resetPassword": "Reset Password",
+    "verifyEmail": "Verify Email",
+    "twoFactor": "Two-Factor Authentication"
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "pos": "Point of Sale",
+    "products": "Products",
+    "categories": "Categories",
+    "suppliers": "Suppliers",
+    "customers": "Customers",
+    "employees": "Employees",
+    "orders": "Orders",
+    "returns": "Returns",
+    "reports": "Reports"
+  },
+  "reports": {
+    "expenses": "Expenses",
+    "income": "Income",
+    "performance": "Performance",
+    "treasury": "Treasury",
+    "financialReports": "Financial Reports"
+  },
+  "products": {
+    "addProduct": "Add Product",
+    "productList": "Product List",
+    "categories": "Categories",
+    "suppliers": "Suppliers"
+  },
+  "customers": {
+    "addCustomer": "Add Customer",
+    "customerList": "Customer List",
+    "customerDetails": "Customer Details",
+    "orders": "Orders",
+    "spent": "Total Spent"
+  },
+  "orders": {
+    "addOrder": "Add Order",
+    "orderList": "Order List",
+    "orderDetails": "Order Details",
+    "returns": "Returns"
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General Settings",
+    "shops": "Shop Settings",
+    "profile": {
+      "title": "Profile Details",
+      "description": "Enter your profile information",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "email": "Email Address",
+      "phone": "Phone Number"
+    },
+    "notifications": {
+      "title": "Notification Preferences",
+      "description": "Manage your notification settings",
+      "offers": "Personalized Offers",
+      "features": "New Features",
+      "security": "Security and Billing"
+    },
+    "security": {
+      "title": "Security Settings",
+      "description": "Manage your account security",
+      "currentPassword": "Current Password",
+      "newPassword": "New Password",
+      "confirmPassword": "Confirm New Password",
+      "twoFactor": "Two-Factor Authentication",
+      "loginHistory": "Login History"
+    },
+    "units": {
+      "title": "Product Units Settings",
+      "description": "Manage units for different product types",
+      "weight": "Weight Unit",
+      "volume": "Volume Unit",
+      "length": "Length Unit"
+    }
+  },
+  "common": {
+    "actions": {
+      "add": "Add",
+      "edit": "Edit",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "save": "Save Changes",
+      "close": "Close",
+      "export": "Export",
+      "search": "Search",
+      "filter": "Filter",
+      "transfer": "Transfer",
+      "confirm": "Confirm",
+      "back": "Back"
+    }
+  },
+  "inventory": {
+    "stockMovement": {
+      "title": "Stock Movement Tracking",
+      "addMovement": "Add Stock Movement",
+      "movementType": "Movement Type",
+      "quantity": "Quantity",
+      "date": "Date",
+      "direction": "Inbound/Outbound",
+      "reason": "Reason",
+      "destination": "Destination",
+      "performedBy": "Performed By"
+    }
+  },
+  "setup": {
+    "accountSetup": "Account Setup",
+    "businessSetup": "Business Setup"
+  },
+  "messages": {
+    "loading": "Loading...",
+    "noData": "No data available",
+    "error": "An error occurred",
+    "success": "Operation successful"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Dashboard",
+      "welcome": "Welcome to your dashboard"
+    },
+    "pos": {
+      "title": "Point of Sale",
+      "catalog": "Product Catalog"
+    },
+    "customers": {
+      "title": "Customers",
+      "view": {
+        "list": "Customer List",
+        "details": "Customer Details",
+        "add": "Add New Customer"
+      },
+      "noCustomers": "No customers found"
+    },
+    "employees": {
+      "title": "Employees",
+      "view": {
+        "list": "Employee List",
+        "details": "Employee Details",
+        "add": "Add New Employee",
+        "edit": "Edit Employee"
+      },
+      "noEmployees": "No employees found"
+    },
+    "orders": {
+      "title": "Orders",
+      "view": {
+        "list": "Order List",
+        "details": "Order Details",
+        "add": "New Order"
+      },
+      "returns": {
+        "title": "Returns",
+        "list": "Returns List",
+        "add": "New Return"
+      },
+      "noOrders": "No orders found"
+    },
+    "products": {
+      "title": "Products",
+      "view": {
+        "list": "Product List",
+        "categories": "Categories",
+        "suppliers": "Suppliers"
+      },
+      "noProducts": "No products found"
+    },
+    "reports": {
+      "title": "Reports",
+      "sections": {
+        "expenses": "Expenses Report",
+        "income": "Income Report",
+        "performance": "Performance Report",
+        "treasury": "Treasury Report"
+      },
+      "noData": "No report data available"
+    },
+    "auth": {
+      "login": {
+        "title": "Login",
+        "welcome": "Welcome back",
+        "emailLabel": "Email",
+        "passwordLabel": "Password",
+        "rememberMe": "Remember me",
+        "forgotPassword": "Forgot password?",
+        "submit": "Sign in",
+        "noAccount": "Don't have an account?"
+      },
+      "register": {
+        "title": "Register",
+        "welcome": "Create your account",
+        "nameLabel": "Full name",
+        "emailLabel": "Email",
+        "passwordLabel": "Password",
+        "confirmPasswordLabel": "Confirm password",
+        "submit": "Sign up",
+        "haveAccount": "Already have an account?"
+      },
+      "forgotPassword": {
+        "title": "Forgot Password",
+        "description": "Enter your email to reset your password",
+        "emailLabel": "Email",
+        "submit": "Send reset link",
+        "backToLogin": "Back to login"
+      },
+      "resetPassword": {
+        "title": "Reset Password",
+        "description": "Enter your new password",
+        "submit": "Reset password"
+      },
+      "verifyEmail": {
+        "title": "Verify Email",
+        "description": "Please check your email for verification link",
+        "resend": "Resend verification email"
+      },
+      "twoFactor": {
+        "title": "Two-Factor Authentication",
+        "description": "Enter the code sent to your device",
+        "codeLabel": "Verification code",
+        "submit": "Verify"
+      }
+    }
+  },
+  "business": {
+    "setup": {
+      "title": "Business Setup",
+      "companyName": "Company Name",
+      "companyType": "Company Type",
+      "taxId": "Tax ID",
+      "address": "Business Address",
+      "phone": "Business Phone",
+      "email": "Business Email",
+      "currency": "Default Currency",
+      "timezone": "Timezone"
+    }
+  },
+  "validation": {
+    "required": "This field is required",
+    "email": "Please enter a valid email",
+    "minLength": "Must be at least {{count}} characters",
+    "maxLength": "Must be less than {{count}} characters",
+    "passwordMatch": "Passwords must match",
+    "invalidCredentials": "Invalid email or password",
+    "phoneNumber": "Please enter a valid phone number"
+  },
+  "print": {
+    "receipt": "Receipt",
+    "invoice": "Invoice",
+    "report": "Report",
+    "preview": "Print Preview",
+    "download": "Download PDF"
+  },
+  "status": {
+    "active": "Active",
+    "inactive": "Inactive",
+    "pending": "Pending",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+    "processing": "Processing",
+    "failed": "Failed"
+  },
+  "errors": {
+    "404": {
+      "title": "Page Not Found",
+      "message": "The page you're looking for doesn't exist or has been moved"
+    },
+    "500": {
+      "title": "Server Error",
+      "message": "Something went wrong on our end"
+    },
+    "offline": {
+      "title": "No Internet Connection",
+      "message": "Please check your internet connection and try again"
+    }
+  },
+  "dateTime": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "tomorrow": "Tomorrow",
+    "formats": {
+      "short": "MM/DD/YYYY",
+      "long": "MMMM D, YYYY",
+      "time": "HH:mm",
+      "dateTime": "MM/DD/YYYY HH:mm"
+    }
+  },
+  "currency": {
+    "formats": {
+      "USD": "${amount}",
+      "EUR": "€{amount}",
+      "GBP": "£{amount}",
+      "XAF": "FCFA {amount}"
+    }
+  },
+  "tooltips": {
+    "save": "Save changes",
+    "delete": "Delete item",
+    "edit": "Edit item",
+    "print": "Print document",
+    "export": "Export data",
+    "help": "Get help"
+  }
+} 

@@ -8,10 +8,18 @@ import serve from 'electron-serve';
 
 try {
   if (isDev) {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
     import('electron-reloader').then(module => {
       module.default(module, {
         debug: true,
-        watchRenderer: true
+        watchRenderer: true,
+        path: path.join(__dirname, '..'),
+        ignore: [
+          'node_modules',
+          'dist',
+          '.git',
+          'data'
+        ]
       });
     });
   }
@@ -19,11 +27,12 @@ try {
   console.log('Error enabling hot reload:', err);
 }
 
-import { initDatabase } from '../dist/src/services/database/index.js';
+import { sequelize, initDatabase } from '../dist/src/services/database/index.js';
 import { registerInventoryHandlers } from '../dist/src/services/api/inventory/inventoryendpoints.js';
 import { registerInventoryItemHandlers } from '../dist/src/services/api/inventory/InventoryItemService.js';
 import { registerCategoryHandlers } from '../dist/src/services/api/inventory/categoryendpoints.js';
 import { registerProductHandlers } from '../dist/src/services/api/inventory/productendpoints.js';
+import { registerVariantHandlers } from '../dist/src/services/api/inventory/variantEndpoints.js';
 import { registerSalesHandlers } from '../dist/src/services/api/sales/SalesService.js';
 import { registerExpenseHandlers } from '../dist/src/services/api/finance/expenseendpoints.js';
 import { registerIncomeHandlers } from '../dist/src/services/api/finance/incomeendpoints.js';
@@ -46,6 +55,12 @@ import { registerEmployeeHandlers } from '../dist/src/services/api/entities/Empl
 import { registerCustomerHandlers } from '../dist/src/services/api/entities/customersendpoints.js';
 import { registerOhadaCodeHandlers } from '../dist/src/services/api/finance/ohadacodeendpoints.js';
 import { registerPrinterHandlers } from '../dist/src/services/api/printer/printerManagement.js';
+import { registerBusinessSettingsHandlers } from '../dist/src/services/api/settings/BusinessSettingsService.js';
+import { registerSettingsHandlers } from '../dist/src/services/api/settings/SettingsService.js';
+import { registerFinanceDashboardHandlers } from '../dist/src/services/api/dashboard/FinanceDashboardService.js';
+import { registerInventoryDashboardHandlers } from '../dist/src/services/api/dashboard/InventoryDashboardService.js';
+import { registerCustomerDashboardHandlers } from '../dist/src/services/api/dashboard/CustomerDashboardService.js';
+import { registerDashboardHandlers } from '../dist/src/services/api/dashboard/DashboardService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,37 +103,10 @@ async function waitForDatabaseService() {
   await new Promise(resolve => setTimeout(resolve, INITIAL_DB_DELAY));
 }
 
-async function initDatabaseWithRetry(retryCount = 0) {
-  try {
-    // On first attempt, wait for database service
-    if (retryCount === 0) {
-      await waitForDatabaseService();
-    }
+const NAVIGATION_COOLDOWN = 1000; // 1 second cooldown
 
-    const dbInitialized = await initDatabase();
-    if (!dbInitialized) {
-      throw new Error('Database initialization returned false');
-    }
-    console.log('Database initialized successfully');
-    return true;
-  } catch (error) {
-    console.error(`Database initialization attempt ${retryCount + 1} failed:`, error);
-    
-    if (retryCount < MAX_DB_INIT_RETRIES) {
-      const delay = DB_INIT_RETRY_DELAY * (retryCount + 1); // Progressive delay
-      console.log(`Retrying database initialization in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return initDatabaseWithRetry(retryCount + 1);
-    }
-    
-    // If all retries fail, show a user-friendly error dialog
-    dialog.showErrorBox(
-      'Database Connection Error',
-      'Unable to connect to the database. Please ensure your system has completely started and try launching the application again.'
-    );
-    throw new Error(`Failed to initialize database after ${MAX_DB_INIT_RETRIES} attempts: ${error.message}`);
-  }
-}
+// Track if handlers have been registered
+let handlersRegistered = false;
 
 async function createWindow() {
   try {
@@ -140,7 +128,16 @@ async function createWindow() {
     splashWindow.center();
 
     // Initialize database with retry mechanism
-    await initDatabaseWithRetry();
+    const dbInitSuccess = await initDatabase();
+    if (!dbInitSuccess) {
+      throw new Error('Database initialization failed');
+    }
+
+    // Before populating data, add:
+    const ohadaTableExists = await sequelize.getQueryInterface().describeTable('OhadaCodes');
+    if (!ohadaTableExists) {
+      throw new Error('OhadaCodes table not created during initialization');
+    }
 
     // Check if data already exists before populating
     const existingCodes = await OhadaCode.findOne();
@@ -165,11 +162,11 @@ async function createWindow() {
         nodeIntegration: false,
         sandbox: false,
         contextIsolation: true,
-        preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
+        preload: path.join(__dirname, 'preload.cjs'),
         webSecurity: false,
         allowRunningInsecureContent: false,
         devTools: true
-      },
+      }
     });
 
     // Set security headers
@@ -179,6 +176,8 @@ async function createWindow() {
           ...details.responseHeaders,
           'Content-Security-Policy': [
             "default-src 'self' 'unsafe-inline' 'unsafe-eval' file: data:;",
+            "style-src 'self' 'unsafe-inline';",
+            "font-src 'self' data:;",
             "img-src 'self' file: data: https: http: file://*;"
           ]
         }
@@ -192,30 +191,41 @@ async function createWindow() {
       }
     });
 
-    // Register all IPC handlers
-    registerInventoryHandlers();
-    registerInventoryItemHandlers();
-    registerCategoryHandlers();
-    registerProductHandlers();
-    registerSalesHandlers();
-    registerExpenseHandlers();
-    registerIncomeHandlers();
-    registerLocationHandlers();
-    registerShopHandlers();
-    registerSupplierHandlers();
-    registerInvoiceHandlers();
-    registerPaymentHandlers();
-    registerReceiptHandlers();
-    registerOrderManagementHandlers();
-    registerReturnHandlers();
-    registerSetupHandlers();
-    registerFileHandlers();
-    registerPOSHandlers();
-    registerAuthHandlers();
-    registerEmployeeHandlers();
-    registerCustomerHandlers();
-    registerOhadaCodeHandlers();
-    registerPrinterHandlers();
+    // Register all IPC handlers only once
+    if (!handlersRegistered) {
+      registerAuthHandlers(); // Add authentication handlers
+      registerInventoryHandlers();
+      registerInventoryItemHandlers();
+      registerCategoryHandlers();
+      registerProductHandlers();
+      registerVariantHandlers();
+      registerSalesHandlers();
+      registerExpenseHandlers();
+      registerIncomeHandlers();
+      registerLocationHandlers();
+      registerShopHandlers();
+      registerSupplierHandlers();
+      registerInvoiceHandlers();
+      registerPaymentHandlers();
+      registerReceiptHandlers();
+      registerOrderManagementHandlers();
+      registerReturnHandlers();
+      registerSetupHandlers();
+      registerFileHandlers();
+      registerPOSHandlers();
+      registerEmployeeHandlers();
+      registerCustomerHandlers();
+      registerOhadaCodeHandlers();
+      registerPrinterHandlers();
+      registerBusinessSettingsHandlers();
+      registerSettingsHandlers();
+      registerFinanceDashboardHandlers();
+      registerInventoryDashboardHandlers();
+      registerCustomerDashboardHandlers();
+      registerDashboardHandlers();
+      
+      handlersRegistered = true;
+    }
 
     // Load the app
     const isDevelopment = process.env.NODE_ENV === 'development';
@@ -270,7 +280,6 @@ async function createWindow() {
 
 let isNavigating = false;
 let lastNavigationTime = 0;
-const NAVIGATION_COOLDOWN = 1000; // 1 second cooldown
 
 async function navigateTo(pagePath) {
   if (!mainWindow) {

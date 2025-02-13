@@ -111,7 +111,7 @@ interface NewExpenseItem {
 }
 
 const Expenses = () => {
-  const { user, business } = useAuthLayout();
+  const { user, business, availableShops } = useAuthLayout();
   const [expenses, setExpenses] = useState<ExpenseAttributes[]>([])
   const [ohadaCodes, setOhadaCodes] = useState<OhadaCodeAttributes[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -152,9 +152,13 @@ const Expenses = () => {
         }
 
         // Fetch expenses with associated OHADA codes
+        const shopFilter = (user?.role !== 'admin' && user?.role !== 'shop_owner')
+          ? { shopId: selectedShopId }
+          : {};
+
         const expensesResponse = await safeIpcInvoke<ExpenseResponse>(
           'finance:expense:get-all',
-          {},
+          shopFilter,
           { success: false }
         );
 
@@ -180,7 +184,7 @@ const Expenses = () => {
     };
 
     fetchData();
-  }, []);
+  }, [user?.role, selectedShopId]);
 
   useEffect(() => {
     let result = [...expenses];
@@ -201,6 +205,16 @@ const Expenses = () => {
     setFilteredExpenses(result);
     setCurrentPage(1);
   }, [expenses, filterValue, searchTerm]);
+
+  useEffect(() => {
+    // Auto-select first available shop for non-admin users
+    if (user?.role !== 'admin' && user?.role !== 'shop_owner') {
+      const defaultShopId = availableShops?.[0]?.id;
+      if (defaultShopId) {
+        setSelectedShopId(defaultShopId);
+      }
+    }
+  }, [user?.role, availableShops]);
 
   const itemsPerPage = 10
   const totalFilteredItems = filteredExpenses.length;
@@ -517,7 +531,7 @@ const Expenses = () => {
                 {/* Shop Selection for admin/shop owner */}
                 {(user?.role === 'admin' || user?.role === 'shop_owner') && business?.shops && business.shops.length > 0 && (
                   <div>
-                    <Label>Shop (Optional)</Label>
+                    <Label>Shop</Label>
                     <Select
                       value={selectedShopId}
                       onValueChange={setSelectedShopId}
@@ -526,7 +540,6 @@ const Expenses = () => {
                         <SelectValue placeholder="Select shop" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="no-shop">No Shop</SelectItem>
                         {business.shops.map((shop: any) => (
                           <SelectItem key={shop.id} value={shop.id}>
                             {shop.name}
@@ -573,25 +586,24 @@ const Expenses = () => {
         <div className="space-y-4">
           {/* Search and Filter Section */}
           <div className="flex items-center py-4">
-            <Select
-              value={filterValue}
-              onValueChange={setFilterValue}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Expenses</SelectItem>
-                {ohadaCodes.map((code: any) => (
-                  <SelectItem 
-                    key={code.dataValues.id} 
-                    value={code.dataValues.id}
-                  >
-                    {code.dataValues.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+              <Select
+                value={filterValue}
+                onValueChange={setFilterValue}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by Shop" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Shops</SelectItem>
+                  {business?.shops?.map((shop: any) => (
+                    <SelectItem key={shop.id} value={shop.id}>
+                      {shop.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Input
               placeholder="Search..."
               value={searchTerm}

@@ -1,59 +1,18 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
 import { Package, ShoppingCart, DollarSign, AlertTriangle, ChevronDown } from 'lucide-react'
 import Image from 'next/image'
-
-const weeklyInventoryData = [
-  { day: 'Mon', count: 320 },
-  { day: 'Tue', count: 450 },
-  { day: 'Wed', count: 380 },
-  { day: 'Thu', count: 470 },
-  { day: 'Fri', count: 540 },
-  { day: 'Sat', count: 460 },
-  { day: 'Sun', count: 400 },
-]
-
-const inventoryValueData = [
-  { time: '4am', May21: 20000, May22: 10000 },
-  { time: '5am', May21: 25000, May22: 15000 },
-  { time: '6am', May21: 18000, May22: 25000 },
-  { time: '7am', May21: 22000, May22: 30000 },
-  { time: '8am', May21: 28000, May22: 35000 },
-  { time: '9am', May21: 30000, May22: 40000 },
-  { time: '10am', May21: 35000, May22: 45000 },
-  { time: '11am', May21: 32000, May22: 50000 },
-  { time: '12pm', May21: 28000, May22: 55000 },
-  { time: '1pm', May21: 38000, May22: 45000 },
-  { time: '2pm', May21: 42000, May22: 50000 },
-  { time: '3pm', May21: 45000, May22: 60000 },
-]
-
-const last7DaysInventoryData = [
-  { day: '12', count: 1000 },
-  { day: '13', count: 1200 },
-  { day: '14', count: 1100 },
-  { day: '15', count: 1300 },
-  { day: '16', count: 1400 },
-  { day: '17', count: 1800 },
-  { day: '18', count: 1600 },
-]
-
-const topSuppliers = [
-  { name: 'Supplier A', items: 52, value: '21,765 XAF' },
-  { name: 'Supplier B', items: 43, value: '18,900 XAF' },
-  { name: 'Supplier C', items: 38, value: '15,600 XAF' },
-  { name: 'Supplier D', items: 34, value: '14,200 XAF' },
-]
-
-const topProducts = [
-  { name: 'Product X', amount: '11,456 XAF', inStock: 195, image: '/placeholder.svg?height=40&width=40' },
-  { name: 'Product Y', amount: '9,456 XAF', inStock: 146, image: '/placeholder.svg?height=40&width=40' },
-  { name: 'Product Z', amount: '8,456 XAF', inStock: 110, image: '/placeholder.svg?height=40&width=40' },
-  { name: 'Product W', amount: '7,456 XAF', inStock: 87, image: '/placeholder.svg?height=40&width=40' },
-]
+import { useDashboard } from '@/hooks/useDashboard'
+import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
+import { LoadingSpinner } from '@/components/Shared/ui/LoadingSpinner'
+import { ErrorAlert } from '@/components/Shared/ui/ErrorAlert'
+import { useQuery } from '@tanstack/react-query'
+import { FilterControls } from './FilterControls'
+import { InventoryTrends } from './InventoryTrends'
+import { InventoryDashboardData } from '@/types/inventory'
 
 const CircularProgressBar = ({ percentage, color }: { percentage: number, color: string }) => (
   <div className="relative w-32 h-32">
@@ -95,8 +54,61 @@ const formatNumber = (num: number): string => {
 }
 
 export function InventoryDashboard() {
+  const { business } = useAuthLayout();
+  const { 
+    inventoryData, 
+    loading, 
+    error, 
+    fetchInventoryDashboard 
+  } = useDashboard();
+
+  const { data: inventoryDataQuery, isLoading, error: queryError } = useQuery<InventoryDashboardData>({
+    queryKey: ['inventory-dashboard', business?.id],
+    queryFn: async () => {
+      if (!business?.id) {
+        throw new Error('No business ID available');
+      }
+      
+      await fetchInventoryDashboard({ businessId: business.id });
+      if (!inventoryData) {
+        throw new Error('No inventory data available');
+      }
+      return inventoryData;
+    },
+    enabled: !!business?.id,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const [filters, setFilters] = useState({
+    dateRange: '7days',
+    category: 'all',
+    status: 'all'
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (queryError) return <ErrorAlert message={queryError.message} />;
+  if (!inventoryDataQuery) return null;
+
+  const {
+    stats,
+    weeklyInventory,
+    inventoryValueOverTime,
+    last7DaysInventory,
+    topSuppliers,
+    topProducts,
+    categoryDistribution,
+    trends
+  } = inventoryDataQuery;
+
   return (
     <div className="p-8 bg-gray-100 min-h-screen">
+      <div className="mb-6">
+        <FilterControls 
+          filters={filters}
+          onFilterChange={setFilters}
+        />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <Card>
           <CardContent className="flex items-center p-6">
@@ -104,9 +116,10 @@ export function InventoryDashboard() {
               <Package className="h-8 w-8 text-blue-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Total Items</p>
-              <h3 className="text-2xl font-bold text-gray-700">{formatNumber(10000)}</h3>
-              <p className="text-sm text-green-500">↑ 5%</p>
+              <p className="text-sm font-medium text-gray-500">Total Products</p>
+              <h3 className="text-2xl font-bold text-gray-700">
+                {stats.total_products}
+              </h3>
             </div>
           </CardContent>
         </Card>
@@ -117,7 +130,7 @@ export function InventoryDashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Items Sold</p>
-              <h3 className="text-2xl font-bold text-gray-700">{formatNumber(1056)}</h3>
+              <h3 className="text-2xl font-bold text-gray-700">{formatNumber(stats.itemsSold)}</h3>
             </div>
           </CardContent>
         </Card>
@@ -128,7 +141,7 @@ export function InventoryDashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Low Stock Items</p>
-              <h3 className="text-2xl font-bold text-gray-700">48</h3>
+              <h3 className="text-2xl font-bold text-gray-700">{stats.lowStockItems}</h3>
             </div>
           </CardContent>
         </Card>
@@ -139,8 +152,10 @@ export function InventoryDashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Inventory Value</p>
-              <h3 className="text-2xl font-bold text-gray-700">{formatNumber(500000)} XAF</h3>
-              <p className="text-sm text-green-500">↑ 8%</p>
+              <h3 className="text-2xl font-bold text-gray-700">
+                {formatNumber(stats.inventoryValue)} XAF
+              </h3>
+              <p className="text-sm text-green-500">↑ {stats.inventoryValueChange}%</p>
             </div>
           </CardContent>
         </Card>
@@ -156,7 +171,7 @@ export function InventoryDashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={weeklyInventoryData}>
+              <BarChart data={weeklyInventory}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
@@ -199,38 +214,31 @@ export function InventoryDashboard() {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={[
-                          { name: 'Electronics', value: 40 },
-                          { name: 'Clothing', value: 30 },
-                          { name: 'Home', value: 30 },
-                        ]}
+                        data={categoryDistribution}
                         dataKey="value"
                         nameKey="name"
                         cx="50%"
                         cy="50%"
                         outerRadius={60}
                       >
-                        <Cell fill="#8B5CF6" />
-                        <Cell fill="#06B6D4" />
-                        <Cell fill="#FBBF24" />
+                        {categoryDistribution.map((entry, index) => (
+                          <Cell key={index} fill={entry.color} />
+                        ))}
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               </div>
               <div className="flex justify-center mt-4 space-x-4">
-                <div className="flex items-center">
-                  <div className="w-3 h-3 bg-purple-500 rounded-full mr-2"></div>
-                  <span className="text-sm">Electronics</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-3 h-3 bg-cyan-500 rounded-full mr-2"></div>
-                  <span className="text-sm">Clothing</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-3 h-3 bg-yellow-400 rounded-full mr-2"></div>
-                  <span className="text-sm">Home</span>
-                </div>
+                {categoryDistribution.map((entry, index) => (
+                  <div key={index} className="flex items-center">
+                    <div
+                      className="w-3 h-3 rounded-full mr-2"
+                      style={{ backgroundColor: entry.color }}
+                    ></div>
+                    <span className="text-sm">{entry.name}</span>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -295,22 +303,26 @@ export function InventoryDashboard() {
           <CardContent>
             <div className="mb-4 flex justify-between">
               <div>
-                <h4 className="text-2xl font-bold">{formatNumber(600000)} XAF</h4>
-                <p className="text-sm text-gray-500">Value on May 22</p>
+                <h4 className="text-2xl font-bold">
+                  {formatNumber(stats.valueOnLatest)} XAF
+                </h4>
+                <p className="text-sm text-gray-500">Value on {stats.latestDate}</p>
               </div>
               <div>
-                <h4 className="text-2xl font-bold">{formatNumber(550000)} XAF</h4>
-                <p className="text-sm text-gray-500">Value on May 21</p>
+                <h4 className="text-2xl font-bold">
+                  {formatNumber(stats.valueOnPrevious)} XAF
+                </h4>
+                <p className="text-sm text-gray-500">Value on {stats.previousDate}</p>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={inventoryValueData}>
+              <LineChart data={inventoryValueOverTime}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" />
                 <YAxis />
                 <Tooltip />
-                <Line type="monotone" dataKey="May21" stroke="#8884d8" />
-                <Line type="monotone" dataKey="May22" stroke="#82ca9d" />
+                <Line type="monotone" dataKey="valueOnPrevious" stroke="#8884d8" />
+                <Line type="monotone" dataKey="valueOnLatest" stroke="#82ca9d" />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
@@ -321,18 +333,24 @@ export function InventoryDashboard() {
           </CardHeader>
           <CardContent>
             <div className="mb-4">
-              <h4 className="text-2xl font-bold">{formatNumber(1259)}</h4>
+              <h4 className="text-2xl font-bold">{formatNumber(stats.itemsAdded)}</h4>
               <p className="text-sm text-gray-500">Items Added</p>
-              <h4 className="text-2xl font-bold mt-2">{formatNumber(2000000)} XAF</h4>
+              <h4 className="text-2xl font-bold mt-2">
+                {formatNumber(stats.valueAdded)} XAF
+              </h4>
               <p className="text-sm text-gray-500">Value Added</p>
             </div>
             <ResponsiveContainer width="100%" height={150}>
-              <BarChart data={last7DaysInventoryData}>
+              <BarChart data={last7DaysInventory}>
                 <Bar dataKey="count" fill="#10B981" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-8">
+        <InventoryTrends data={trends} />
       </div>
     </div>
   )

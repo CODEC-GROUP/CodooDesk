@@ -4,6 +4,9 @@ import Product, { ProductAttributes, ProductInstance } from '../../../models/Pro
 import Shop from '../../../models/Shop.js';
 import Category from '../../../models/Category.js';
 import Supplier from '../../../models/Supplier.js';
+import ProductVariant from '../../../models/ProductVariant.js';
+import PriceHistory from '../../../models/PriceHistory.js';
+import User from '../../../models/User.js';
 import { sequelize } from '../../database/index.js';
 
 // IPC Channel names
@@ -13,7 +16,9 @@ const IPC_CHANNELS = {
   GET_PRODUCT: 'inventory:product:get',
   UPDATE_PRODUCT: 'inventory:product:update',
   DELETE_PRODUCT: 'inventory:product:delete',
-  GET_BY_CATEGORY: 'inventory:product:get-by-category'
+  GET_BY_CATEGORY: 'inventory:product:get-by-category',
+  GET_PRICE_HISTORY: 'inventory:product:price-history:get',
+  GET_WITH_VARIANTS: 'inventory:product:get-with-variants'
 };
 
 // Types for sanitized data
@@ -98,7 +103,10 @@ export function registerProductHandlers() {
         status: 'high_stock',
         quantity: Number(data.quantity) || 0,
         reorderPoint: Number(data.reorderPoint) || 10,
-        purchasePrice: Number(data.purchasePrice)
+        purchasePrice: Number(data.purchasePrice),
+        valuationMethod: data.valuationMethod || 'FIFO',
+        hasExpiryDate: data.hasExpiryDate || false,
+        hasBatchTracking: data.hasBatchTracking || false
       } satisfies Omit<ProductAttributes, 'id' | 'createdAt' | 'updatedAt'>;
 
       // Create the product with sanitized data
@@ -128,51 +136,25 @@ export function registerProductHandlers() {
   });
 
   // Get all products handler
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_PRODUCTS, async (event: IpcMainInvokeEvent, { shopId, shopIds, businessId }) => {
-    console.log('=== GET_ALL_PRODUCTS START ===');
-    console.log('Params:', { shopId, shopIds, businessId });
-    
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_PRODUCTS, async (event: IpcMainInvokeEvent, { shopIds, businessId }) => {
     try {
-      if (!businessId) {
-        console.log('Error: Business ID is missing');
-        throw new Error('Business ID is required');
-      }
+      const whereClause: any = { 
+        '$shop.businessId$': businessId,
+        shop_id: shopIds?.length ? { [Op.in]: shopIds } : undefined 
+      };
 
-      // Create where clause with business ID
-      let whereClause: any = {};
-      
-      // Handle shop IDs
-      if (shopIds?.length > 0) {
-        whereClause = {
-          shop_id: { [Op.in]: shopIds },
-          '$shop.businessId$': businessId
-        };
-      } else if (shopId) {
-        whereClause = {
-          shop_id: shopId,
-          '$shop.businessId$': businessId
-        };
-      } else {
-        throw new Error('Either shopId or shopIds is required');
-      }
-
-      console.log('Final where clause:', JSON.stringify(whereClause, null, 2));
-
-      console.log('Executing Product.findAll...');
       const products = await Product.findAll({
         where: whereClause,
         include: [
           {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name', 'businessId']
+          },
+          {
             model: Category,
             as: 'category',
             attributes: ['id', 'name', 'description', 'image', 'businessId']
-          },
-          {
-            model: Shop,
-            as: 'shop',
-            required: true,
-            attributes: ['id', 'name', 'businessId', 'locationId', 'status', 'type', 'contactInfo'],
-            where: { businessId } // Additional filter on shop level
           },
           {
             model: Supplier,
@@ -181,26 +163,17 @@ export function registerProductHandlers() {
             attributes: ['id', 'name']
           }
         ],
-        logging: (sql) => console.log('Executing SQL:', sql),
         order: [['createdAt', 'DESC']]
       });
 
-      console.log(`Found ${products.length} products`);
-      if (products.length > 0) {
-        console.log('First product sample:', JSON.stringify(products[0].get({ plain: true }), null, 2));
-      }
-
-      // Convert to plain objects and sanitize the response
-      const sanitizedProducts = products.map(product => sanitizeProduct(product));
-      console.log(`Sanitized ${sanitizedProducts.length} products`);
-
-      console.log('=== GET_ALL_PRODUCTS END ===');
-      return { success: true, products: sanitizedProducts };
+      return {
+        success: true,
+        products: products.map(sanitizeProduct)
+      };
     } catch (error) {
-      console.error('Error in GET_ALL_PRODUCTS:', error);
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Error fetching products'
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch products'
       };
     }
   });
@@ -220,92 +193,46 @@ export function registerProductHandlers() {
     }
   });
 
-  // Update product handler
-  ipcMain.handle(IPC_CHANNELS.UPDATE_PRODUCT, async (event: IpcMainInvokeEvent, { productId, data, businessId }) => {
+  // Update product handler with price history tracking
+  ipcMain.handle(IPC_CHANNELS.UPDATE_PRODUCT, async (event, { id, updates, userId }) => {
+    const t = await sequelize.transaction();
     try {
-      if (!businessId || !productId) {
-        return { success: false, message: 'Business ID and Product ID are required' };
-      }
-
-      const product = await Product.findOne({
-        where: {
-          id: productId,
-          '$shop.businessId$': businessId
-        },
-        include: [{
-          model: Shop,
-          as: 'shop',
-          required: true
-        }]
-      });
-
+      const product = await Product.findByPk(id, { transaction: t });
       if (!product) {
-        return { success: false, message: 'Product not found or access denied' };
+        return { success: false, message: 'Product not found' };
       }
 
-      // Calculate new status based on quantity and reorder point
-      const newStatus = (data.quantity <= (data.reorderPoint || product.reorderPoint) ? 'low_stock' :
-                       data.quantity <= (data.reorderPoint || product.reorderPoint) * 2 ? 'medium_stock' : 
-                       'high_stock') as 'low_stock' | 'medium_stock' | 'high_stock' | 'out_of_stock';
-
-      // Sanitize and prepare update data
-      const updateData = {
-        name: data.name,
-        sku: data.sku,
-        sellingPrice: Number(data.sellingPrice),
-        quantity: Number(data.quantity),
-        description: data.description,
-        category_id: data.category_id,
-        shop_id: data.shop_id,
-        status: newStatus,
-        unitType: data.unitType,
-        purchasePrice: Number(data.purchasePrice),
-        featuredImage: data.featuredImage,
-        additionalImages: Array.isArray(data.additionalImages) ? data.additionalImages : [],
-        reorderPoint: Number(data.reorderPoint)
-      };
-
-      await product.update(updateData);
-
-      // Handle supplier associations if provided
-      if (data.suppliers && Array.isArray(data.suppliers)) {
-        await product.setSuppliers(data.suppliers);
+      // Track price changes if selling price or purchase price is updated
+      if (updates.sellingPrice !== undefined && updates.sellingPrice !== product.sellingPrice) {
+        await PriceHistory.create({
+          product_id: id,
+          old_price: product.sellingPrice,
+          new_price: updates.sellingPrice,
+          changed_by: userId,
+          price_type: 'selling',
+          change_date: new Date()
+        }, { transaction: t });
       }
 
-      // Fetch updated product with all associations
-      const updatedProduct = await Product.findByPk(product.id, {
-        include: [
-          {
-            model: Category,
-            as: 'category',
-            attributes: ['id', 'name', 'description', 'image', 'businessId']
-          },
-          {
-            model: Shop,
-            as: 'shop',
-            attributes: ['id', 'name', 'businessId', 'locationId', 'status', 'type', 'contactInfo']
-          },
-          {
-            model: Supplier,
-            as: 'suppliers',
-            through: { attributes: [] },
-            attributes: ['id', 'name']
-          }
-        ]
-      });
+      if (updates.purchasePrice !== undefined && updates.purchasePrice !== product.purchasePrice) {
+        await PriceHistory.create({
+          product_id: id,
+          old_price: product.purchasePrice,
+          new_price: updates.purchasePrice,
+          changed_by: userId,
+          price_type: 'purchase',
+          change_date: new Date()
+        }, { transaction: t });
+      }
 
-      return { 
-        success: true, 
-        message: 'Product updated successfully',
-        product: sanitizeProduct(updatedProduct)
-      };
+      await product.update(updates, { transaction: t });
+      await t.commit();
 
+      const updatedProduct = await sanitizeProduct(product);
+      return { success: true, product: updatedProduct };
     } catch (error) {
-      console.error('Error updating product:', error);
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Error updating product'
-      };
+      await t.rollback();
+      return { success: false, message: 'Failed to update product', error };
     }
   });
 
@@ -323,6 +250,59 @@ export function registerProductHandlers() {
       return { success: true, products: products.map(product => sanitizeProduct(product)) };
     } catch (error) {
       return { success: false, message: 'Error fetching products by category', error };
+    }
+  });
+
+  // Get product with variants
+  ipcMain.handle(IPC_CHANNELS.GET_WITH_VARIANTS, async (event, { id }) => {
+    try {
+      const product = await Product.findByPk(id, {
+        include: [
+          { model: Category, as: 'category' },
+          { model: Shop, as: 'shop' },
+          { model: Supplier, as: 'suppliers' },
+          { 
+            model: ProductVariant,
+            as: 'variants',
+            required: false
+          }
+        ]
+      });
+
+      if (!product) {
+        return { success: false, message: 'Product not found' };
+      }
+
+      const sanitizedProduct = await sanitizeProduct(product);
+      return { success: true, product: sanitizedProduct };
+    } catch (error) {
+      return { success: false, message: 'Failed to fetch product', error };
+    }
+  });
+
+  // Get price history
+  ipcMain.handle(IPC_CHANNELS.GET_PRICE_HISTORY, async (event, { productId, priceType }) => {
+    try {
+      const whereClause: any = { product_id: productId };
+      if (priceType) {
+        whereClause.price_type = priceType;
+      }
+
+      const priceHistory = await PriceHistory.findAll({
+        where: whereClause,
+        order: [['change_date', 'DESC']],
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'username', 'email']
+          }
+        ]
+      });
+
+      return { success: true, priceHistory };
+    } catch (error) {
+      return { success: false, message: 'Failed to fetch price history', error };
     }
   });
 
@@ -344,8 +324,9 @@ export function registerProductHandlers() {
         include: [{
           model: Shop,
           as: 'shop',
-          required: true
-        }]
+          attributes: ['businessId']
+        }],
+        transaction: t
       });
 
       if (!product) {

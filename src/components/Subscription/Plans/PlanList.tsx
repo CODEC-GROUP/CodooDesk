@@ -7,6 +7,7 @@ import { Check, X } from "lucide-react"
 import { ComparePlans } from "@/components/Subscription/Plans/compare-plans"
 import { PaymentMethodSelection } from "@/components/Subscription/Plans/payment-method-selection"
 import { PaymentCompletion } from "@/components/Subscription/Plans/payment-completion"
+import { useTranslation } from "react-i18next"
 
 
 interface PaymentMethod {
@@ -84,6 +85,7 @@ export function Subscription() {
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null)
   const [showComparison, setShowComparison] = useState(false)
+  const { t } = useTranslation()
 
   const handleSelectPlan = (plan: Plan) => {
     setSelectedPlan(plan)

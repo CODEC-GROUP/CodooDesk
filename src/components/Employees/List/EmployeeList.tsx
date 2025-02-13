@@ -36,7 +36,7 @@ interface EmployeeListProps {
 const roles: UserAttributes['role'][] = ['shop_owner', 'manager', 'seller', 'admin'];
 
 export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }: EmployeeListProps) {
-  const { business } = useAuthLayout();
+  const { business, user, availableShops } = useAuthLayout();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,13 +57,19 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
       
       console.log('Fetching employees for business:', business.id);
       
-      const response = await safeIpcInvoke('entities:employee:get-all', {
-        businessId: business.id
-      }, {
-        success: false,
-        employees: [],
-        message: ''
-      });
+      // Get shop IDs based on user role
+      const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? business?.shops?.map(shop => shop.id) || []
+        : [availableShops?.[0]?.id].filter(Boolean) as string[];
+
+      const response = await safeIpcInvoke<{ 
+        success: boolean; 
+        employees: Employee[]; 
+        message?: string 
+      }>('entities:employee:get-all', {
+        businessId: business.id,
+        shopIds
+      }, { success: false, employees: [] });
 
       if (response?.success && response.employees) {
         // Format employee data before setting state
@@ -205,6 +211,14 @@ export function EmployeeList({ onEmployeeClick, onAddEmployee, onEditEmployee }:
 
     return matchesSearch && matchesRole;
   });
+
+  if (!['admin', 'shop_owner', 'manager'].includes(user?.role || '')) {
+    return (
+      <div className="p-4 text-center text-red-500">
+        You don't have permission to view this page
+      </div>
+    );
+  }
 
   if (loading) {
     return (

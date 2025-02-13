@@ -23,6 +23,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/Shared/ui/dropdown-menu"
+import { useRouter } from 'next/navigation'
 
 interface ProductListProps {
   onAddProduct: () => void;
@@ -46,10 +47,9 @@ const normalizeImagePath = (imagePath: string | null): string => {
   return imagePath.replace(/\\/g, '/');
 };
 
-console.log(normalizeImagePath);
-
 export function ProductList({ onAddProduct }: ProductListProps) {
-  const { business } = useAuthLayout();
+  const { business, user, availableShops } = useAuthLayout();
+  const router = useRouter();
   const [products, setProducts] = useState<ProductAttributes[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,19 +60,51 @@ export function ProductList({ onAddProduct }: ProductListProps) {
   const [productToDelete, setProductToDelete] = useState<ProductAttributes | null>(null);
   const [editingProduct, setEditingProduct] = useState<ProductAttributes | null>(null);
 
+  // Initialize data when business is available
+  useEffect(() => {
+    const loadData = async () => {
+      if (business?.id) {
+        console.log('Business ID found, initializing data');
+        await initializeData();
+      } else {
+        console.log('No business ID found, waiting...');
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [business?.id]);
+
+  console.log('Business:', business);
+  console.log('User:', user);
+
+  // Update initialization effect to only run when explicitly called
   const initializeData = async () => {
-    if (!business) {
-      return; // Wait for business to be loaded
+    if (!business?.id) {
+      console.log('No business ID during initialization');
+      setError('Business configuration not loaded - please check your business setup');
+      setIsLoading(false);
+      return;
     }
 
     try {
       setIsLoading(true);
-      // Get shop IDs directly
-      const shopIds = business?.shops
-        ?.filter((shop: any) => shop?.id)
-        .map((shop: any) => shop.id) || [];
+      setError(null);
+      
+      // Get shop IDs based on user role
+      const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? business.shops?.map(shop => shop.id) || []
+        : [availableShops?.[0]?.id].filter(Boolean) as string[];
 
-      // Proceed with API call
+      console.log('Found shop IDs:', shopIds);
+
+      if (shopIds.length === 0) {
+        console.log('No shop IDs found');
+        setError('No shops available - create shops first');
+        setProducts([]);
+        return;
+      }
+
       const response = await safeIpcInvoke<ProductResponse>('inventory:product:get-all', {
         shopIds,
         businessId: business.id
@@ -80,6 +112,8 @@ export function ProductList({ onAddProduct }: ProductListProps) {
         success: false,
         products: []
       });
+
+      console.log('Product response:', response);
 
       if (!response?.success) {
         throw new Error(response?.message || 'Failed to fetch products');
@@ -104,21 +138,12 @@ export function ProductList({ onAddProduct }: ProductListProps) {
       }
     } catch (error) {
       console.error('Error initializing data:', error);
-      setError(error instanceof Error ? error.message : 'Failed to initialize product data');
-      toast({
-        title: "Error",
-        description: "Failed to load products. Please try refreshing the page.",
-        variant: "destructive",
-      });
+      setError('Failed to load products - try refreshing');
+      setProducts([]);
     } finally {
       setIsLoading(false);
     }
   };
-
-  // Use the function in useEffect
-  useEffect(() => {
-    initializeData();
-  }, [business?.id]);
 
   // Handle shop selection changes
   const handleShopSelection = async (shopId: string, checked: boolean | string) => {
@@ -261,9 +286,17 @@ export function ProductList({ onAddProduct }: ProductListProps) {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center p-8 text-red-500">
+      <div className="flex items-center justify-center p-8 text-destructive">
         <AlertCircle className="mr-2" />
-        {error}
+        <div className="flex flex-col items-center">
+          <span className="mb-4">{error}</span>
+          <Button 
+            variant="outline"
+            onClick={() => initializeData()}
+          >
+            Retry Initialization
+          </Button>
+        </div>
       </div>
     );
   }
@@ -311,37 +344,39 @@ export function ProductList({ onAddProduct }: ProductListProps) {
               <Button onClick={onAddProduct}>Add Product</Button>
             </div>
 
-            <div className="space-y-4">
-              <h3 className="font-medium">Filter by Shops</h3>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start">
-                    <ListFilter className="mr-2 h-4 w-4" />
-                    {selectedShops.length === 0 
-                      ? "Select Shops" 
-                      : `${selectedShops.length} shop${selectedShops.length > 1 ? 's' : ''} selected`
-                    }
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56 p-2">
-                  {business?.shops?.map((shop: any) => (
-                    <div key={shop.id} className="flex items-center space-x-2 p-2">
-                      <Checkbox
-                        id={`shop-${shop.id}`}
-                        checked={selectedShops.includes(shop.id)}
-                        onCheckedChange={(checked) => handleShopSelection(shop.id, checked as boolean)}
-                      />
-                      <label
-                        htmlFor={`shop-${shop.id}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                      >
-                        {shop.name || 'Unnamed Shop'}
-                      </label>
-                    </div>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+              <div className="space-y-4">
+                <h3 className="font-medium">Filter by Shops</h3>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-start">
+                      <ListFilter className="mr-2 h-4 w-4" />
+                      {selectedShops.length === 0 
+                        ? "Select Shops" 
+                        : `${selectedShops.length} shop${selectedShops.length > 1 ? 's' : ''} selected`
+                      }
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56 p-2">
+                    {business?.shops?.map((shop: any) => (
+                      <div key={shop.id} className="flex items-center space-x-2 p-2">
+                        <Checkbox
+                          id={`shop-${shop.id}`}
+                          checked={selectedShops.includes(shop.id)}
+                          onCheckedChange={(checked) => handleShopSelection(shop.id, checked as boolean)}
+                        />
+                        <label
+                          htmlFor={`shop-${shop.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {shop.name || 'Unnamed Shop'}
+                        </label>
+                      </div>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
 
             <Card>
               <CardContent className="p-0">

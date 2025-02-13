@@ -15,7 +15,9 @@ const IPC_CHANNELS = {
   DELETE_RETURN: 'entities:return:delete',
   SEARCH_SALE: 'entities:return:search-sale',
   GET_SALE_SUGGESTIONS: 'entities:return:get-suggestions',
-  SEARCH_RETURN: 'entities:return:search-return'
+  SEARCH_RETURN: 'entities:return:search-return',
+  APPROVE_RETURN: 'entities:return:approve',
+  REJECT_RETURN: 'entities:return:reject'
 };
 
 export function registerReturnHandlers() {
@@ -96,7 +98,8 @@ export function registerReturnHandlers() {
           reason: item.reason || 'Customer Return',
           paymentMethod: 'refund',
           status: 'pending',
-          date: new Date()
+          date: new Date(),
+          shopId
         }, { transaction: t });
 
         // Update the corresponding order's quantity and payment status
@@ -140,7 +143,10 @@ export function registerReturnHandlers() {
     } catch (error) {
       await t.rollback();
       console.error('Error creating return:', error);
-      return { success: false, message: 'Failed to create return' };
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Failed to create return' 
+      };
     }
   });
 
@@ -269,6 +275,57 @@ export function registerReturnHandlers() {
       } else {
         return { success: false, message: 'Error deleting return' };
       }
+    }
+  });
+
+  // Add approve return handler
+  ipcMain.handle(IPC_CHANNELS.APPROVE_RETURN, async (event, { returnId }) => {
+    try {
+      const returnInstance = await Return.findByPk(returnId);
+      if (!returnInstance) {
+        return { success: false, message: 'Return not found' };
+      }
+
+      await returnInstance.update({ status: 'completed' });
+
+      // Update product stock and order status as needed
+      // Add your business logic here
+
+      return { 
+        success: true, 
+        message: 'Return approved successfully',
+        return: returnInstance
+      };
+    } catch (error) {
+      console.error('Error approving return:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Failed to approve return'
+      };
+    }
+  });
+
+  // Add reject return handler
+  ipcMain.handle(IPC_CHANNELS.REJECT_RETURN, async (event, { returnId }) => {
+    try {
+      const returnInstance = await Return.findByPk(returnId);
+      if (!returnInstance) {
+        return { success: false, message: 'Return not found' };
+      }
+
+      await returnInstance.update({ status: 'pending' });
+
+      return { 
+        success: true, 
+        message: 'Return rejected successfully',
+        return: returnInstance
+      };
+    } catch (error) {
+      console.error('Error rejecting return:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Failed to reject return'
+      };
     }
   });
 }

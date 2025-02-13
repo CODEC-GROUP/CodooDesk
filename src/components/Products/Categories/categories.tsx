@@ -13,6 +13,10 @@ import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog';
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group"
 
 interface Category {
   id: string;
@@ -43,6 +47,7 @@ const Categories = () => {
   const [newCategory, setNewCategory] = useState<Partial<Category>>({ name: "", description: "", image: null })
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
+  const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
 
   useEffect(() => {
     const init = async () => {
@@ -320,6 +325,30 @@ const Categories = () => {
                 className="pl-8"
               />
             </div>
+            <ToggleGroup 
+              type="single" 
+              value={viewMode}
+              onValueChange={(value) => setViewMode(value as "cards" | "list")}
+            >
+              <ToggleGroupItem value="cards" aria-label="Card view">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect width="7" height="7" x="3" y="3" rx="1"/>
+                  <rect width="7" height="7" x="14" y="3" rx="1"/>
+                  <rect width="7" height="7" x="14" y="14" rx="1"/>
+                  <rect width="7" height="7" x="3" y="14" rx="1"/>
+                </svg>
+              </ToggleGroupItem>
+              <ToggleGroupItem value="list" aria-label="List view">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="8" x2="21" y1="6" y2="6"/>
+                  <line x1="8" x2="21" y1="12" y2="12"/>
+                  <line x1="8" x2="21" y1="18" y2="18"/>
+                  <line x1="3" x2="3.01" y1="6" y2="6"/>
+                  <line x1="3" x2="3.01" y1="12" y2="12"/>
+                  <line x1="3" x2="3.01" y1="18" y2="18"/>
+                </svg>
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
           
           {filteredCategories.length === 0 ? (
@@ -329,7 +358,7 @@ const Categories = () => {
                 <Plus className="mr-2 h-4 w-4" /> Add Your First Category
               </Button>
             </div>
-          ) : (
+          ) : viewMode === "cards" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {filteredCategories.map((category) => (
                 <Card key={category.id}>
@@ -348,6 +377,38 @@ const Categories = () => {
                     <h3 className="font-semibold text-lg">{category.name}</h3>
                     <p className="text-sm text-gray-500">{category.itemCount} items</p>
                     <div className="flex justify-end mt-2">
+                      <Button variant="ghost" size="icon" onClick={() => handleEditCategory(category)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteCategory(category)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {filteredCategories.map((category) => (
+                <Card key={category.id}>
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <Image 
+                      src={typeof category.image === 'string' && category.image ? category.image : "/assets/images/categories.png"} 
+                      alt={category.name} 
+                      width={60}
+                      height={60}
+                      className="w-15 h-15 object-cover rounded"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = '/assets/images/categories.png';
+                      }}
+                    />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg">{category.name}</h3>
+                      <p className="text-sm text-gray-500">{category.itemCount} items</p>
+                    </div>
+                    <div className="flex gap-2">
                       <Button variant="ghost" size="icon" onClick={() => handleEditCategory(category)}>
                         <Edit className="h-4 w-4" />
                       </Button>

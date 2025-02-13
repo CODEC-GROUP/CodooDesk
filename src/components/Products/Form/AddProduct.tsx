@@ -90,7 +90,13 @@ interface FormData {
 }
 
 export function AddProduct({ onBack, editMode = false, productToEdit, onEditComplete }: AddProductProps) {
-  const { business, user } = useAuthLayout();
+  const { business, user, availableShops } = useAuthLayout();
+
+  // Get shop ID based on user role
+  const defaultShopId = (user?.role === 'admin' || user?.role === 'shop_owner') 
+    ? business?.shops?.[0]?.id 
+    : availableShops?.[0]?.id;
+
   const [formData, setFormData] = useState<FormData>(() => {
     if (editMode && productToEdit) {
       return {
@@ -118,7 +124,7 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
       sellingPrice: '',
       sku: '',
       category_id: undefined,
-      shop_id: '',
+      shop_id: defaultShopId || '',
       status: 'high_stock',
       unitType: '',
       purchasePrice: '',
@@ -170,8 +176,15 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
   useEffect(() => {
     if (editMode && productToEdit) {
       setSelectedSuppliers(productToEdit.suppliers?.map(supplier => supplier.id) || []);
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        shop_id: defaultShopId || '',
+        businessId: business?.id,
+        userId: user?.id
+      }));
     }
-  }, [editMode, productToEdit]);
+  }, [business?.id, user?.id, defaultShopId, editMode, productToEdit]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -491,42 +504,45 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
               <div className="space-y-4 pt-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Shop</Label>
-                    <Select 
-                      value={formData.shop_id} 
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, shop_id: value }))}
-                      disabled={!business?.shops || business?.shops.length === 0}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select shop" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {business?.shops?.map((shop: any) => (
-                          <SelectItem key={shop.id} value={shop.id}>
-                            {shop.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Select 
-                      value={formData.category_id || ''} 
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: value }))}
-                      disabled={categories.length === 0}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+                      <div className="space-y-2">
+                        <Label>Shop</Label>
+                        <Select 
+                          value={formData.shop_id} 
+                          onValueChange={(value) => setFormData(prev => ({ ...prev, shop_id: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select shop" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {business?.shops?.map((shop: any) => (
+                              <SelectItem key={shop.id} value={shop.id}>
+                                {shop.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Select 
+                        value={formData.category_id || ''} 
+                        onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: value }))}
+                        disabled={categories.length === 0}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((category) => (
+                            <SelectItem key={category.id} value={category.id}>
+                              {category.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
 

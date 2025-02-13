@@ -3,6 +3,7 @@ import { BusinessInformation } from './BusinessInformation.js';
 export interface Shop {
   id: string;
   name: string;
+  type: string;
   description: string;
   businessId: string;  // Reference to the associated BusinessInformation
   ownerId: string;  // Reference to the User who owns this shop

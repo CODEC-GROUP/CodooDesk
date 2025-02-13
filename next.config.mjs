@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig = {
   output: 'export',
   distDir: 'out',
-  assetPrefix: process.env.ASSET_PREFIX,
+  assetPrefix: '/',
   eslint: {
     ignoreDuringBuilds: true,
   },

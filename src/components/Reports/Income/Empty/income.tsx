@@ -111,7 +111,7 @@ const formatCurrency = (amount: number) => {
 };
 
 const Income = () => {
-  const { user, business } = useAuthLayout();
+  const { user, business, availableShops } = useAuthLayout();
   const [incomes, setIncomes] = useState<IncomeAttributes[]>([]);
   const [ohadaCodes, setOhadaCodes] = useState<OhadaCodeAttributes[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -121,7 +121,7 @@ const Income = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [newItem, setNewItem] = useState<NewIncomeItem>({})
   const [selectedShopId, setSelectedShopId] = useState<string>("");
-  const [filterValue, setFilterValue] = useState("all"); // Add this state
+  const [filterValue, setFilterValue] = useState("all");
 
   const [selectedOhadaCode, setSelectedOhadaCode] = useState<string>("");
   const [isCustomCategory, setIsCustomCategory] = useState(false);
@@ -137,34 +137,25 @@ const Income = () => {
   // Add useEffect for filtering
   useEffect(() => {
     let result = [...incomes];
-
-    // Filter by OHADA code
-    if (filterValue !== 'all') {
-      result = result.filter(income => income.ohadaCodeId === filterValue);
+    
+    // Shop filter for admin/shop_owner
+    if (user?.role === 'admin' || user?.role === 'shop_owner') {
+      if (filterValue !== 'all') {
+        result = result.filter(income => income.shopId === filterValue);
+      }
     }
-
-    // Search functionality
+    
+    // Search filter
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase().trim();
-      result = result.filter(income => {
-        return (
-          // Search in description
-          income.description?.toLowerCase().includes(searchLower) ||
-          // Search in OHADA code name
-          income.ohadaCode?.name?.toLowerCase().includes(searchLower) ||
-          // Search in amount
-          formatCurrency(Number(income.amount)).toLowerCase().includes(searchLower) ||
-          // Search in payment method
-          income.paymentMethod?.toLowerCase().replace('_', ' ').includes(searchLower) ||
-          // Search in date
-          new Date(income.date).toLocaleDateString().toLowerCase().includes(searchLower)
-        );
-      });
+      result = result.filter(income => 
+        income.description?.toLowerCase().includes(searchLower) ||
+        formatCurrency(Number(income.amount)).toLowerCase().includes(searchLower)
+      );
     }
-
+    
     setFilteredIncomes(result);
-    setCurrentPage(1); // Reset to first page when search/filter changes
-  }, [incomes, filterValue, searchTerm]);
+  }, [incomes, filterValue, searchTerm, user?.role]);
 
   // Update pagination calculations
   const totalFilteredItems = filteredIncomes.length;
@@ -195,6 +186,17 @@ const Income = () => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
+        
+        // Replace user?.shopId with context values
+        const shopIdToUse = user?.role === 'admin' || user?.role === 'shop_owner' 
+          ? selectedShopId 
+          : availableShops?.[0]?.id;
+
+        // Update the shop filter
+        const shopFilter = (user?.role !== 'admin' && user?.role !== 'shop_owner') 
+          ? { shopId: shopIdToUse }
+          : {};
+
         // Fetch OHADA codes for income
         const codesResponse = await safeIpcInvoke<OhadaCodeResponse>(
           'finance:ohada-codes:get-by-type',
@@ -215,7 +217,7 @@ const Income = () => {
         // Fetch incomes with associated OHADA codes
         const incomesResponse = await safeIpcInvoke<IncomeResponse>(
           'finance:income:get-all',
-          {},
+          shopFilter,
           { success: false }
         );
 
@@ -246,6 +248,20 @@ const Income = () => {
   const handleAddItem = async () => {
     try {
       let ohadaCodeId = newItem.ohadaCodeId;
+      
+      // Get shop ID based on user role
+      const shopIdToUse = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? selectedShopId
+        : availableShops?.[0]?.id;
+
+      if (!shopIdToUse) {
+        toast({
+          title: "Error",
+          description: "No shop selected",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // If custom category is enabled and filled out, create it first
       if (newItem.isCustom && selectedOhadaCode && customCategoryName) {
@@ -307,7 +323,7 @@ const Income = () => {
           paymentMethod: newItem.paymentMethod,
           ohadaCodeId: ohadaCodeId,
           userId: user?.id,
-          shopId: selectedShopId || undefined,
+          shopId: shopIdToUse,
         }
       };
 
@@ -547,7 +563,7 @@ const Income = () => {
                 {/* Shop Selection for admin/shop owner */}
                 {(user?.role === 'admin' || user?.role === 'shop_owner') && business?.shops && business.shops.length > 0 && (
                   <div>
-                    <Label>Shop (Optional)</Label>
+                    <Label>Shop</Label>
                     <Select
                       value={selectedShopId}
                       onValueChange={setSelectedShopId}
@@ -556,7 +572,6 @@ const Income = () => {
                         <SelectValue placeholder="Select shop" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="no-shop">No Shop</SelectItem>
                         {business.shops.map((shop: any) => (
                           <SelectItem key={shop.id} value={shop.id}>
                             {shop.name}

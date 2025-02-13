@@ -4,7 +4,7 @@ import User from '../../../models/User.js';
 import Sales from '../../../models/Sales.js';
 import { Op } from 'sequelize';
 import { sequelize } from '../../database/index.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import Shop from '../../../models/Shop.js';
 
 // Add this interface at the top of the file

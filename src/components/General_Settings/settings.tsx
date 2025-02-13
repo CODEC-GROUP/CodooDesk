@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import { Label } from "@/components/Shared/ui/label"
@@ -10,6 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/Shared/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/Shared/ui/table"
 import { X, Eye, EyeOff } from "lucide-react"
+import { useAuthLayout } from '../Shared/Layout/AuthLayout'
+import { safeIpcInvoke } from '@/lib/ipc'
+import { toast } from '@/hooks/use-toast'
+import { useTranslations } from 'next-intl'
+import { useLanguage } from '@/providers/LanguageProvider'
+
+// Add this near the top of the file, after imports
+interface SettingsResponse {
+  success: boolean;
+  settings: any; // Replace 'any' with your actual settings type if known
+}
 
 // Mock data for login history
 const loginHistory = [
@@ -20,24 +31,78 @@ const loginHistory = [
 ]
 
 export function Settings() {
+  const { business } = useAuthLayout()
   const [activeTab, setActiveTab] = useState("profile")
   const [showLoginHistory, setShowLoginHistory] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [settings, setSettings] = useState<any>(null)
+  const t = useTranslations('settings')
+  const { locale, setLocale } = useLanguage()
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        if (!business?.id) return
+        
+        const response = await safeIpcInvoke('settings:business:get', { 
+          businessId: business.id 
+        }) as SettingsResponse
+        
+        if (response?.success) {
+          setSettings(response.settings)
+        }
+      } catch (error) {
+        console.error('Error loading settings:', error)
+        toast({
+          title: "Error",
+          description: "Failed to load settings",
+          variant: "destructive",
+        })
+      }
+    }
+
+    loadSettings()
+  }, [business?.id])
+
+  const handleSaveSettings = async (section: string, data: any) => {
+    try {
+      if (!business?.id) return
+
+      const response = await safeIpcInvoke(`settings:business:update-${section}`, {
+        businessId: business.id,
+        settings: data
+      }) as SettingsResponse
+
+      if (response?.success) {
+        toast({
+          title: "Success",
+          description: "Settings updated successfully",
+        })
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error)
+      toast({
+        title: "Error",
+        description: "Failed to save settings",
+        variant: "destructive",
+      })
+    }
+  }
 
   return (
     <div className="container mx-auto py-10">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="units">Units</TabsTrigger>
+          <TabsTrigger value="profile">{t('profile.title')}</TabsTrigger>
+          <TabsTrigger value="notifications">{t('notifications.title')}</TabsTrigger>
+          <TabsTrigger value="security">{t('security.title')}</TabsTrigger>
+          <TabsTrigger value="units">{t('units.title')}</TabsTrigger>
         </TabsList>
         <TabsContent value="profile" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Profile Details</CardTitle>
-              <CardDescription>Enter your profile information</CardDescription>
+              <CardTitle>{t('profile.title')}</CardTitle>
+              <CardDescription>{t('profile.description')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -278,6 +343,18 @@ export function Settings() {
           </Card>
         </div>
       )}
+
+      <div className="mt-4">
+        <Select value={locale} onValueChange={setLocale}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select Language" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="en">English</SelectItem>
+            <SelectItem value="fr">Français</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   )
 }

@@ -3,6 +3,8 @@ import localFont from "next/font/local"
 import AuthLayout from "@/components/Shared/Layout/AuthLayout"
 import { Toaster } from "@/components/Shared/ui/toaster"
 import "./globals.css"
+import { LanguageProvider } from '@/providers/LanguageProvider'
+import { ClientQueryProvider } from "@/components/ClientQueryProvider"
 
 // Font configurations
 const geistSans = localFont({
@@ -51,10 +53,14 @@ export default function RootLayout({
         <link rel="manifest" href="/site.webmanifest" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background`}>
-        <AuthLayout>
-          {children}
-          <Toaster />
-        </AuthLayout>
+        <LanguageProvider>
+          <ClientQueryProvider>
+            <AuthLayout>
+              {children}
+              <Toaster />
+            </AuthLayout>
+          </ClientQueryProvider>
+        </LanguageProvider>
       </body>
     </html>
   )

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
@@ -33,31 +33,12 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/Shared/ui/dropdown-menu"
-
-type InventoryItem = {
-  id: string
-  name: string
-  sku: string
-  category: string
-  quantity: number
-  unitPrice: number
-  sellingPrice: number
-  totalValue: number
-  supplier: string
-  status: 'In Stock' | 'Low Stock' | 'Out of Stock'
-  lastUpdated: Date
-  description: string
-  productsSold: number
-  productsLeft: number
-  returnsToShop: number
-  returnsToSupplier: number
-}
-
-const inventoryData: InventoryItem[] = [
-  { id: '1', name: 'Product A', sku: 'SKU001', category: 'Electronics', quantity: 100, unitPrice: 50, sellingPrice: 75, totalValue: 5000, supplier: 'Supplier A', status: 'In Stock', lastUpdated: new Date(), description: 'High-quality electronic product', productsSold: 50, productsLeft: 100, returnsToShop: 5, returnsToSupplier: 2 },
-  { id: '2', name: 'Product B', sku: 'SKU002', category: 'Clothing', quantity: 50, unitPrice: 30, sellingPrice: 45, totalValue: 1500, supplier: 'Supplier B', status: 'Low Stock', lastUpdated: new Date(), description: 'Comfortable clothing item', productsSold: 25, productsLeft: 50, returnsToShop: 2, returnsToSupplier: 1 },
-  { id: '3', name: 'Product C', sku: 'SKU003', category: 'Home & Garden', quantity: 0, unitPrice: 40, sellingPrice: 60, totalValue: 0, supplier: 'Supplier C', status: 'Out of Stock', lastUpdated: new Date(), description: 'Useful home and garden product', productsSold: 0, productsLeft: 0, returnsToShop: 0, returnsToSupplier: 0 },
-]
+import { Badge } from "@/components/Shared/ui/badge"
+import { LoadingSpinner } from "@/components/Shared/ui/LoadingSpinner"
+import { ErrorAlert } from "@/components/Shared/ui/ErrorAlert"
+import { InventoryItemResponse, InventoryItemWithDetails } from "@/types/inventory"
+import { useToast } from "@/components/Shared/ui/use-toast"
+import { safeIpcInvoke } from "@/lib/ipc"
 
 interface InventoryListProps {
   warehouseId: string;
@@ -65,11 +46,13 @@ interface InventoryListProps {
 }
 
 export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
-  const [inventory, setInventory] = useState<InventoryItem[]>(inventoryData)
+  const [inventory, setInventory] = useState<InventoryItemWithDetails[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<string | null>(null)
-  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
+  const [selectedItem, setSelectedItem] = useState<InventoryItemWithDetails | null>(null)
   const [showAddInventory, setShowAddInventory] = useState(false)
   const [columnVisibility, setColumnVisibility] = useState({
     name: true,
@@ -86,6 +69,44 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
     returnsToShop: true,
     returnsToSupplier: true
   });
+  const { toast } = useToast()
+
+  useEffect(() => {
+    fetchInventory();
+  }, [warehouseId]);
+
+  const fetchInventory = async () => {
+    try {
+      setLoading(true);
+      const response = await safeIpcInvoke<InventoryItemResponse>(
+        'inventory:items:get-by-inventory',
+        {
+          inventoryId: warehouseId
+        },
+        { success: false }
+      );
+
+      if (response?.success && response.items) {
+        setInventory(response.items);
+      } else {
+        setError(response?.message || 'Failed to fetch inventory data');
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: response?.message || "Failed to fetch inventory"
+        });
+      }
+    } catch (err) {
+      setError('Failed to fetch inventory data');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch inventory data"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleItemSelection = (itemId: string) => {
     setSelectedItems(prev =>
@@ -111,7 +132,7 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
     }
   }
 
-  const openOverlay = (item: InventoryItem) => {
+  const openOverlay = (item: InventoryItemWithDetails) => {
     setSelectedItem(item);
   }
 
@@ -134,228 +155,67 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
   if (selectedItem) {
     return <InventoryDetails 
       item={{
-        ...selectedItem,
-        description: selectedItem.description || 'No description available',
-        lastUpdated: selectedItem.lastUpdated 
-          ? selectedItem.lastUpdated.toISOString().split('T')[0] 
-          : new Date().toISOString().split('T')[0] 
+        id: selectedItem.id,
+        name: selectedItem.product.name,
+        sku: selectedItem.product.sku,
+        category: selectedItem.product.category || 'default',
+        quantity: selectedItem.quantity,
+        unitPrice: selectedItem.unit_cost,
+        sellingPrice: selectedItem.selling_price,
+        totalValue: selectedItem.total_value,
+        supplier: selectedItem.supplier.name,
+        status: selectedItem.status === 'in_stock' ? 'In Stock' :
+               selectedItem.status === 'low_stock' ? 'Low Stock' : 'Out of Stock',
+        lastUpdated: selectedItem.last_restock_date?.toISOString() || new Date().toISOString(),
+        description: selectedItem.product.description || 'No description available',
+        productsSold: selectedItem.sales_data?.total_sold || 0,
+        productsLeft: selectedItem.quantity,
+        returnsToShop: 0,
+        returnsToSupplier: 0
       }} 
       onClose={closeOverlay} 
     />
   }
 
   return (
-     <div className="container mx-auto p-6 bg-white">
-      <div className="flex items-center justify-between mb-6">
-        <Button onClick={onBack} variant="ghost">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Warehouses
-        </Button>
-        <h1 className="text-2xl font-bold">Inventory - Warehouse {warehouseId}</h1>
-      </div>
-
-      <div className="flex justify-between items-center mb-4">
-        <div className="w-48">
-          <Select>
-            <SelectTrigger>
-              <SelectValue placeholder="Filter" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Items</SelectItem>
-              <SelectItem value="in-stock">In Stock</SelectItem>
-              <SelectItem value="low-stock">Low Stock</SelectItem>
-              <SelectItem value="out-of-stock">Out of Stock</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="relative w-64">
-          <Input type="text" placeholder="Search..." className="pl-10" />
-          <Search className="h-5 w-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        </div>
-        <div className="flex space-x-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Settings2 className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[200px]">
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.name}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, name: checked }))
-                }
-              >
-                Name
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.sku}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, sku: checked }))
-                }
-              >
-                SKU
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.category}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, category: checked }))
-                }
-              >
-                Category
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.quantity}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, quantity: checked }))
-                }
-              >
-                Quantity
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.unitPrice}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, unitPrice: checked }))
-                }
-              >
-                Unit Price
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.sellingPrice}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, sellingPrice: checked }))
-                }
-              >
-                Selling Price
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.totalValue}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, totalValue: checked }))
-                }
-              >
-                Total Value
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.supplier}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, supplier: checked }))
-                }
-              >
-                Supplier
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.status}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, status: checked }))
-                }
-              >
-                Status
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.productsSold}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, productsSold: checked }))
-                }
-              >
-                Products Sold
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.productsLeft}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, productsLeft: checked }))
-                }
-              >
-                Products Left
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.returnsToShop}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, returnsToShop: checked }))
-                }
-              >
-                Returns to Shop
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={columnVisibility.returnsToSupplier}
-                onCheckedChange={(checked) => 
-                  setColumnVisibility(prev => ({ ...prev, returnsToSupplier: checked }))
-                }
-              >
-                Returns to Supplier
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={handleDeleteClick}
-            disabled={selectedItems.length === 0}
-          >
-            <TrashIcon className="h-4 w-4" />
-          </Button>
-          <Button onClick={handleAddItemClick}>
-            <Plus className="mr-2 h-4 w-4" /> Add Item
-          </Button>
-        </div>
-      </div>
-
-      <div className="hidden md:block">
+    <div className="container mx-auto p-6">
+      <div className="md:block">
         <div className="rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[50px]"></TableHead>
-                {columnVisibility.name && <TableHead>Name</TableHead>}
-                {columnVisibility.sku && <TableHead>SKU</TableHead>}
-                {columnVisibility.category && <TableHead>Category</TableHead>}
-                {columnVisibility.quantity && <TableHead>Quantity</TableHead>}
-                {columnVisibility.unitPrice && <TableHead>Unit Price</TableHead>}
-                {columnVisibility.sellingPrice && <TableHead>Selling Price</TableHead>}
-                {columnVisibility.totalValue && <TableHead>Total Value</TableHead>}
-                {columnVisibility.supplier && <TableHead>Supplier</TableHead>}
-                {columnVisibility.status && <TableHead>Status</TableHead>}
-                {columnVisibility.productsSold && <TableHead>Products Sold</TableHead>}
-                {columnVisibility.productsLeft && <TableHead>Products Left</TableHead>}
-                {columnVisibility.returnsToShop && <TableHead>Returns to Shop</TableHead>}
-                {columnVisibility.returnsToSupplier && <TableHead>Returns to Supplier</TableHead>}
+                <TableHead>Product</TableHead>
+                <TableHead>SKU</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Quantity</TableHead>
+                <TableHead>Reorder Point</TableHead>
+                <TableHead>Unit Cost</TableHead>
+                <TableHead>Selling Price</TableHead>
+                <TableHead>Total Value</TableHead>
+                <TableHead>Last Restocked</TableHead>
+                <TableHead>Supplier</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {inventory.map((item) => (
                 <TableRow key={item.id}>
+                  <TableCell>{item.product.name}</TableCell>
+                  <TableCell>{item.product.sku}</TableCell>
                   <TableCell>
-                    <Checkbox
-                      checked={selectedItems.includes(item.id)}
-                      onCheckedChange={() => toggleItemSelection(item.id)}
-                    />
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    <span 
-                      className="cursor-pointer text-blue-500 hover:underline"
-                      onClick={() => openOverlay(item)}
-                    >
-                      {item.name}
-                    </span>
-                  </TableCell>
-                  <TableCell>{item.sku}</TableCell>
-                  <TableCell>{item.category}</TableCell>
-                  <TableCell>{item.quantity}</TableCell>
-                  <TableCell>{item.unitPrice} XAF</TableCell>
-                  <TableCell>{item.sellingPrice} XAF</TableCell>
-                  <TableCell>{item.totalValue} XAF</TableCell>
-                  <TableCell>{item.supplier}</TableCell>
-                  <TableCell>
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold
-                      ${item.status === 'In Stock' ? 'bg-green-100 text-green-800' :
-                        item.status === 'Low Stock' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'}`}>
+                    <Badge variant={
+                      item.status === 'in_stock' ? 'default' :
+                      item.status === 'low_stock' ? 'secondary' : 'destructive'
+                    }>
                       {item.status}
-                    </span>
+                    </Badge>
                   </TableCell>
-                  <TableCell>{item.productsSold}</TableCell>
-                  <TableCell>{item.productsLeft}</TableCell>
-                  <TableCell>{item.returnsToShop}</TableCell>
-                  <TableCell>{item.returnsToSupplier}</TableCell>
+                  <TableCell>{item.quantity}</TableCell>
+                  <TableCell>{item.reorder_point}</TableCell>
+                  <TableCell>{item.unit_cost}</TableCell>
+                  <TableCell>{item.selling_price}</TableCell>
+                  <TableCell>{item.total_value}</TableCell>
+                  <TableCell>{item.last_restock_date ? item.last_restock_date.toISOString().split('T')[0] : 'N/A'}</TableCell>
+                  <TableCell>{item.supplier.name}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -366,35 +226,46 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
       {/* Mobile View */}
       <div className="md:hidden">
         {inventory.map((item) => (
-          <Card key={item.id} className="mb-4 cursor-pointer w-full" onClick={() => openOverlay(item)}>
-            <CardContent className="flex flex-col p-4">
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-500">SKU: {item.sku}</span>
-                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold
-                  ${item.status === 'In Stock' ? 'bg-green-100 text-green-800' :
-                    item.status === 'Low Stock' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'}`}>
+          <Card key={item.id} className="mb-4">
+            <CardContent className="p-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="font-medium">{item.product.name}</h3>
+                  <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
+                </div>
+                <Badge variant={
+                  item.status === 'in_stock' ? 'default' :
+                  item.status === 'low_stock' ? 'secondary' : 'destructive'
+                }>
                   {item.status}
-                </span>
+                </Badge>
               </div>
-              <div className="flex justify-between mt-2">
-                <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
-                <p className="text-sm text-gray-500">Total Value: {item.totalValue} XAF</p>
-              </div>
-              <div className="flex justify-between mt-2">
-                <p className="text-sm text-gray-500">Selling Price: {item.sellingPrice} XAF</p>
-                <p className="text-sm text-gray-500">Supplier: {item.supplier}</p>
+              
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Quantity</span>
+                  <span className="text-sm">{item.quantity}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Selling Price</span>
+                  <span className="text-sm">{item.selling_price}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Total Value</span>
+                  <span className="text-sm">{item.total_value}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Supplier</span>
+                  <span className="text-sm">{item.supplier.name}</span>
+                </div>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <DeleteConfirmationModal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        onConfirm={handleDeleteConfirm}
-      />
+      {loading && <LoadingSpinner />}
+      {error && <ErrorAlert message={error} />}
     </div>
   )
 }

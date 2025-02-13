@@ -38,7 +38,7 @@ const navigationItems = [
     icon: ListOrdered,
     subItems: [
       { name: 'Orders', href: '/orders/orders' },
-      // { name: 'Returns', href: '/orders/returns' },
+      { name: 'Returns', href: '/orders/returns' },
     ],
   },
   {
@@ -53,6 +53,15 @@ const navigationItems = [
   { name: 'POS', href: '/pos', icon: Monitor },
   { name: 'Customers', href: '/customers', icon: Users },
   { name: 'Shops', href: '/shops', icon: Home, requiredRoles: ['Admin', 'shop_owner'] },
+  {
+    name: 'Inventory',
+    icon: Package,
+    requiredRoles: ['Admin', 'shop_owner'],
+    subItems: [
+      { name: 'Dashboard', href: '/inventory/dashboard' },
+      { name: 'Warehouses', href: '/inventory/warehouses' },
+    ],
+  },
   { 
     name: 'Employees', 
     href: '/employees', 
@@ -66,21 +75,43 @@ const navigationItems = [
     subItems: [
       { name: 'Income', href: '/reports/income' },
       { name: 'Expenses', href: '/reports/expenses' },
+      { name: 'Financial Reports', href: '/reports/performance' },
     ],
-  },
+  }, 
 ]
 
-// const settingsItems = [
-//   { name: 'Global Settings', href: '/settings', icon: Settings },
-//   { name: 'Help/Support', href: '/help', icon: HelpCircle },
-// ]
+const settingsItems = [
+  { name: 'Global Settings', href: '/settings', icon: Settings },
+  { 
+    name: 'Help/Support', 
+    href: 'https://wa.me/654933877', 
+    icon: HelpCircle,
+    external: true 
+  },
+]
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, business, logout } = useAuthLayout()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [openDropdowns, setOpenDropdowns] = useState<{ [key: string]: boolean }>({})
+  const [openDropdowns, setOpenDropdowns] = useState<{ [key: string]: boolean }>(() => {
+    const initialDropdowns: { [key: string]: boolean } = {};
+    navigationItems.forEach(item => {
+      if (item.subItems) {
+        const isActive = item.subItems.some(subItem => subItem.href === pathname);
+        if (isActive) {
+          initialDropdowns[item.name] = true;
+        }
+      }
+    });
+    return initialDropdowns;
+  })
   const [isMobile, setIsMobile] = useState(false)
+  const [activeItem, setActiveItem] = useState<string>(pathname)
+
+  useEffect(() => {
+    setActiveItem(pathname)
+  }, [pathname])
 
   const filteredNavigationItems = navigationItems.filter(item => {
     console.log('Current user role:', user?.role)
@@ -110,15 +141,25 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   }
 
   const toggleDropdown = (name: string) => {
-    setOpenDropdowns((prev) => ({
-      ...prev,
-      [name]: !prev[name]
-    }))
+    setOpenDropdowns((prev) => {
+      const newState = { ...prev };
+      // If we're opening this dropdown, close others
+      if (!prev[name]) {
+        Object.keys(newState).forEach(key => {
+          if (key !== name) {
+            newState[key] = false;
+          }
+        });
+      }
+      // Toggle the clicked dropdown
+      newState[name] = !prev[name];
+      return newState;
+    });
   }
 
-  const handleNavigation = (href: string) => {
-    // Use window.location for navigation in Electron
-    window.location.href = href
+  const handleNavigation = (href: string, parentDropdown?: string) => {
+    setActiveItem(href)
+    window.location.href = href;
   }
 
   const logoPath = business?.shopLogo || "/assets/images/logo.svg"
@@ -176,30 +217,45 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                       onClick={() => toggleDropdown(item.name)}
                       className={cn(
                         "flex items-center justify-between w-full rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                        openDropdowns[item.name] ? "bg-gray-100" : "hover:bg-gray-100"
+                        openDropdowns[item.name] || item.subItems.some(subItem => subItem.href === activeItem)
+                          ? "bg-blue-600 text-white"
+                          : "hover:bg-gray-100"
                       )}
                     >
                       <div className="flex items-center">
-                        <item.icon className={cn("h-5 w-5 flex-shrink-0", sidebarOpen ? "mr-3" : "mx-auto")} />
+                        <item.icon className={cn(
+                          "h-5 w-5 flex-shrink-0",
+                          sidebarOpen ? "mr-3" : "mx-auto",
+                          (openDropdowns[item.name] || item.subItems.some(subItem => subItem.href === activeItem)) && "text-white"
+                        )} />
                         {sidebarOpen && <span>{item.name}</span>}
                       </div>
-                      {sidebarOpen && <ChevronDown className={cn("h-4 w-4 transition-transform", openDropdowns[item.name] && "transform rotate-180")} />}
+                      {sidebarOpen && (
+                        <ChevronDown className={cn(
+                          "h-4 w-4 transition-transform",
+                          openDropdowns[item.name] && "transform rotate-180",
+                          (openDropdowns[item.name] || item.subItems.some(subItem => subItem.href === activeItem)) && "text-white"
+                        )} />
+                      )}
                     </button>
-                    {openDropdowns[item.name] && sidebarOpen && (
-                      <ul className="mt-2 space-y-1 px-3">
+                    {sidebarOpen && (
+                      <ul className={cn(
+                        "mt-2 space-y-1 px-3",
+                        openDropdowns[item.name] ? "block" : "hidden"
+                      )}>
                         {item.subItems.map((subItem) => (
                           <li key={subItem.name}>
                             <a
                               href={subItem.href}
                               className={cn(
                                 "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                                pathname === subItem.href
+                                activeItem === subItem.href
                                   ? "bg-blue-600 text-white"
                                   : "text-gray-700 hover:bg-gray-100"
                               )}
                               onClick={(e) => {
-                                e.preventDefault()
-                                handleNavigation(subItem.href)
+                                e.preventDefault();
+                                handleNavigation(subItem.href, item.name);
                               }}
                             >
                               {subItem.name}
@@ -214,16 +270,20 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     href={item.href}
                     className={cn(
                       "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      pathname === item.href
+                      activeItem === item.href
                         ? "bg-blue-600 text-white"
                         : "text-gray-700 hover:bg-gray-100"
                     )}
                     onClick={(e) => {
-                      e.preventDefault()
-                      handleNavigation(item.href)
+                      e.preventDefault();
+                      handleNavigation(item.href);
                     }}
                   >
-                    <item.icon className={cn("h-5 w-5 flex-shrink-0", sidebarOpen ? "mr-3" : "mx-auto")} />
+                    <item.icon className={cn(
+                      "h-5 w-5 flex-shrink-0",
+                      sidebarOpen ? "mr-3" : "mx-auto",
+                      activeItem === item.href && "text-white"
+                    )} />
                     {sidebarOpen && <span>{item.name}</span>}
                   </a>
                 )}
@@ -235,7 +295,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               {sidebarOpen ? "Settings" : "..."}
             </h3>
             <div className="space-y-1">
-              {/* {settingsItems.map((item) => (
+              {settingsItems.map((item) => (
                 <Button
                   key={item.name}
                   variant={pathname === item.href ? 'secondary' : 'ghost'}
@@ -243,28 +303,34 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     'w-full justify-start',
                     !sidebarOpen && 'justify-center px-2'
                   )}
-                  onClick={() => window.location.href = item.href}
+                  onClick={() => {
+                    if (item.external) {
+                      window.open(item.href, '_blank');
+                    } else {
+                      window.location.href = item.href;
+                    }
+                  }}
                 >
                   <item.icon className={cn('h-5 w-5', !sidebarOpen && 'mr-0')} />
                   {sidebarOpen && <span className="ml-2">{item.name}</span>}
                 </Button>
-              ))} */}
-              <Button
-                variant="ghost"
-                className={cn(
-                  'w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100',
-                  !sidebarOpen && 'justify-center px-2'
-                )}
-                onClick={logout}
-              >
-                <LogOut className={cn('h-5 w-5', !sidebarOpen && 'mr-0')} />
-                {sidebarOpen && <span className="ml-2">Logout</span>}
-              </Button>
+              ))}
             </div>
           </div>
         </nav>
-        {!isMobile && (
-          <div className="border-t p-4">
+        <div className="border-t p-4">
+          <Button
+            variant="ghost"
+            className={cn(
+              'w-full justify-start text-gray-700 mb-2',
+              !sidebarOpen && 'justify-center px-2'
+            )}
+            onClick={logout}
+          >
+            <LogOut className="h-4 w-4 stroke-[1.5px]" />
+            {sidebarOpen && <span className="ml-2">Logout</span>}
+          </Button>
+          {!isMobile && (
             <Button
               variant="ghost"
               size="icon"
@@ -277,8 +343,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 <ChevronRight className="h-5 w-5" />
               )}
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </aside>
 
       {/* Main content */}

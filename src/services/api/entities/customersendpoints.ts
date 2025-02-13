@@ -4,6 +4,7 @@ import Sales from '../../../models/Sales.js';
 import Shop from '../../../models/Shop.js';
 import { sequelize } from '../../database/index.js';
 import { FindOptions, FindAttributeOptions, Includeable } from 'sequelize';
+import { Op } from 'sequelize';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -49,7 +50,7 @@ export function registerCustomerHandlers() {
   });
 
   // Get all customers handler
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_CUSTOMERS, async (event, { userId, role, shopId }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_CUSTOMERS, async (event, { userId, role, shopIds }) => {
     try {
       let customers: CustomerWithAggregates[];
       
@@ -62,7 +63,13 @@ export function registerCustomerHandlers() {
             through: { 
               attributes: []
             },
-            where: shopId ? { id: shopId } : undefined,
+            ...(shopIds?.length ? { 
+              where: { 
+                id: { 
+                  [Op.in]: shopIds 
+                } 
+              } 
+            } : {})
           },
           {
             model: Sales,
@@ -91,7 +98,7 @@ export function registerCustomerHandlers() {
           include: [
             {
               ...(baseQuery.include as any[])[0],
-              where: { id: shopId }
+              where: { id: shopIds }
             },
             (baseQuery.include as Includeable[])[1]
           ]

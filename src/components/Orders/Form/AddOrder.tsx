@@ -16,6 +16,7 @@ import {
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
+import { Label } from "@/components/ui/label"
 
 interface OrderItem {
   id: string;
@@ -100,7 +101,7 @@ interface AddOrderProps {
 }
 
 export function AddOrder({ onBack }: AddOrderProps) {
-  const { user, business } = useAuthLayout();
+  const { user, business, availableShops } = useAuthLayout();
   const [shopId, setShopId] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -121,6 +122,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const [previewHtml, setPreviewHtml] = useState('');
   const [lastOrderResponse, setLastOrderResponse] = useState<OrderResponse | null>(null);
   const [tempQuantity, setTempQuantity] = useState<number>(1);
+  const [selectedShopId, setSelectedShopId] = useState<string>("");
 
   // Add default walk-in customer
   const defaultCustomer: Customer = {
@@ -137,17 +139,11 @@ export function AddOrder({ onBack }: AddOrderProps) {
   }, []);
 
   const fetchCustomers = async () => {
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "User not authenticated",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const currentShopId = shopId || business?.shops?.[0]?.id;
-    if (!currentShopId) {
+    const shopId = (user?.role === 'admin' || user?.role === 'shop_owner')
+      ? selectedShopId
+      : availableShops?.[0]?.id;
+    
+    if (!shopId) {
       toast({
         title: "Error",
         description: "No shop selected",
@@ -159,7 +155,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
     try {
       setIsLoading(true);
       const response = await safeIpcInvoke<CustomerResponse>('entities:customer:get-all', {
-        shopId: currentShopId
+        shopId: shopId
       });
 
       if (response?.success && response?.customers) {
@@ -643,6 +639,28 @@ export function AddOrder({ onBack }: AddOrderProps) {
               </Select>
             </div>
           </div>
+
+          {/* Shop Selection */}
+          {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+            <div className="space-y-2">
+              <Label>Shop</Label>
+              <Select
+                value={selectedShopId || undefined}
+                onValueChange={setSelectedShopId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select shop" />
+                </SelectTrigger>
+                <SelectContent>
+                  {business?.shops?.map((shop: any) => (
+                    <SelectItem key={shop.id} value={shop.id}>
+                      {shop.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={onBack}>Close</Button>

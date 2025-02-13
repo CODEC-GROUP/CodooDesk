@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import User from '../../../models/User.js';
 import { sequelize } from '../../database/index.js';
 import Employee from '../../../models/Employee.js';
@@ -7,7 +7,6 @@ import Shop from '../../../models/Shop.js';
 import BusinessInformation from '../../../models/BusinessInformation.js';
 import { Op } from 'sequelize';
 import Location from '../../../models/Location.js';
-
 // IPC Channel names
 const IPC_CHANNELS = {
   REGISTER: 'auth:register',
@@ -16,10 +15,19 @@ const IPC_CHANNELS = {
   CHECK: 'auth:check'
 };
 
+// Add this near the top with other model imports
+type Business = ReturnType<BusinessInformation['toJSON']>;
+
 // Register IPC handlers
 export function registerAuthHandlers() {
+  console.log('=== AUTH HANDLERS START ===');
+  console.log('Registering authentication handlers...');
+
   // Register user handler
   ipcMain.handle(IPC_CHANNELS.REGISTER, async (event, userData) => {
+    console.log('=== REGISTER START ===');
+    console.log('Registration attempt with data:', JSON.stringify(userData, null, 2));
+    
     const t = await sequelize.transaction();
     
     try {
@@ -47,7 +55,8 @@ export function registerAuthHandlers() {
             { username: userData.username.toLowerCase() }
           ]
         },
-        paranoid: false  // This will check even soft-deleted records
+        paranoid: false,  // This will check even soft-deleted records
+        logging: (sql) => console.log('Executing SQL:', sql)
       });
 
       if (existingUser) {
@@ -154,7 +163,7 @@ export function registerAuthHandlers() {
               businessType: businessJSON.businessType,
               numberOfEmployees: businessJSON.numberOfEmployees,
               taxIdNumber: businessJSON.taxIdNumber,
-              shops: businessJSON.shops?.map((shop: any) => ({
+              shops: business?.shops?.map((shop: any) => ({
                 id: shop.id,
                 name: shop.name,
                 type: shop.type,
@@ -171,8 +180,9 @@ export function registerAuthHandlers() {
                   postalCode: shop.location.postalCode
                 } : null,
                 operatingHours: shop.operatingHours
-              })) as Shop[] | undefined,
-            }
+              })) ?? [],
+            },
+            isSetupComplete: !!business.taxIdNumber
           };
         }
       }
@@ -193,6 +203,7 @@ export function registerAuthHandlers() {
         });
 
         if (employee?.shop) {
+          console.log('Fetching business information for employee shop:', employee.shop.businessId);
           const business = await BusinessInformation.findOne({
             where: { id: employee.shop.businessId },
             include: [{
@@ -227,7 +238,7 @@ export function registerAuthHandlers() {
                 businessType: businessJSON.businessType,
                 numberOfEmployees: businessJSON.numberOfEmployees,
                 taxIdNumber: businessJSON.taxIdNumber,
-                shops: businessJSON.shops?.map((shop: any) => ({
+                shops: business?.shops?.map((shop: any) => ({
                   id: shop.id,
                   name: shop.name,
                   type: shop.type,
@@ -244,8 +255,9 @@ export function registerAuthHandlers() {
                     postalCode: shop.location.postalCode
                   } : null,
                   operatingHours: shop.operatingHours
-                })) as Shop[] | undefined,
-              }
+                })) ?? [],
+              },
+              isSetupComplete: !!business.taxIdNumber
             };
           }
         }
@@ -260,7 +272,9 @@ export function registerAuthHandlers() {
           username: newUser.username,
           email: newUser.email,
           role: newUser.role
-        }
+        },
+        business: null,
+        isSetupComplete: false
       };
     } catch (error: any) {
       await t.rollback();
@@ -299,39 +313,50 @@ export function registerAuthHandlers() {
 
   // Login user handler
   ipcMain.handle(IPC_CHANNELS.LOGIN, async (event, { email, password }) => {
+    console.log('=== LOGIN START ===');
+    console.log('Login attempt with email:', email);
+    
     try {
       if (!email || !password) {
+        console.log('Login failed: Missing credentials');
         return {
           success: false,
           message: 'Email and password are required'
         };
       }
 
+      console.log('Finding user in database...');
       const user = await User.findOne({
         where: { email: email.toLowerCase() },
         include: [{
           model: Employee,
           as: 'employee',
           attributes: ['shopId']
-        }]
+        }],
+        logging: (sql) => console.log('Executing SQL:', sql)
       });
 
       if (!user) {
+        console.log('Login failed: No user found with email:', email);
         return {
           success: false,
           message: 'User not found'
         };
       }
 
+      console.log('User found, verifying password...');
       const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
       if (!isPasswordValid) {
+        console.log('Login failed: Invalid password for user:', email);
         return {
           success: false,
           message: 'Incorrect password'
         };
       }
 
+      console.log('Password verified successfully');
+      
       const safeUser = {
         id: user.id,
         username: user.username,
@@ -339,65 +364,72 @@ export function registerAuthHandlers() {
         role: user.role,
         locationId: user.locationId
       };
+      console.log('User data prepared:', JSON.stringify(safeUser, null, 2));
 
       let shopId = null;
       let isSetupComplete = true;  // Default to true for employees
 
-      if (user.role === 'shop_owner') {
+      // Common response structure for both admin and shop_owner
+      const baseResponse = {
+        success: true,
+        user: safeUser,
+        isSetupComplete: true,
+        shops: [] as any[],
+        business: null as Business | null
+      };
+
+      if (user.role === 'admin') {
+        const allShops = await Shop.findAll({
+          include: [
+            {
+              model: Location,
+              as: 'location',
+              attributes: ['address', 'city', 'country', 'region', 'postalCode']
+            },
+            {
+              model: BusinessInformation,
+              as: 'business',
+              attributes: ['id', 'fullBusinessName', 'businessType']
+            }
+          ]
+        });
+
+        return {
+          ...baseResponse,
+          shops: allShops.map(shop => shop.toJSON())
+        };
+      }
+      else if (user.role === 'shop_owner') {
         const business = await BusinessInformation.findOne({
           where: { ownerId: user.id },
           include: [{
             model: Shop,
             as: 'shops',
-            include: [{
-              model: Location,
-              as: 'location',
-              attributes: ['address', 'city', 'country', 'region', 'postalCode']
-            }]
+            include: [
+              {
+                model: Location,
+                as: 'location',
+                attributes: ['address', 'city', 'country', 'region', 'postalCode']
+              },
+              {
+                model: Employee,
+                as: 'employees',
+                attributes: ['id', 'firstName', 'lastName', 'role']
+              }
+            ]
           }]
         });
-        
-        // Check if business setup is complete
-        if (!business) {
-          isSetupComplete = false;
-        } else {
-          const businessJSON = business.toJSON();
-          return {
-            success: true,
-            message: 'Login successful',
-            user: safeUser,
-            business: {
-              id: businessJSON.id,
-              fullBusinessName: businessJSON.fullBusinessName,
-              shopLogo: businessJSON.shopLogo,
-              address: businessJSON.address,
-              businessType: businessJSON.businessType,
-              numberOfEmployees: businessJSON.numberOfEmployees,
-              taxIdNumber: businessJSON.taxIdNumber,
-              shops: businessJSON.shops?.map((shop: any) => ({
-                id: shop.id,
-                name: shop.name,
-                type: shop.type,
-                status: shop.status,
-                contactInfo: shop.contactInfo,
-                manager: shop.manager,
-                managerId: shop.managerId,
-                businessId: shop.businessId,
-                location: shop.location ? {
-                  address: shop.location.address,
-                  city: shop.location.city,
-                  country: shop.location.country,
-                  region: shop.location.region,
-                  postalCode: shop.location.postalCode
-                } : null,
-                operatingHours: shop.operatingHours
-              })) as Shop[] | undefined,
-            },
-            isSetupComplete
-          };
-        }
-      } else {
+
+        return {
+          ...baseResponse,
+          isSetupComplete: !!business,
+          shops: business?.shops?.map(shop => shop.toJSON()) ?? [],
+          business: business?.toJSON() || null
+        };
+      }
+      else {
         // For non-owner users, get their shop through employee record
+        console.log('Fetching employee information for user:', user.id);
         const employee = await Employee.findOne({ 
           where: { userId: user.id },
           include: [{
@@ -412,6 +444,7 @@ export function registerAuthHandlers() {
         });
 
         if (employee?.shop) {
+          console.log('Fetching business information for employee shop:', employee.shop.businessId);
           const business = await BusinessInformation.findOne({
             where: { id: employee.shop.businessId },
             include: [{
@@ -441,7 +474,7 @@ export function registerAuthHandlers() {
                 businessType: businessJSON.businessType,
                 numberOfEmployees: businessJSON.numberOfEmployees,
                 taxIdNumber: businessJSON.taxIdNumber,
-                shops: businessJSON.shops?.map((shop: any) => ({
+                shops: business?.shops?.map((shop: any) => ({
                   id: shop.id,
                   name: shop.name,
                   type: shop.type,
@@ -458,9 +491,10 @@ export function registerAuthHandlers() {
                     postalCode: shop.location.postalCode
                   } : null,
                   operatingHours: shop.operatingHours
-                })) as Shop[] | undefined,
+                })) ?? [],
               },
-              isSetupComplete
+              isSetupComplete: true,
+              shopId: employee?.shop?.id
             };
           }
         }
@@ -485,58 +519,57 @@ export function registerAuthHandlers() {
     }
   });
 
-  // Logout user handler
+  // Logout handler
   ipcMain.handle(IPC_CHANNELS.LOGOUT, async (event) => {
+    console.log('=== LOGOUT START ===');
+    console.log('Logout request received');
     try {
       // Add any necessary cleanup here (e.g., invalidating sessions)
       return {
         success: true,
         message: 'Logged out successfully'
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Logout error:', error);
       return {
         success: false,
-        message: 'An error occurred during logout'
+        message: error instanceof Error ? error.message : 'An unknown error occurred'
       };
     }
   });
 
-  // Modify the auth check handler
-  ipcMain.handle(IPC_CHANNELS.CHECK, async (event) => {
+  // Auth check handler
+  ipcMain.handle(IPC_CHANNELS.CHECK, async (event, { userId }) => {
+    console.log('=== AUTH CHECK START ===');
+    console.log('Auth check request received for user:', userId);
+    
     try {
-      // Get stored user data from wherever you're storing it
-      // This is just an example - implement according to your auth strategy
-      const storedUser = await User.findOne({ /* query based on your session/token */ });
+      // For offline mode, just check if the user exists
+      const user = await User.findByPk(userId);
       
-      if (storedUser) {
+      if (user) {
         return {
           success: true,
-          isAuthenticated: true,
-          user: {
-            id: storedUser.id,
-            username: storedUser.username,
-            email: storedUser.email,
-            role: storedUser.role
-          },
-          message: 'User is authenticated'
+          isAuthenticated: true
         };
       }
 
       return {
         success: false,
-        isAuthenticated: false,
-        message: 'User is not authenticated'
+        isAuthenticated: false
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Auth check error:', error);
       return {
         success: false,
-        isAuthenticated: false,
-        message: 'Failed to check authentication status'
+        isAuthenticated: false
       };
     }
   });
+
+  console.log('=== AUTH HANDLERS END ===');
+  console.log('Authentication handlers registered successfully');
+  console.log('[IPC] Authentication handlers registered');
 }
 
 // Export channel names for use in renderer process

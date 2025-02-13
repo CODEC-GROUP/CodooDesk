@@ -1,5 +1,11 @@
 import { ipcMain } from 'electron';
 import Sales, { SalesAttributes } from '../../../models/Sales.js';
+import Payment from '../../../models/Payment.js';
+import Receipt from '../../../models/Receipt.js';
+import StockMovement from '../../../models/StockMovement.js';
+import Inventory from '../../../models/Inventory.js';
+import { createErrorResponse } from '../../../utils/errorHandling.js';
+import { sequelize } from '../../database/index.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -12,13 +18,59 @@ const IPC_CHANNELS = {
 
 // Register IPC handlers
 export function registerSalesHandlers() {
-  // Create sale handler
-  ipcMain.handle(IPC_CHANNELS.CREATE_SALE, async (event, { salesData }) => {
+  // Create sale handler should include payment processing
+  ipcMain.handle(IPC_CHANNELS.CREATE_SALE, async (event, { salesData, paymentData }) => {
+    const transaction = await sequelize.transaction();
     try {
-      const sale = await Sales.create(salesData);
-      return { success: true, message: 'Sale created successfully', sale };
+      // Create sale
+      const sale = await Sales.create(salesData, { transaction });
+      
+      // Process payment
+      if (paymentData) {
+        const payment = await Payment.create({
+          ...paymentData,
+          saleId: sale.id,
+          status: 'completed',
+          verifiedAt: new Date()
+        }, { transaction });
+
+        // Create receipt
+        await Receipt.create({
+          sale_id: sale.id,
+          amount: salesData.netAmount,
+          status: 'paid'
+        }, { transaction });
+      }
+
+      // Update inventory
+      for (const item of salesData.items) {
+        await StockMovement.create({
+          productId: item.productId,
+          quantity: item.quantity,
+          movementType: 'sold',
+          source_inventory_id: salesData.shopId,
+          performedBy_id: salesData.salesPersonId,
+          reference: sale.id,
+          direction: 'outbound',
+          cost_per_unit: item.costPrice || 0,
+          total_cost: (item.costPrice || 0) * item.quantity
+        }, { transaction });
+
+        // Update product inventory
+        await Inventory.decrement('level', {
+          where: { 
+            id: item.inventoryId
+          },
+          by: item.quantity,
+          transaction
+        });
+      }
+
+      await transaction.commit();
+      return { success: true, sale };
     } catch (error) {
-      return { success: false, message: 'Error creating sale', error };
+      await transaction.rollback();
+      return createErrorResponse(error);
     }
   });
 

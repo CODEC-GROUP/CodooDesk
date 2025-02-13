@@ -24,21 +24,25 @@ export function Login() {
     e.preventDefault()
     setError('')
 
+    if (!email || !password) {
+      setError('Please enter both email and password')
+      return
+    }
+
     try {
+      console.log('Attempting login with email:', email)
       const result = await login(email, password)
+      console.log('Login result:', { success: result.success, message: result.message })
+      
       if (result.success) {
-        const hasSetup = await checkSetupStatus()
-        if (hasSetup) {
-          router.push('/dashboard')
-        } else {
-          router.push('/account-setup')
-        }
+        console.log('Login successful')
       } else {
-        setError(result.message ?? 'Login failed')
+        console.error('Login failed:', result.message)
+        setError(result.message ?? 'Login failed. Please check your credentials.')
       }
     } catch (error) {
       console.error('Login error:', error)
-      setError('An error occurred during login')
+      setError('An unexpected error occurred during login. Please try again.')
     }
   }
 

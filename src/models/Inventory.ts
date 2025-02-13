@@ -2,7 +2,11 @@ import { Model, DataTypes, Sequelize } from 'sequelize';
 import InventoryItem from './InventoryItem.js';
 import Return from './Return.js';
 import Order from './Order.js';
-import Shop from './Shop.js'; // Added Shop import
+import Shop from './Shop.js';
+import Product from './Product.js';
+import StockMovement from './StockMovement.js';
+// import InventoryAlert from './InventoryAlert.js';
+// import InventoryForecast from './InventoryForecast.js';
 
 export interface InventoryAttributes {
   id?: string;
@@ -10,7 +14,7 @@ export interface InventoryAttributes {
   level: number;
   value: number;
   description?: string;
-  shopId: string; // Added shopId
+  shopId: string;
 }
 
 class Inventory extends Model<InventoryAttributes> implements InventoryAttributes {
@@ -18,8 +22,12 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
   public name!: string;
   public level!: number;
   public value!: number;
-  public description?: string;
-  public shopId!: string; // Added shopId
+  public description!: string;
+  public shopId!: string;
+
+  // Timestamps
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
 
   static initModel(sequelize: Sequelize): typeof Inventory {
     return this.init(
@@ -45,7 +53,7 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
           type: DataTypes.STRING,
           allowNull: true,
         },
-        shopId: {  // Added shopId column
+        shopId: {
           type: DataTypes.UUID,
           allowNull: false,
           references: {
@@ -63,10 +71,31 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
   }
 
   static associate(models: any) {
-    this.belongsToMany(models.InventoryItem, { through: 'InventoryItemInventories', as: 'inventoryItems' });
-    this.hasMany(models.Return, { foreignKey: 'inventoryId', as: 'returns' });
-    this.hasMany(models.Order, { foreignKey: 'inventoryId', as: 'orders' });
-    this.belongsTo(models.Shop, { foreignKey: 'shopId', as: 'shop' }); // Added belongsTo association
+    this.belongsTo(models.Shop, { foreignKey: 'shopId', as: 'shop' });
+    this.hasMany(models.InventoryItem, { foreignKey: 'inventory_id', as: 'inventoryItems' });
+    this.belongsToMany(models.Product, {
+      through: models.InventoryItem,
+      foreignKey: 'inventory_id',
+      otherKey: 'product_id',
+      as: 'products'
+    });
+    this.hasMany(models.StockMovement, {
+      foreignKey: 'source_inventory_id',
+      as: 'sourceMovements'
+    });
+    this.hasMany(models.StockMovement, {
+      foreignKey: 'destination_inventory_id',
+      as: 'destinationMovements'
+    });
+    // Removing non-existent model associations:
+    // this.hasMany(models.InventoryAlert, {
+    //   foreignKey: 'inventoryId',
+    //   as: 'alerts'
+    // });
+    // this.hasMany(models.InventoryForecast, {
+    //   foreignKey: 'inventoryId',
+    //   as: 'forecasts'
+    // });
   }
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import {
@@ -25,31 +25,107 @@ import { Search, FileDown, Plus, Pencil, Trash2 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/Shared/ui/dialog"
 import { Label } from "@/components/Shared/ui/label"
 import { Textarea } from "@/components/Shared/ui/textarea"
+import { StockMovement, StockMovementResponse } from "@/types/inventory"
+import { useToast } from "@/components/Shared/ui/use-toast"
+import { safeIpcInvoke } from "@/lib/ipc"
+import { useAppTranslation } from '@/hooks/use-translation'
 
-type StockMovement = {
-  id: number
-  type: 'Added' | 'Sold' | 'Returned' | 'Adjustment'
-  quantity: number
-  date: string
-  movementType: 'Inbound' | 'Outbound'
-  reason: string
-  destination?: string
-  performedBy?: string
-}
-
-const stockMovementsData: StockMovement[] = [
-  { id: 1, type: "Added", quantity: 100, date: "2023-06-01", movementType: "Inbound", reason: "Restocking", destination: "Warehouse A", performedBy: "John Doe" },
-  { id: 2, type: "Sold", quantity: 50, date: "2023-06-02", movementType: "Outbound", reason: "Customer Purchase", destination: "Main Store", performedBy: "Jane Smith" },
-  { id: 3, type: "Returned", quantity: 10, date: "2023-06-03", movementType: "Inbound", reason: "Defective Product", destination: "Warehouse B", performedBy: "John Doe" },
-  { id: 4, type: "Adjustment", quantity: -5, date: "2023-06-04", movementType: "Outbound", reason: "Inventory Count", destination: "Main Store", performedBy: "Jane Smith" },
-  { id: 5, type: "Added", quantity: 200, date: "2023-06-05", movementType: "Inbound", reason: "New Stock", destination: "Warehouse A", performedBy: "John Doe" },
-]
-
-export function StockMovementTable() {
-  const [movements, setMovements] = useState<StockMovement[]>(stockMovementsData)
-  const [searchTerm, setSearchTerm] = useState("")
+export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
+  const [movements, setMovements] = useState<StockMovement[]>([])
+  const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
-  const [selectedMovements, setSelectedMovements] = useState<number[]>([])
+  const [totalPages, setTotalPages] = useState(1)
+  const [dateRange, setDateRange] = useState<[Date, Date]>([new Date(), new Date()])
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+  const [showPhysicalCount, setShowPhysicalCount] = useState(false)
+  const [physicalCounts, setPhysicalCounts] = useState<{[key: string]: number}>({})
+  const { toast } = useToast()
+  const { t } = useAppTranslation()
+
+  useEffect(() => {
+    fetchMovements();
+  }, [currentPage, dateRange, selectedProducts]);
+
+  const fetchMovements = async () => {
+    try {
+      setLoading(true);
+      const response = await safeIpcInvoke<StockMovementResponse>(
+        'stock-movement:get-all',
+        {
+          inventoryId,
+          startDate: dateRange[0],
+          endDate: dateRange[1],
+          productId: selectedProducts.length === 1 ? selectedProducts[0] : undefined,
+          page: currentPage,
+          limit: 10
+        },
+        { success: false }
+      );
+
+      if (response?.success && response.movements) {
+        setMovements(response.movements);
+        setTotalPages(response.pages || 1);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: response?.message || "Failed to fetch movements"
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch stock movements"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePhysicalCount = async (productId: string, count: number) => {
+    try {
+      const systemCount = movements.find(m => m.productId === productId)?.quantity || 0;
+      
+      const response = await safeIpcInvoke<{ success: boolean; message?: string }>(
+        'stock-movement:create-adjustment',
+        {
+          data: {
+            productId,
+            inventory_id: inventoryId,
+            physical_count: count,
+            system_count: systemCount,
+            reason: 'Physical count adjustment',
+            performedBy_id: 'current-user-id' // Replace with actual user ID
+          }
+        },
+        { success: false }
+      );
+
+      if (response?.success) {
+        toast({
+          title: "Success",
+          description: "Stock adjustment recorded successfully"
+        });
+        fetchMovements();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: response?.message || "Failed to record adjustment"
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to process physical count"
+      });
+    }
+  };
+
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedMovements, setSelectedMovements] = useState<string[]>([])
   const [selectedMovement, setSelectedMovement] = useState<StockMovement | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [movementType, setMovementType] = useState<"Inbound" | "Outbound">("Inbound")
@@ -67,7 +143,7 @@ export function StockMovementTable() {
     currentPage * itemsPerPage
   )
 
-  const toggleMovementSelection = (movementId: number) => {
+  const toggleMovementSelection = (movementId: string) => {
     setSelectedMovements(prevSelected =>
       prevSelected.includes(movementId)
         ? prevSelected.filter(id => id !== movementId)
@@ -94,15 +170,23 @@ export function StockMovementTable() {
   const handleAddMovement = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
+    const costPerUnit = Number(formData.get('cost_per_unit')) || 0;
+    const quantity = Number(formData.get('quantity'));
+
     const newMovement: StockMovement = {
-      id: movements.length + 1,
-      type: formData.get('type') as StockMovement['type'],
-      quantity: Number(formData.get('quantity')),
+      id: (movements.length + 1).toString(),
+      movementType: formData.get('type') as StockMovement['movementType'],
+      quantity,
       date: formData.get('date') as string,
-      movementType: formData.get('movementType') as StockMovement['movementType'],
       reason: formData.get('reason') as string,
       destination: movementType === 'Outbound' ? formData.get('destination') as string : undefined,
-      performedBy: formData.get('performedBy') as string,
+      performedBy_id: formData.get('performedBy') as string,
+      productId: 'default-product-id',
+      direction: movementType === 'Outbound' ? 'outbound' : 'inbound',
+      source_inventory_id: inventoryId,
+      cost_per_unit: costPerUnit,
+      total_cost: quantity * costPerUnit,
+      createdAt: new Date(),
     }
     setMovements([...movements, newMovement])
     setShowAddForm(false)
@@ -112,12 +196,16 @@ export function StockMovementTable() {
     setMovementType(value);
   };
 
+  const exportToPDF = async () => {
+    // Implementation using a PDF library like jsPDF
+  };
+
   if (showAddForm) {
     return (
       <div className="container mx-auto py-10">
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl font-bold">Add Stock Movement</CardTitle>
+            <CardTitle className="text-2xl font-bold">{t('inventory.stockMovement.addMovement')}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleAddMovement} className="space-y-4">
@@ -177,8 +265,8 @@ export function StockMovementTable() {
                 <Textarea name="reason" required />
               </div>
               <div className="flex justify-end space-x-2">
-                <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>Cancel</Button>
-                <Button type="submit">Add Movement</Button>
+                <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>{t('common.actions.cancel')}</Button>
+                <Button type="submit">{t('common.actions.save')}</Button>
               </div>
             </form>
           </CardContent>
@@ -191,7 +279,7 @@ export function StockMovementTable() {
     <div className="container mx-auto py-10">
       <Card className="mb-6">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-2xl font-bold">Stock Movement Tracking</CardTitle>
+          <CardTitle className="text-2xl font-bold">{t('inventory.stockMovement.title')}</CardTitle>
           <div className="flex space-x-2">
             <Button variant="outline">
               <FileDown className="mr-2 h-4 w-4" />
@@ -199,7 +287,7 @@ export function StockMovementTable() {
             </Button>
             <Button onClick={() => setShowAddForm(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Add Movement
+              Add Movemant
             </Button>
           </div>
         </CardHeader>
@@ -237,12 +325,11 @@ export function StockMovementTable() {
                       onCheckedChange={toggleAllMovements}
                     />
                   </TableHead>
-                  <TableHead>Movement Type</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Inbound/Outbound</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead>Performed By</TableHead>
+                  <TableHead>{t('inventory.stockMovement.date')}</TableHead>
+                  <TableHead>{t('inventory.stockMovement.movementType')}</TableHead>
+                  <TableHead>{t('inventory.stockMovement.quantity')}</TableHead>
+                  <TableHead>{t('inventory.stockMovement.reason')}</TableHead>
+                  <TableHead>{t('inventory.stockMovement.performedBy')}</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -255,12 +342,11 @@ export function StockMovementTable() {
                         onCheckedChange={() => toggleMovementSelection(movement.id)}
                       />
                     </TableCell>
-                    <TableCell>{movement.type}</TableCell>
-                    <TableCell>{movement.quantity}</TableCell>
                     <TableCell>{movement.date}</TableCell>
                     <TableCell>{movement.movementType}</TableCell>
+                    <TableCell>{movement.quantity}</TableCell>
                     <TableCell>{movement.reason}</TableCell>
-                    <TableCell>{movement.performedBy}</TableCell>
+                    <TableCell>{movement.performedBy_id}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon" onClick={() => openOverlay(movement)}>
                         <Pencil className="h-4 w-4" />
@@ -290,7 +376,7 @@ export function StockMovementTable() {
           <Card key={movement.id} className="mb-4 cursor-pointer w-full" onClick={() => openOverlay(movement)}>
             <CardContent className="flex flex-col p-4">
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Type: {movement.type}</span>
+                <span className="text-sm text-gray-500">Type: {movement.movementType}</span>
                 <span className="text-sm text-gray-500">Date: {movement.date}</span>
               </div>
               <div className="flex justify-between mt-2">
@@ -309,13 +395,24 @@ export function StockMovementTable() {
             <DialogHeader>
               <DialogTitle>Movement Details</DialogTitle>
             </DialogHeader>
-            <p><strong>Type:</strong> {selectedMovement.type}</p>
+            <p><strong>Type:</strong> {selectedMovement.movementType}</p>
             <p><strong>Quantity:</strong> {selectedMovement.quantity}</p>
             <p><strong>Date:</strong> {selectedMovement.date}</p>
             <p><strong>Inbound/Outbound:</strong> {selectedMovement.movementType}</p>
             <p><strong>Reason:</strong> {selectedMovement.reason}</p>
-            <p><strong>Performed By:</strong> {selectedMovement.performedBy}</p>
+            <p><strong>Performed By:</strong> {selectedMovement.performedBy_id}</p>
             <Button onClick={closeOverlay}>Close</Button>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {showPhysicalCount && (
+        <Dialog open={showPhysicalCount} onOpenChange={setShowPhysicalCount}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Physical Count Entry</DialogTitle>
+            </DialogHeader>
+            {/* Add physical count form */}
           </DialogContent>
         </Dialog>
       )}

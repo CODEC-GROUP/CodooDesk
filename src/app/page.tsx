@@ -13,20 +13,21 @@ export default function HomePage() {
     const checkAuthAndSetup = async () => {
       const storedUser = localStorage.getItem('user')
       const storedBusiness = localStorage.getItem('business')
+      const isAuth = localStorage.getItem('isAuthenticated')
 
-      // If no user in localStorage, go to login
-      if (!storedUser) {
+      // If not authenticated, go to login
+      if (!isAuth || !storedUser) {
         router.push('/auth/login')
         return
       }
 
-      // If user exists in localStorage but no business, go to account setup
+      // If authenticated but no business, go to account setup
       if (storedUser && !storedBusiness) {
         router.push('/account-setup')
         return
       }
 
-      // If both user and business exist in localStorage, go to dashboard
+      // If both user and business exist, go to dashboard
       if (storedUser && storedBusiness) {
         router.push('/dashboard')
       }

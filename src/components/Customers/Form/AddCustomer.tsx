@@ -66,7 +66,9 @@ export function AddCustomer({ onBack }: AddCustomerProps) {
       const response = await safeIpcInvoke('entities:customer:create', {
         customerData: {
           ...formData,
-          shopIds: formData.shopIds
+          shopIds: formData.shopIds.length > 0 
+            ? formData.shopIds
+            : [business?.shops?.[0]?.id].filter(Boolean) as string[]
         }
       }, { success: false });
 

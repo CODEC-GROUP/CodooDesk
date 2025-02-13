@@ -65,7 +65,7 @@ interface SuppliersListResponse {
 }
 
 const Suppliers = () => {
-  const { business } = useAuthLayout();
+  const { business, user } = useAuthLayout();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +84,7 @@ const Suppliers = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [supplierToDelete, setSupplierToDelete] = useState<any>(null);
+  const [selectedShopId, setSelectedShopId] = useState("all");
 
   const itemsPerPage = 10;
 
@@ -91,16 +92,18 @@ const Suppliers = () => {
     const fetchSuppliers = async () => {
       try {
         setIsLoading(true);
-        const businessId = business?.id || JSON.parse(localStorage.getItem('business') || '{}')?.id;
+        const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+          ? business?.shops?.map(shop => shop.id) || []
+          : [business?.shops?.[0]?.id].filter(Boolean) as string[];
         
-        if (!businessId) {
+        if (!business) {
           throw new Error('Business ID is required');
         }
 
-        const response = await safeIpcInvoke<SuppliersListResponse>('entities:supplier:get-all', 
-          { businessId }, 
-          { success: false, suppliers: [] }
-        );
+        const response = await safeIpcInvoke<SuppliersListResponse>('entities:supplier:get-all', {
+          shopIds,
+          userRole: user?.role
+        }, { success: false, suppliers: [] });
 
         if (response?.success && response.suppliers) {
           setSuppliers(response.suppliers);
@@ -119,7 +122,7 @@ const Suppliers = () => {
     };
 
     fetchSuppliers();
-  }, [business?.id]);
+  }, [business?.id, user?.role]);
 
   const calculateSupplierSales = (supplier: Supplier) => {
     return supplier.supplierProducts?.reduce((total, product) => total + product.totalValue, 0) || 0;
@@ -131,7 +134,7 @@ const Suppliers = () => {
 
   const filteredSuppliers = suppliers?.filter((supplier: any) => {
     const dataValues = supplier.dataValues || supplier;
-    return (
+    const matchesSearch = (
       dataValues.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       dataValues.phone?.includes(searchTerm) ||
       dataValues.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -141,6 +144,8 @@ const Suppliers = () => {
         .toLowerCase()
         .includes(searchTerm.toLowerCase())
     );
+    const matchesShop = selectedShopId === 'all' || dataValues.shopId === selectedShopId;
+    return matchesSearch && matchesShop;
   }) || [];
 
   const currentSuppliers = filteredSuppliers.slice(
@@ -542,7 +547,7 @@ const Suppliers = () => {
                     }))}
                     value={State.getStatesOfCountry(newSupplier.country)
                       .map(state => ({ value: state.isoCode, label: state.name }))
-                      .find(option => option.value === newSupplier.region)}
+                        .find(option => option.value === newSupplier.region)}
                     onChange={(option) => setNewSupplier(prev => ({ ...prev, region: option?.value || '' }))}
                     isClearable
                   />

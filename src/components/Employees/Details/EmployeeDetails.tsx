@@ -7,6 +7,7 @@ import { Badge } from "@/components/Shared/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/Shared/ui/table"
 import { ChevronLeft } from "lucide-react"
 import { Employee } from "@/types/employee"
+import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 
 interface EmployeeDetailsProps {
   employee: Employee;
@@ -34,6 +35,12 @@ const getRoleColor = (role: string): string => {
 }
 
 export function EmployeeDetails({ employee, onBack }: EmployeeDetailsProps) {
+  const { user, business, availableShops } = useAuthLayout();
+
+  const currentShop = (user?.role === 'admin' || user?.role === 'shop_owner')
+    ? business?.shops?.find(shop => shop.id === employee.shopId)
+    : availableShops?.find(shop => shop.id === employee.shopId);
+
   return (
     <>
       <Button variant="ghost" onClick={onBack} className="mb-4">

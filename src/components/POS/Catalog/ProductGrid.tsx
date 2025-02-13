@@ -189,7 +189,12 @@ const defaultCustomer: Customer = {
 };
 
 export function Pos() {
-  const { user, business } = useAuthLayout();
+  const { user, business, availableShops } = useAuthLayout();
+  const [selectedShopId, setSelectedShopId] = useState<string>(
+    (user?.role === 'admin' || user?.role === 'shop_owner') 
+      ? business?.shops?.[0]?.id || ''
+      : availableShops?.[0]?.id || ''
+  );
   const [shopId, setShopId] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -204,8 +209,9 @@ export function Pos() {
   const [changeAmount, setChangeAmount] = useState<number>(0);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [discount, setDiscount] = useState<number>(0);
@@ -289,7 +295,10 @@ export function Pos() {
         return;
       }
 
-      const currentShopId = shopId || business?.shops?.[0]?.id;
+      const currentShopId = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? selectedShopId
+        : availableShops?.[0]?.id;
+
       if (!currentShopId) {
         toast({
           title: "Error",
@@ -308,7 +317,7 @@ export function Pos() {
       const total = calculateTotal();
 
       const saleData = {
-        shopId: business?.shops?.[0]?.id,
+        shopId: currentShopId,
         customer: customer,
         cartItems: cartItems,
         subtotal: total,
@@ -393,8 +402,9 @@ export function Pos() {
     try {
       const printerService = new PrinterService();
       
-      const currentShopId = shopId || business.shops?.[0]?.id;
-      const currentShop = business.shops?.find(shop => shop.id === currentShopId);
+      const currentShop = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? business?.shops?.find(shop => shop.id === selectedShopId)
+        : availableShops?.[0];
 
       if (!currentShop) {
         throw new Error('Shop information not found');
@@ -448,73 +458,88 @@ export function Pos() {
   }, [amountPaid, cartItems]);
 
   useEffect(() => {
-    const initializeData = async () => {
-      if (!user) {
-        return; // Wait for user to be loaded
+    if (!business?.id && !authChecked) {
+      console.log('No business ID found in ProductGrid');
+      setError('Authentication required');
+      setAuthChecked(true);
+      return;
+    }
+
+    const fetchProducts = async () => {
+      if (!business?.id) {
+        console.log('No business ID during product load');
+        return;
       }
 
       try {
-        setLoading(true);
-        // Get shop IDs directly
-        const shopIds = business?.shops
-          ?.filter((shop: any) => shop?.id)
-          .map((shop: any) => shop.id) || [];
+        setIsLoading(true);
+        setError(null);
 
-        // Proceed with API call
-        const response = await safeIpcInvoke<{ success: boolean; products: Product[]; message?: string }>('inventory:product:get-all', {
-          shopIds,
-          businessId: business?.id
+        const shopIds = business.shops
+          ?.filter(shop => shop?.id)
+          .map(shop => shop.id) || [];
+
+        console.log('Found shop IDs:', shopIds);
+
+        if (shopIds.length === 0) {
+          console.log('No shop IDs found');
+          setError('No shops available');
+          return;
+        }
+
+        const shopIdToUse = (user?.role === 'admin' || user?.role === 'shop_owner')
+          ? selectedShopId
+          : availableShops?.[0]?.id;
+
+        if (!shopIdToUse) {
+          throw new Error('Shop information not found');
+        }
+
+        const response = await safeIpcInvoke<{
+          success: boolean;
+          message?: string;
+          products: never[];
+        }>('inventory:product:get-all', {
+          shopIds: [shopIdToUse],
+          businessId: business.id
         }, {
           success: false,
-          products: [],
-          message: ''
+          products: []
         });
+
+        console.log('Product response:', response);
 
         if (!response?.success) {
           throw new Error(response?.message || 'Failed to fetch products');
         }
 
         setProducts(response.products || []);
-
-        // Fetch categories
-        const categoryResponse = await safeIpcInvoke<{ success: boolean; categories?: Category[] }>('inventory:category:get-all', {
-          businessId: business?.id
-        }, {
-          success: false,
-          categories: []
-        });
-
-        if (categoryResponse?.success && categoryResponse.categories) {
-          setCategories(categoryResponse.categories);
-        }
-
       } catch (error) {
-        console.error('Error initializing data:', error);
-        setError(error instanceof Error ? error.message : 'Failed to initialize product data');
-        toast({
-          title: "Error",
-          description: "Failed to load products. Please try refreshing the page.",
-          variant: "destructive",
-        });
+        console.error('Error loading products:', error);
+        setError(error instanceof Error ? error.message : 'Failed to load products');
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     };
 
-    initializeData();
-  }, [user, shopId]);
-
-  // ... existing code ...
+    if (business?.id && !authChecked) {
+      console.log('Loading products in ProductGrid');
+      fetchProducts();
+      setAuthChecked(true);
+    }
+  }, [business?.id, authChecked, selectedShopId, availableShops]);
 
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        const currentShopId = business?.shops?.[0]?.id || localStorage.getItem('currentShopId');
+        // Get shop IDs based on user role
+        const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+          ? business?.shops?.map(shop => shop.id) || []
+          : [business?.shops?.[0]?.id].filter(Boolean) as string[];
 
         const response = await safeIpcInvoke('entities:customer:get-all', {
-          userId: user?.id,
-          role: user?.role,
-          shopId: currentShopId
+          shopIds,
+          userRole: user?.role
         }, {
           success: false,
           customers: []
@@ -522,12 +547,6 @@ export function Pos() {
 
         if (response?.success) {
           setCustomers(response.customers);
-        } else {
-          toast({
-            title: "Error",
-            description: "Failed to load customers",
-            variant: "destructive",
-          });
         }
       } catch (error) {
         console.error('Error fetching customers:', error);
@@ -542,26 +561,23 @@ export function Pos() {
     fetchCustomers();
   }, [user?.id, user?.role, business?.id]);
 
-
-
   useEffect(() => {
     setShopId(localStorage.getItem('currentShopId'));
   }, []);
 
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-[450px]">
-        <RefreshCcw className="w-8 h-8 animate-spin text-primary" />
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-[450px] text-center">
-        <AlertCircle className="w-12 h-12 text-destructive mb-4" />
-        <h3 className="text-lg font-semibold">Error Loading Products</h3>
-        <p className="text-sm text-muted-foreground">{error}</p>
+      <div className="flex items-center justify-center h-full text-red-500">
+        <AlertCircle className="mr-2" />
+        {error}
       </div>
     );
   }
@@ -574,17 +590,17 @@ export function Pos() {
           {/* Alert Message */}
           {alertMessage && (
             <div className="flex items-center bg-red-100 text-red-800 p-2 rounded mb-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setAlertMessage(null)}
-                className="h-5 w-5 mr-2"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-              <AlertCircle className="h-5 w-5 mr-2" />
-              <span>{alertMessage}</span>
-            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setAlertMessage(null)}
+              className="h-5 w-5 mr-2"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span>{alertMessage}</span>
+          </div>
           )}
 
           {/* Filter and Search Header */}
@@ -628,6 +644,24 @@ export function Pos() {
                 />
               </svg>
             </div>
+
+            {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+              <Select
+                value={selectedShopId}
+                onValueChange={setSelectedShopId}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select Shop" />
+                </SelectTrigger>
+                <SelectContent>
+                  {business?.shops?.map((shop: any) => (
+                    <SelectItem key={shop.id} value={shop.id}>
+                      {shop.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* Product Grid - 6x6 Layout */}
