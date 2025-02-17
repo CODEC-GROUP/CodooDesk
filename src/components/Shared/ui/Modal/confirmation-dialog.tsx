@@ -14,12 +14,13 @@ import {
 interface ConfirmationDialogProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: () => void
+  onConfirm: () => void | Promise<void>
   title?: string
   description?: string
   cancelText?: string
   confirmText?: string
   variant?: 'default' | 'destructive'
+  isLoading?: boolean
 }
 
 export function ConfirmationDialog({
@@ -30,7 +31,8 @@ export function ConfirmationDialog({
   description = "This action cannot be undone.",
   cancelText = "Cancel",
   confirmText = "Confirm",
-  variant = 'default'
+  variant = 'default',
+  isLoading = false
 }: ConfirmationDialogProps) {
   const getConfirmButtonClasses = () => {
     if (variant === 'destructive') {
@@ -53,6 +55,7 @@ export function ConfirmationDialog({
           <AlertDialogAction 
             onClick={onConfirm}
             className={getConfirmButtonClasses()}
+            disabled={isLoading}
           >
             {confirmText}
           </AlertDialogAction>

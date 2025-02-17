@@ -7,7 +7,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type {  RowInput } from 'jspdf-autotable';
 import UserConfig from 'jspdf-autotable';
-import { MoreHorizontal } from "lucide-react"
+import { MoreHorizontal, ListFilter, PlusCircle, Store } from "lucide-react"
 
 import {
   Select,
@@ -39,6 +39,19 @@ import { SalesAttributes } from "@/models/Sales"
 import { EmptyState } from '../Empty/EmptyState'
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { toast } from '@/hooks/use-toast'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandGroup,
+  CommandItem
+} from "@/components/ui/command"
+import { Checkbox } from "@/components/Shared/ui/checkbox"
 
 type Sale = SalesAttributes & {
   customer?: {
@@ -76,6 +89,7 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   const [filterValue, setFilterValue] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [shopId, setShopId] = useState<string | null>(null);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   
   const ITEMS_PER_PAGE = 10;
 
@@ -188,10 +202,9 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
 
   const totalFilteredItems = filteredSales.length;
   const totalPages = Math.ceil(totalFilteredItems / ITEMS_PER_PAGE);
-  const currentPageItems = filteredSales.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const currentPageItems = filteredSales.slice(startIndex, endIndex);
 
   const handleViewDetails = async (saleId: string) => {
     if (!saleId) {
@@ -225,103 +238,133 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
     }
   };
 
-  const handleExport = (format: 'csv' | 'excel' | 'pdf') => {
-    // Get current shop name
-    const currentShopId = shopId || business?.shops?.[0]?.id;
-    const currentShop = business?.shops?.find(shop => shop.id === currentShopId);
-    const shopName = currentShop?.name || 'Shop';
+  const handleExport = async (format: 'csv' | 'excel' | 'pdf') => {
+    try {
+      const currentShopId = shopId || business?.shops?.[0]?.id;
+      const currentShop = business?.shops?.find(shop => shop.id === currentShopId);
+      const shopName = currentShop?.name.replace(/[^a-z0-9]/gi, '_') || 'Shop'; // Sanitize filename
+      const dateString = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' });
 
-    const headers = ['Order ID', 'Customer', 'Date', 'Status', 'Amount', 'Payment'];
-    const data = sales.map(sale => ([
-      sale.id ?? '',
-      sale.customer?.name ?? 'Walking Customer',
-      sale.createdAt ? new Date(sale.createdAt).toLocaleDateString() : 'N/A',
-      sale.deliveryStatus ?? 'N/A',
-      formatCurrency(sale.netAmount),
-      sale.paymentStatus ?? 'N/A'
-    ])) as string[][];
+      // Common data preparation
+      const headers = ['Order ID', 'Customer', 'Date', 'Status', 'Amount', 'Payment'];
+      const data = sales.map(sale => ([
+        sale.id?.slice(0, 8) ?? '', // Truncated ID
+        sale.customer?.name ?? 'Walking Customer',
+        sale.createdAt ? new Date(sale.createdAt).toLocaleDateString() : 'N/A',
+        sale.deliveryStatus ?? 'N/A',
+        formatCurrency(sale.netAmount),
+        sale.paymentStatus ?? 'N/A'
+      ])) as RowInput[];
 
-    if (format === 'csv' || format === 'excel') {
-      const csvContent = [headers, ...data].map(row => row.join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${shopName}-orders-${new Date().toISOString().split('T')[0]}.${format === 'csv' ? 'csv' : 'xls'}`;
-      a.click();
-    } else if (format === 'pdf') {
-      try {
-        const doc = new jsPDF();
+      if (format === 'csv' || format === 'excel') {
+        const mimeType = format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        const fileExtension = format === 'csv' ? 'csv' : 'xlsx';
         
-        // Add title with shop name
-        const title = `${shopName} - Orders Report - ${new Date().toLocaleDateString()}`;
-        doc.setFontSize(16);
-        doc.text(title, 14, 15);
+        const csvContent = [headers, ...data]
+          .map(row => Array.isArray(row) ? row.join(',') : '')
+          .join('\n');
+        const blob = new Blob([csvContent], { type: mimeType });
+        const url = URL.createObjectURL(blob);
         
-        // Add shop info if available
-        if (currentShop?.name) {
-          doc.setFontSize(12);
-          doc.text(currentShop.name, 14, 25);
-        }
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${shopName}_Orders_${dateString}.${fileExtension}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
 
-        // Configure the table
-        autoTable(doc, {
-          head: [headers],
-          body: data,
-          startY: currentShop?.name ? 30 : 25,
-          styles: {
-            fontSize: 10,
-            cellPadding: 3,
-          },
-          headStyles: {
-            fillColor: [66, 66, 66],
-            textColor: [250, 250, 250],
-            fontStyle: 'bold',
-          },
-          alternateRowStyles: {
-            fillColor: [245, 245, 245],
-          },
-          margin: { top: 30 },
-        });
-        
-        // Add footer with timestamp
-        const pageCount = (doc as any).internal.getNumberOfPages();
-        doc.setFontSize(8);
-        for (let i = 1; i <= pageCount; i++) {
-          doc.setPage(i);
-          doc.text(
-            `Generated on ${new Date().toLocaleString()}`,
-            14,
-            doc.internal.pageSize.height - 10
-          );
-          doc.text(
-            `Page ${i} of ${pageCount}`,
-            doc.internal.pageSize.width - 25,
-            doc.internal.pageSize.height - 10
-          );
-        }
-        
-        // Save with shop name in filename
-        doc.save(`${shopName}-orders-${new Date().toISOString().split('T')[0]}.pdf`);
-        
         toast({
-          title: "Success",
-          description: "PDF has been generated successfully",
+          title: "Export Successful",
+          description: `${format.toUpperCase()} file has been generated`,
           variant: "default",
         });
-      } catch (error) {
-        console.error('Error generating PDF:', error);
-        toast({
-          title: "Error",
-          description: "Failed to generate PDF",
-          variant: "destructive",
-        });
       }
+
+      if (format === 'pdf') {
+        try {
+          const doc = new jsPDF('l', 'mm', 'a4');
+          doc.setFont('helvetica', 'normal');
+          
+          // Title Section
+          doc.setFontSize(18);
+          doc.text(`${shopName} - Orders Report`, 14, 20);
+          doc.setFontSize(10);
+          doc.setTextColor(100);
+          
+          // Shop Info
+          if (currentShop) {
+            doc.text(`Shop: ${currentShop.name}`, 14, 28);
+            currentShop.address && doc.text(`Address: ${currentShop.address}`, 14, 33);
+          }
+          
+          // Table
+          autoTable(doc, {
+            head: [headers.map(h => h.toUpperCase())],
+            body: data,
+            startY: currentShop ? 40 : 25,
+            theme: 'grid',
+            styles: { fontSize: 9, cellPadding: 2 },
+            headStyles: { fillColor: [55, 65, 81], textColor: 255 },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            margin: { horizontal: 14 },
+          });
+
+          // Footer
+          const pageCount = (doc as any).getNumberOfPages();
+          for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(100);
+            doc.text(
+              `Generated on ${new Date().toLocaleString()}`,
+              14,
+              doc.internal.pageSize.height - 10
+            );
+            doc.text(
+              `Page ${i} of ${pageCount}`,
+              doc.internal.pageSize.width - 25,
+              doc.internal.pageSize.height - 10
+            );
+          }
+
+          doc.save(`${shopName}_Orders_${dateString}.pdf`);
+          
+          toast({
+            title: "Export Successful",
+            description: "PDF report generated with order details",
+            variant: "default",
+          });
+        } catch (pdfError) {
+          console.error('PDF Generation Error:', pdfError);
+          toast({
+            title: "PDF Error",
+            description: "Failed to generate PDF document",
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Export Failed:', error);
+      toast({
+        title: "Export Failed",
+        description: "Could not generate export file. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
   const handleOrderClick = (orderId: string) => {
     onOrderClick(orderId);
+  };
+
+  const handleItemsPerPageChange = (value: string) => {
+    setItemsPerPage(Number(value));
+    setCurrentPage(1);
+  };
+
+  const goToPage = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   };
 
   if (loading) {
@@ -337,83 +380,103 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
         />
       ) : (
         <>
+          {/* Header Section */}
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold">Orders</h1>
+            <div className="flex gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => handleExport('csv')}>
+                    Export as CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport('excel')}>
+                    Export as Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport('pdf')}>
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button onClick={() => onAddOrder?.()}>
+                + New Order
+              </Button>
+            </div>
+          </div>
+
+          {/* Filters Section */}
+          <div className="flex flex-wrap items-center gap-4 mb-6">
+            <div className="relative flex-1 min-w-[200px] max-w-[400px]">
+              <Input
+                placeholder="Search orders..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pr-10"
+              />
+              <Search className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
+            </div>
+
+            <div className="min-w-[180px]">
+              <Select value={filterValue} onValueChange={setFilterValue}>
+                <SelectTrigger>
+                  <div className="flex items-center gap-2">
+                    <ListFilter className="h-4 w-4" />
+                    <SelectValue placeholder="Filter Status" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Orders</SelectItem>
+                  <SelectItem value="delivered">Delivered</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[200px] justify-start">
+                    <Store className="mr-2 h-4 w-4" />
+                    {shopId ? business?.shops?.find(s => s.id === shopId)?.name : "All Shops"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[240px] p-0">
+                  <Command>
+                    <CommandInput placeholder="Filter shops..." />
+                    <CommandList>
+                      <CommandGroup>
+                        {shopIds.map((id) => {
+                          const shop = business?.shops?.find(s => s.id === id)
+                          return (
+                            <CommandItem
+                              key={id}
+                              value={id}
+                              onSelect={() => setShopId(id === shopId ? null : id)}
+                            >
+                              <Checkbox
+                                checked={shopId === id}
+                                className="mr-2"
+                              />
+                              {shop?.name || 'Unnamed Shop'}
+                            </CommandItem>
+                          )
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
+
+          {/* Table Container */}
           <Card>
             <CardContent className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Orders</h1>
-                <div className="flex gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline">
-                        Export
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem onClick={() => handleExport('csv')}>
-                        Export as CSV
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExport('excel')}>
-                        Export as Excel
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleExport('pdf')}>
-                        Export as PDF
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Button onClick={onAddOrder}>
-                    + New Order
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex gap-4 mb-6">
-                <Select 
-                  value={filterValue}
-                  onValueChange={setFilterValue}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Filter Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Orders</SelectItem>
-                    <SelectItem value="delivered">Delivered</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="failed">Failed</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <div className="relative flex-1">
-                  <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input 
-                    type="text"
-                    placeholder="Search orders..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8"
-                  />
-                </div>
-              </div>
-
-              {(user?.role === 'admin' || user?.role === 'shop_owner') && (
-                <div className="space-y-4">
-                  <h3 className="font-medium">Filter by Shops</h3>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline">
-                        Select Shop
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      {shopIds.map((id) => (
-                        <DropdownMenuItem key={id} onClick={() => setShopId(id)}>
-                          {id}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              )}
-
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -437,7 +500,11 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                           if (sale.id) handleViewDetails(sale.id);
                         }}
                       >
-                        <TableCell>{sale.id}</TableCell>
+                        <TableCell>
+                          <span className="font-mono text-sm">
+                            {sale.id ? `${sale.id.slice(0, 6)}...` : 'N/A'}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           {sale.customer?.name || 'Walking Customer'}
                         </TableCell>
@@ -478,16 +545,47 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                   </TableBody>
                 </Table>
               </div>
-
-              <div className="mt-4">
-                <Pagination
-                  currentPage={currentPage}
-                  totalPages={totalPages}
-                  onPageChange={setCurrentPage}
-                />
-              </div>
             </CardContent>
           </Card>
+
+          {/* Pagination - Outside Card */}
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                Showing {startIndex + 1}-{Math.min(endIndex, filteredSales.length)} of {filteredSales.length} orders
+              </span>
+              <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue placeholder="Items per page" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 per page</SelectItem>
+                  <SelectItem value="25">25 per page</SelectItem>
+                  <SelectItem value="50">50 per page</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="px-4 text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </>
       )}
     </div>

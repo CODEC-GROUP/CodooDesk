@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/Shared/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
-import { ArrowLeft, ArrowRight, Search, Plus, Edit, Trash2, FileDown } from "lucide-react"
+import { ArrowLeft, ArrowRight, Search, Plus, Edit, Trash2, FileDown, ListFilter, Store } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
 import { IncomeAttributes } from '@/models/Income';
 import { OhadaCodeAttributes } from '@/models/OhadaCode';
@@ -18,6 +18,14 @@ import { toast } from '@/hooks/use-toast';
 import EmptyState from './EmptyState';
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout';
 import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog'
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Command,
+  CommandList,
+  CommandGroup,
+  CommandInput,
+  CommandItem
+} from "@/components/ui/command"
 
 // Income types based on OHADA accounting system
 export const incomeTypes = {
@@ -132,7 +140,8 @@ const Income = () => {
   const [incomeToDelete, setIncomeToDelete] = useState<any>(null);
 
   const [filteredIncomes, setFilteredIncomes] = useState<IncomeAttributes[]>([]);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const ITEMS_PER_PAGE = itemsPerPage;
 
   // Add useEffect for filtering
   useEffect(() => {
@@ -159,11 +168,10 @@ const Income = () => {
 
   // Update pagination calculations
   const totalFilteredItems = filteredIncomes.length;
-  const totalPages = Math.ceil(totalFilteredItems / itemsPerPage);
-  const currentItems = filteredIncomes.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const totalPages = Math.ceil(totalFilteredItems / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const currentItems = filteredIncomes.slice(startIndex, endIndex);
 
   const handleOhadaCodeSelection = (value: string) => {
     setSelectedOhadaCode(value);
@@ -480,15 +488,14 @@ const Income = () => {
     }
   };
 
-  const handlePageChange = (pageNumber: number) => {
-    setCurrentPage(pageNumber)
-  }
+  const goToPage = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  };
 
-  const handleCheckboxChange = (id: string) => {
-    setSelectedItems(prev =>
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    )
-  }
+  const handleItemsPerPageChange = (value: string) => {
+    setItemsPerPage(Number(value));
+    setCurrentPage(1);
+  };
 
   // Update the search input to handle empty values properly
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -662,140 +669,169 @@ const Income = () => {
       ) : incomes.length === 0 ? (
         <EmptyState onAddClick={() => setIsAddDialogOpen(true)} />
       ) : (
-        <div className="space-y-4">
-          {/* Search and Filter Section */}
-          <div className="flex items-center py-4">
-            <Select
-              value={filterValue}
-              onValueChange={setFilterValue}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Income</SelectItem>
-                {ohadaCodes.map((code: any) => (
-                  <SelectItem 
-                    key={code.dataValues.id} 
-                    value={code.dataValues.id}
-                  >
-                    {code.dataValues.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="relative flex-1 ml-2">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <>
+          {/* Filters Section - Update to match OrderList style */}
+          <div className="flex flex-wrap items-center gap-4 mb-6">
+            <div className="relative flex-1 min-w-[200px] max-w-[400px]">
               <Input
-                placeholder="Search by description, amount, date..."
+                placeholder="Search income..."
                 value={searchTerm}
                 onChange={handleSearch}
-                className="pl-8"
+                className="pr-10"
               />
+              <Search className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
             </div>
-          </div>
 
-          {/* Table Section */}
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[50px]">
-                    <Checkbox
-                      checked={selectedItems.length === currentItems.length}
-                      onCheckedChange={() => {
-                        if (selectedItems.length === currentItems.length) {
-                          setSelectedItems([])
-                        } else {
-                          setSelectedItems(currentItems.map(item => item.id).filter((id): id is string => id !== undefined))
-                        }
-                      }}
-                    />
-                  </TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Amount Paid</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Payment Method</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {currentItems.map((item: IncomeAttributes) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={item.id ? selectedItems.includes(item.id) : false}
-                        onCheckedChange={() => item.id && handleCheckboxChange(item.id)}
-                      />
-                    </TableCell>
-                    <TableCell>{new Date(item.date).toLocaleDateString()}</TableCell>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell>{formatCurrency(Number(item.amount))}</TableCell>
-                    <TableCell>{item.ohadaCode?.name || 'Unknown'}</TableCell>
-                    <TableCell style={{ textTransform: 'capitalize' }}>
-                      {item.paymentMethod?.replace('_', ' ')}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleEditClick(item)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => setIncomeToDelete(item)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+            <div className="min-w-[180px]">
+              <Select value={filterValue} onValueChange={setFilterValue}>
+                <SelectTrigger>
+                  <div className="flex items-center gap-2">
+                    <ListFilter className="h-4 w-4" />
+                    <SelectValue placeholder="Filter Income" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Income</SelectItem>
+                  {ohadaCodes.map((code: any) => (
+                    <SelectItem key={code.dataValues.id} value={code.dataValues.id}>
+                      {code.dataValues.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* Pagination */}
-          <div className="mt-4">
-            <div className="flex items-center justify-between">
-              <Button 
-                variant="outline" 
-                onClick={() => handlePageChange(currentPage - 1)} 
-                disabled={currentPage === 1}
-                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" /> Previous
-              </Button>
-              <div className="flex items-center gap-2">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <Button 
-                    key={page} 
-                    variant={currentPage === page ? "default" : "outline"} 
-                    onClick={() => handlePageChange(page)}
-                    className={currentPage === page 
-                      ? "bg-blue-600 text-white hover:bg-blue-700" 
-                      : "text-blue-600 hover:text-blue-700 hover:bg-blue-50"}
-                  >
-                    {page}
+            {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[200px] justify-start">
+                    <Store className="mr-2 h-4 w-4" />
+                    {selectedShopId ? business?.shops?.find(s => s.id === selectedShopId)?.name : "All Shops"}
                   </Button>
-                ))}
+                </PopoverTrigger>
+                <PopoverContent className="w-[240px] p-0">
+                  <Command>
+                    <CommandInput placeholder="Filter shops..." />
+                    <CommandList>
+                      <CommandGroup>
+                        {business?.shops?.map((shop: any) => (
+                          <CommandItem
+                            key={shop.id}
+                            value={shop.id}
+                            onSelect={() => setSelectedShopId(shop.id === selectedShopId ? "" : shop.id)}
+                          >
+                            <Checkbox
+                              checked={selectedShopId === shop.id}
+                              className="mr-2"
+                            />
+                            {shop.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
+
+          {/* Table Container - Update to use Card */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Payment</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {currentItems.map((item) => (
+                      <TableRow 
+                        key={item.id}
+                        className="cursor-pointer hover:bg-gray-100"
+                      >
+                        <TableCell>
+                          {new Date(item.date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>{item.description}</TableCell>
+                        <TableCell>{formatCurrency(Number(item.amount))}</TableCell>
+                        <TableCell>{item.ohadaCode?.name || 'Unknown'}</TableCell>
+                        <TableCell>
+                          <span className="capitalize">
+                            {item.paymentMethod?.replace('_', ' ')}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
+                              onClick={() => handleEditClick(item)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
+                              onClick={() => setIncomeToDelete(item)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-              <Button 
-                variant="outline" 
-                onClick={() => handlePageChange(currentPage + 1)} 
-                disabled={currentPage === totalPages}
-                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            </CardContent>
+          </Card>
+
+          {/* Pagination - Update to match OrderList style */}
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                Showing {startIndex + 1}-{Math.min(endIndex, filteredIncomes.length)} of {filteredIncomes.length} entries
+              </span>
+              <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue placeholder="Items per page" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 per page</SelectItem>
+                  <SelectItem value="25">25 per page</SelectItem>
+                  <SelectItem value="50">50 per page</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
               >
-                Next <ArrowRight className="h-4 w-4 ml-2" />
+                Previous
+              </Button>
+              <span className="px-4 text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+              >
+                Next
               </Button>
             </div>
           </div>
-        </div>
+        </>
       )}
 
       <ConfirmationDialog

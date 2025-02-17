@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
-import { ChevronLeft, Plus, Trash2 } from "lucide-react"
+import { ChevronLeft, Plus, Trash2, Store } from "lucide-react"
 import { PrinterService, PrinterBusinessInfo, PrinterReceiptData } from "@/services/printerService";
 import {
   Select,
@@ -17,6 +17,19 @@ import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import { Label } from "@/components/ui/label"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandGroup,
+  CommandItem
+} from "@/components/ui/command"
+import { Checkbox } from "@/components/Shared/ui/checkbox"
 
 interface OrderItem {
   id: string;
@@ -132,6 +145,13 @@ export function AddOrder({ onBack }: AddOrderProps) {
     phone: ''
   };
 
+  // Add shop ID handling similar to OrderList
+  const shopIds = useMemo(() => {
+    return (user?.role === 'admin' || user?.role === 'shop_owner')
+      ? business?.shops?.map(shop => shop.id) || []
+      : [availableShops?.[0]?.id].filter(Boolean) as string[];
+  }, [user, business, availableShops]);
+
   useEffect(() => {
     fetchCustomers();
     fetchProducts();
@@ -139,10 +159,6 @@ export function AddOrder({ onBack }: AddOrderProps) {
   }, []);
 
   const fetchCustomers = async () => {
-    const shopId = (user?.role === 'admin' || user?.role === 'shop_owner')
-      ? selectedShopId
-      : availableShops?.[0]?.id;
-    
     if (!shopId) {
       toast({
         title: "Error",
@@ -184,10 +200,6 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const fetchProducts = async () => {
     try {
       setIsLoading(true);
-      const shopIds = business?.shops
-        ?.filter((shop: any) => shop?.id)
-        .map((shop: any) => shop.id) || [];
-
       const response = await safeIpcInvoke<ProductResponse>('inventory:product:get-all', {
         shopIds,
         businessId: business?.id
@@ -242,6 +254,15 @@ export function AddOrder({ onBack }: AddOrderProps) {
   }
 
   const handleSubmit = async () => {
+    if (!shopId) {
+      toast({
+        title: "Error",
+        description: "No shop selected",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setIsLoading(true);
       const customer = customers.find(c => c.id === selectedCustomer);
@@ -259,7 +280,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
         deliveryStatus,
         amountPaid: calculateTotal(),
         changeGiven: 0,
-        shopId: shopId || business?.shops?.[0]?.id,
+        shopId: shopId,
         discount,
         salesPersonId: user?.id
       };
@@ -644,21 +665,41 @@ export function AddOrder({ onBack }: AddOrderProps) {
           {(user?.role === 'admin' || user?.role === 'shop_owner') && (
             <div className="space-y-2">
               <Label>Shop</Label>
-              <Select
-                value={selectedShopId || undefined}
-                onValueChange={setSelectedShopId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select shop" />
-                </SelectTrigger>
-                <SelectContent>
-                  {business?.shops?.map((shop: any) => (
-                    <SelectItem key={shop.id} value={shop.id}>
-                      {shop.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start">
+                    <Store className="mr-2 h-4 w-4" />
+                    {shopId 
+                      ? business?.shops?.find(s => s.id === shopId)?.name
+                      : "Select Shop"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[240px] p-0">
+                  <Command>
+                    <CommandInput placeholder="Search shops..." />
+                    <CommandList>
+                      <CommandGroup>
+                        {shopIds.map((id) => {
+                          const shop = business?.shops?.find(s => s.id === id)
+                          return (
+                            <CommandItem
+                              key={id}
+                              value={id}
+                              onSelect={() => setShopId(id === shopId ? null : id)}
+                            >
+                              <Checkbox
+                                checked={shopId === id}
+                                className="mr-2"
+                              />
+                              {shop?.name || 'Unnamed Shop'}
+                            </CommandItem>
+                          )
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
 

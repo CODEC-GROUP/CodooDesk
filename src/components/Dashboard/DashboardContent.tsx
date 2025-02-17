@@ -125,25 +125,39 @@ const CategoryChart = ({ data, isLoading, error }: {
   if (!data?.length) return <EmptyChart message="No category data available" />;
 
   return (
-    <div className="flex justify-between items-center">
-      <div className="w-32 h-32">
+    <div className="flex justify-between items-center flex-1">
+      <div className="w-full h-[400px]">
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+          <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
             <Pie
               data={data}
               dataKey="totalValue"
               nameKey="name"
               cx="50%"
               cy="50%"
-              outerRadius={60}
+              innerRadius="60%"
+              outerRadius="95%"
+              paddingAngle={0}
+              labelLine={false}
             >
               {data.map((entry: CategoryData, index: number) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={entry.color}
+                  stroke="hsl(var(--background))"
+                  strokeWidth={2}
+                />
               ))}
             </Pie>
             <Tooltip 
               formatter={(value) => `${formatNumber(value as number)} FCFA`}
-              contentStyle={{ background: 'white', border: '1px solid #e2e8f0' }}
+              contentStyle={{ 
+                background: 'hsl(var(--background))',
+                borderColor: 'hsl(var(--border))',
+                borderRadius: '8px',
+                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                color: 'hsl(var(--foreground))'
+              }}
             />
           </PieChart>
         </ResponsiveContainer>
@@ -680,8 +694,8 @@ export function Dashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">Categories Overview</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className={CHART_CONTAINER}>
+            <CardContent className="h-[500px] flex flex-col">
+              <div className="flex-1">
                 {isCategoriesLoading ? (
                   <ChartSkeleton />
                 ) : categoriesError ? (
@@ -699,11 +713,16 @@ export function Dashboard() {
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={40}
-                        outerRadius={60}
+                        innerRadius="30%"
+                        outerRadius="95%"
+                        paddingAngle={0}
+                        strokeWidth={2}
                       >
                         {categoriesData?.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={entry.color}
+                          />
                         ))}
                       </Pie>
                       <Tooltip
@@ -712,7 +731,8 @@ export function Dashboard() {
                           background: 'hsl(var(--background))',
                           borderColor: 'hsl(var(--border))',
                           borderRadius: '8px',
-                          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                          color: 'hsl(var(--foreground))'
                         }}
                       />
                       <Legend 

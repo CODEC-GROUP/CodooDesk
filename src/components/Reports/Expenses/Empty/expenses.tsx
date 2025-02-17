@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/Shared/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
-import { ArrowLeft, ArrowRight, Search, Plus, Edit, Trash2 } from "lucide-react"
+import { ArrowLeft, ArrowRight, Search, Plus, Edit, Trash2, ListFilter, Store } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/Shared/ui/card"
 import { FileDown } from "lucide-react"
 import { OhadaCodeAttributes } from '@/models/OhadaCode';
@@ -16,6 +16,14 @@ import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import EmptyState from './EmptyState';
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout';
+import {
+  Command,
+  CommandList,
+  CommandGroup,
+  CommandInput,
+  CommandItem
+} from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog'
 
@@ -585,111 +593,154 @@ const Expenses = () => {
       ) : (
         <div className="space-y-4">
           {/* Search and Filter Section */}
-          <div className="flex items-center py-4">
-            {(user?.role === 'admin' || user?.role === 'shop_owner') && (
-              <Select
-                value={filterValue}
-                onValueChange={setFilterValue}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Filter by Shop" />
+          <div className="flex flex-wrap items-center gap-4 mb-6">
+            <div className="relative flex-1 min-w-[200px] max-w-[400px]">
+              <Input
+                placeholder="Search expenses..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pr-10"
+              />
+              <Search className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
+            </div>
+
+            <div className="min-w-[180px]">
+              <Select value={filterValue} onValueChange={setFilterValue}>
+                <SelectTrigger>
+                  <div className="flex items-center gap-2">
+                    <ListFilter className="h-4 w-4" />
+                    <SelectValue placeholder="Filter Expenses" />
+                  </div>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Shops</SelectItem>
-                  {business?.shops?.map((shop: any) => (
-                    <SelectItem key={shop.id} value={shop.id}>
-                      {shop.name}
+                  <SelectItem value="all">All Expenses</SelectItem>
+                  {ohadaCodes.map((code: any) => (
+                    <SelectItem key={code.dataValues.id} value={code.dataValues.id}>
+                      {code.dataValues.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
-            <Input
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="ml-2"
-            />
-            <Button variant="ghost" className="ml-2">
-              <Search className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="w-[100px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {currentItems.map((item: ExpenseAttributes) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{new Date(item.date).toLocaleDateString()}</TableCell>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell>{formatCurrency(Number(item.amount))}</TableCell>
-                    <TableCell style={{ textTransform: 'capitalize' }}>
-                      {item.paymentMethod?.replace('_', ' ')}
-                    </TableCell>
-                    <TableCell>{item.ohadaCode?.name || 'Unknown'}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleEditClick(item)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => setExpenseToDelete(item)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="mt-4">
-            <div className="flex items-center justify-between">
-              <Button 
-                variant="outline" 
-                onClick={() => handlePageChange(currentPage - 1)} 
-                disabled={currentPage === 1}
-                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" /> Previous
-              </Button>
-              <div className="flex items-center gap-2">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <Button 
-                    key={page} 
-                    variant={currentPage === page ? "default" : "outline"} 
-                    onClick={() => handlePageChange(page)}
-                    className={currentPage === page 
-                      ? "bg-blue-600 text-white hover:bg-blue-700" 
-                      : "text-blue-600 hover:text-blue-700 hover:bg-blue-50"}
-                  >
-                    {page}
+            </div>
+
+            {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[200px] justify-start">
+                    <Store className="mr-2 h-4 w-4" />
+                    {selectedShopId ? business?.shops?.find(s => s.id === selectedShopId)?.name : "All Shops"}
                   </Button>
-                ))}
+                </PopoverTrigger>
+                <PopoverContent className="w-[240px] p-0">
+                  <Command>
+                    <CommandInput placeholder="Filter shops..." />
+                    <CommandList>
+                      <CommandGroup>
+                        {business?.shops?.map((shop: any) => (
+                          <CommandItem
+                            key={shop.id}
+                            value={shop.id}
+                            onSelect={() => setSelectedShopId(shop.id === selectedShopId ? "" : shop.id)}
+                          >
+                            <Checkbox
+                              checked={selectedShopId === shop.id}
+                              className="mr-2"
+                            />
+                            {shop.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
+          <Card>
+            <CardContent className="p-6">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Account</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {currentItems.map((item: ExpenseAttributes) => (
+                      <TableRow key={item.id}>
+                        <TableCell>{new Date(item.date).toLocaleDateString()}</TableCell>
+                        <TableCell>{item.description}</TableCell>
+                        <TableCell>{formatCurrency(Number(item.amount))}</TableCell>
+                        <TableCell style={{ textTransform: 'capitalize' }}>
+                          {item.paymentMethod?.replace('_', ' ')}
+                        </TableCell>
+                        <TableCell>{item.ohadaCode?.name || 'Unknown'}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
+                              onClick={() => handleEditClick(item)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
+                              onClick={() => setExpenseToDelete(item)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-              <Button 
-                variant="outline" 
-                onClick={() => handlePageChange(currentPage + 1)} 
-                disabled={currentPage === totalPages}
-                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            </CardContent>
+          </Card>
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                Showing {currentPage * itemsPerPage - itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, totalFilteredItems)} of {totalFilteredItems} entries
+              </span>
+              <Select value={itemsPerPage.toString()} onValueChange={(value) => {
+                setCurrentPage(Math.ceil(totalFilteredItems / Number(value)));
+              }}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue placeholder="Items per page" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 per page</SelectItem>
+                  <SelectItem value="25">25 per page</SelectItem>
+                  <SelectItem value="50">50 per page</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
               >
-                Next <ArrowRight className="h-4 w-4 ml-2" />
+                Previous
+              </Button>
+              <span className="px-4 text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+              >
+                Next
               </Button>
             </div>
           </div>

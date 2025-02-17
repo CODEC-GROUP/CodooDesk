@@ -75,6 +75,8 @@ export function ProductList({ onAddProduct }: ProductListProps) {
   const [selectedShops, setSelectedShops] = useState<string[]>([]);
   const [productToDelete, setProductToDelete] = useState<ProductAttributes | null>(null);
   const [editingProduct, setEditingProduct] = useState<ProductAttributes | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Initialize data when business is available
   useEffect(() => {
@@ -277,6 +279,22 @@ export function ProductList({ onAddProduct }: ProductListProps) {
     return matchesSearch && matchesCategory;
   });
 
+  // Add pagination calculations
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+
+  // Add pagination handlers
+  const handleItemsPerPageChange = (value: string) => {
+    setItemsPerPage(Number(value));
+    setCurrentPage(1); // Reset to first page when changing page size
+  };
+
+  const goToPage = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  };
+
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case 'low_stock':
@@ -434,7 +452,7 @@ export function ProductList({ onAddProduct }: ProductListProps) {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredProducts.map((product) => (
+                    paginatedProducts.map((product) => (
                       <TableRow key={product.id}>
                         <TableCell className="font-medium">
                           <div className="flex items-center space-x-3">
@@ -485,6 +503,45 @@ export function ProductList({ onAddProduct }: ProductListProps) {
               </Table>
             </CardContent>
           </Card>
+
+          {/* Add Pagination Controls */}
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                Showing {startIndex + 1}-{Math.min(endIndex, filteredProducts.length)} of {filteredProducts.length} products
+              </span>
+              <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue placeholder="Items per page" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 per page</SelectItem>
+                  <SelectItem value="25">25 per page</SelectItem>
+                  <SelectItem value="50">50 per page</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="px-4 text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
 
           <ConfirmationDialog
             isOpen={!!productToDelete}

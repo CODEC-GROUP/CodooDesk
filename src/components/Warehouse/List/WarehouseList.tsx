@@ -21,7 +21,7 @@ import {
 } from "@/components/Shared/ui/table"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
 import { PenIcon, TrashIcon, FileDown, Plus, Search, Package } from 'lucide-react'
-import { DeleteConfirmationModal } from '@/components/Shared/ui/Modal/delete-confrimation-modal'
+import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog'
 import { Card, CardContent } from "@/components/Shared/ui/card"
 import AddWarehouse from '../Form/AddWarehouse'
 import { InventoryList } from '@/components/Inventory/InventoryList/Inventory-list'
@@ -31,6 +31,7 @@ import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
 import { LoadingSpinner } from '@/components/Shared/ui/LoadingSpinner'
 import { ErrorAlert } from '@/components/Shared/ui/ErrorAlert'
 import { toast } from '@/hooks/use-toast'
+import EditWarehouse from '../Form/EditWarehouse'
 
 interface WarehouseItem {
   id: string
@@ -57,7 +58,7 @@ export function WarehouseList() {
   const [warehouses, setWarehouses] = useState<WarehouseItem[]>([])
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
-  const [itemToDelete, setItemToDelete] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [showAddWarehouse, setShowAddWarehouse] = useState(false)
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
   const [pagination, setPagination] = useState<PaginationState>({
@@ -67,6 +68,7 @@ export function WarehouseList() {
     totalPages: 0
   })
   const [isDeleting, setIsDeleting] = useState(false)
+  const [editWarehouse, setEditWarehouse] = useState<WarehouseItem | null>(null)
 
   const statusTranslations = {
     Low: t('warehouse.status.low'),
@@ -85,9 +87,10 @@ export function WarehouseList() {
           items: WarehouseItem[]
           pagination: PaginationState
         }
+        message?: string
       }>('inventory:get-by-shop', {
         shopId: currentShopId,
-        isAdmin: user?.isAdmin,
+        isAdmin: user?.role === 'admin' || user?.role === 'shop_owner',
         pagination: {
           page: pagination.page,
           limit: pagination.limit
@@ -126,39 +129,29 @@ export function WarehouseList() {
   }
 
   const handleDeleteClick = (id: string) => {
-    setItemToDelete(id)
+    setDeleteId(id)
     setIsDeleteModalOpen(true)
   }
 
   const handleDeleteConfirm = async () => {
-    if (!itemToDelete) return
+    if (!deleteId) return
 
     try {
       setIsDeleting(true)
-      const response = await safeIpcInvoke<{ success: boolean }>('inventory:delete', {
-        id: itemToDelete
-      })
-
+      const response = await safeIpcInvoke<{ success: boolean }>(
+        'inventory:delete', 
+        { id: deleteId }
+      )
+      
       if (response?.success) {
-        setWarehouses(prev => prev.filter(item => item.id !== itemToDelete))
-        setSelectedItems(prev => prev.filter(id => id !== itemToDelete))
-        toast({
-          title: 'Success',
-          description: 'Inventory deleted successfully'
-        })
-      } else {
-        throw new Error(response?.message || 'Failed to delete inventory')
+        setWarehouses(prev => prev.filter(w => w.id !== deleteId))
+        setSelectedItems(prev => prev.filter(id => id !== deleteId))
+        toast({ title: 'Success', description: 'Inventory deleted' })
       }
-    } catch (err) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: err instanceof Error ? err.message : 'Failed to delete inventory'
-      })
     } finally {
       setIsDeleting(false)
       setIsDeleteModalOpen(false)
-      setItemToDelete(null)
+      setDeleteId(null)
     }
   }
 
@@ -173,7 +166,7 @@ export function WarehouseList() {
         )
       )
 
-      const failedDeletions = results.filter(r => !r.success)
+      const failedDeletions = results.filter(r => r && !r.success)
       if (failedDeletions.length === 0) {
         setWarehouses(prev => prev.filter(item => !selectedItems.includes(item.id)))
         setSelectedItems([])
@@ -204,6 +197,24 @@ export function WarehouseList() {
     fetchWarehouses() // Refresh the list after adding
   }
 
+  const handleEditClick = (id: string) => {
+    const warehouse = warehouses.find(w => w.id === id)
+    if (warehouse) setEditWarehouse(warehouse)
+  }
+
+  if (editWarehouse) {
+    return <EditWarehouse 
+      warehouse={{
+        ...editWarehouse,
+        description: editWarehouse.description || ''
+      }}
+      onBack={() => {
+        setEditWarehouse(null)
+        fetchWarehouses()
+      }} 
+    />
+  }
+
   if (showAddWarehouse) {
     return <AddWarehouse onBack={handleBackToList} />
   }
@@ -228,7 +239,7 @@ export function WarehouseList() {
         </div>
       </div>
 
-      {error && <ErrorAlert message={error} className="mb-4" />}
+      {error && <ErrorAlert message={error} />}
 
       <Card>
         <CardContent className="p-0">
@@ -282,6 +293,13 @@ export function WarehouseList() {
                       <TableCell>{warehouse.level}</TableCell>
                       <TableCell>{warehouse.value}</TableCell>
                       <TableCell className="text-right space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEditClick(warehouse.id)}
+                        >
+                          <PenIcon className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -344,15 +362,14 @@ export function WarehouseList() {
         </div>
       )}
 
-      <DeleteConfirmationModal
+      <ConfirmationDialog
         isOpen={isDeleteModalOpen}
-        onClose={() => {
-          setIsDeleteModalOpen(false)
-          setItemToDelete(null)
-        }}
+        onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={handleDeleteConfirm}
-        title="Delete Inventory"
-        message="Are you sure you want to delete this inventory? This action cannot be undone."
+        title={t('delete_inventory')}
+        description={t('delete_inventory_confirmation')}
+        variant="destructive"
+        confirmText="Delete"
         isLoading={isDeleting}
       />
     </div>

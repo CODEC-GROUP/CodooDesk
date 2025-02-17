@@ -51,17 +51,18 @@ const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
         return;
       }
 
-      const response = await safeIpcInvoke<{ success: boolean; data: InventoryAttributes }>(
-        'inventory:create',
-        {
-          name: formData.name.trim(),
-          description: formData.description.trim(),
-          shopId: currentShopId || business?.shops?.[0]?.id || null,
-          level: formData.level,
-          value: formData.value,
-          status: formData.status
-        }
-      );
+      const response = await safeIpcInvoke<{ 
+        success: boolean; 
+        data: InventoryAttributes;
+        message?: string 
+      }>('inventory:create', {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        shopId: currentShopId || business?.shops?.[0]?.id || null,
+        level: formData.level,
+        value: formData.value,
+        status: formData.status
+      });
 
       if (response?.success) {
         toast({ 

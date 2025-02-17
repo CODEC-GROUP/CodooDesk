@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
-import { Package, ShoppingCart, DollarSign, AlertTriangle, ChevronDown } from 'lucide-react'
+import { Package, ShoppingCart, DollarSign, AlertTriangle, ChevronDown, Store } from 'lucide-react'
 import Image from 'next/image'
 import { useDashboard } from '@/hooks/useDashboard'
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
@@ -14,6 +14,14 @@ import { FilterControls } from './FilterControls'
 import { InventoryTrends } from './InventoryTrends'
 import { InventoryDashboardData } from '@/types/inventory'
 import { safeIpcInvoke } from '@/lib/ipc'
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command"
+import { Checkbox } from "@/components/Shared/ui/checkbox"
+import { Button } from "@/components/ui/button"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
+import { addDays } from "date-fns"
+import { DateRange } from "react-day-picker"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
 
 const CircularProgressBar = ({ percentage, color }: { percentage: number, color: string }) => (
   <div className="relative w-32 h-32">
@@ -64,99 +72,64 @@ const processPieData = (data: { name: string; value: number; color: string }[] |
 
 export function InventoryDashboard() {
   const { business, user, availableShops } = useAuthLayout();
-  const { 
-    inventoryData, 
-    fetchInventoryDashboard 
-  } = useDashboard();
+  const { fetchInventoryDashboard } = useDashboard();
 
-  const [currentShopId, setCurrentShopId] = useState<string | null>(() => {
+  const [selectedShopIds, setSelectedShopIds] = useState<string[]>(() => {
     if (user?.role !== 'admin' && user?.role !== 'shop_owner') {
-      return business?.shops?.[0]?.id || null;
+      return business?.shops?.[0]?.id ? [business.shops[0].id] : []
     }
-    return availableShops?.[0]?.id || null;
+    return availableShops?.[0]?.id ? [availableShops[0].id] : []
   });
 
-  const { data: inventoryDataQuery, isLoading, error: queryError } = useQuery<InventoryDashboardData>({
-    queryKey: ['inventory-dashboard', business?.id],
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: addDays(new Date(), -7),
+    to: new Date(),
+  });
+
+  const [currentView, setCurrentView] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+
+  const { data: dashboardData, isLoading, error } = useQuery<InventoryDashboardData>({
+    queryKey: ['inventory-dashboard', business?.id, selectedShopIds, dateRange, currentView],
     queryFn: async () => {
       if (!business?.id) {
         throw new Error('No business ID available');
       }
       
-      await fetchInventoryDashboard({ businessId: business.id });
-      if (!inventoryData) {
-        throw new Error('No inventory data available');
+      const data = await safeIpcInvoke<InventoryDashboardData>(
+        'dashboard:inventory:get',
+        {
+          businessId: business.id,
+          shopIds: selectedShopIds,
+          dateRange: dateRange ? {
+            start: dateRange.from?.toISOString(),
+            end: dateRange.to?.toISOString()
+          } : undefined,
+          view: currentView
+        },
+        null
+      );
+
+      if (!data) {
+        throw new Error('Failed to load dashboard data');
       }
-      return inventoryData;
+      return data;
     },
     enabled: !!business?.id,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    retry: 2
   });
 
-  const [filters, setFilters] = useState({
-    dateRange: '7days',
-    category: 'all',
-    status: 'all'
-  });
+  if (isLoading) return (
+    <div className="p-8 bg-gray-100 min-h-screen">
+      <LoadingSpinner />
+    </div>
+  );
 
-  const [dashboardData, setDashboardData] = useState<InventoryDashboardData | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        console.log('📊 Loading dashboard data for business:', business?.id, 'shop:', currentShopId);
-        const data = await safeIpcInvoke<InventoryDashboardData>(
-          'dashboard:inventory:get',
-          {
-            businessId: business?.id,
-            shopId: currentShopId
-          },
-          null
-        );
-
-        console.log('📈 Dashboard data response:', data);
-        
-        if (data) {
-          console.log('✅ Dashboard data loaded successfully');
-          setDashboardData(data);
-          setDashboardError(null);
-        } else {
-          console.warn('⚠️ Empty dashboard data response');
-          setDashboardError('Failed to load dashboard data');
-        }
-      } catch (err) {
-        console.error('❌ Dashboard load error:', err);
-        setDashboardError(err instanceof Error ? err.message : 'Failed to load data');
-      } finally {
-        setDashboardLoading(false);
-      }
-    };
-
-    if (business?.id) {
-      loadData();
-    } else {
-      console.log('⏸️ No business ID - skipping dashboard load');
-    }
-  }, [business, currentShopId]);
-
-  if (isLoading) return <LoadingSpinner />;
-  if (queryError) return <ErrorAlert message={queryError.message} />;
-
-  if (!dashboardData || dashboardData.stats?.total_products === 0) {
-    console.log('📭 Rendering empty dashboard state');
-    return (
-      <div className="container mx-auto p-6 bg-white flex flex-col items-center justify-center h-[60vh]">
-        <div className="max-w-md text-center space-y-4">
-          <h2 className="text-2xl font-bold">No Inventory Data</h2>
-          <p className="text-gray-500">
-            Get started by adding products to your inventory.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  if (error) return (
+    <div className="p-8 bg-gray-100 min-h-screen">
+      <ErrorAlert message={error.message} />
+    </div>
+  );
 
   const {
     stats,
@@ -167,7 +140,7 @@ export function InventoryDashboard() {
     topProducts = [],
     categoryDistribution = [],
     trends
-  } = inventoryDataQuery || {};
+  } = dashboardData || {};
 
   const processChartData = (data: { day: string; count: number }[] | undefined) => {
     return data?.map(item => ({
@@ -180,17 +153,72 @@ export function InventoryDashboard() {
     ? formatNumber(dashboardData.stats.inventoryValue) + ' XAF'
     : '--';
 
+  const handleShopSelection = (shopId: string) => {
+    setSelectedShopIds(prev => 
+      prev.includes(shopId)
+        ? prev.filter(id => id !== shopId)
+        : [...prev, shopId]
+    );
+  };
+
   return (
     <div className="p-8 bg-gray-100 min-h-screen">
-      <div className="mb-6">
-        <FilterControls 
-          filters={filters}
-          onFilterChange={setFilters}
+      <div className="mb-6 flex gap-4">
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
         />
+        <Select
+          value={currentView}
+          onValueChange={(value: 'daily' | 'weekly' | 'monthly') => setCurrentView(value)}
+        >
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="View" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="daily">Daily</SelectItem>
+            <SelectItem value="weekly">Weekly</SelectItem>
+            <SelectItem value="monthly">Monthly</SelectItem>
+          </SelectContent>
+        </Select>
+        {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="min-w-[200px] justify-start">
+                <Store className="mr-2 h-4 w-4" />
+                {selectedShopIds.length === 0 
+                  ? "All Shops" 
+                  : business?.shops
+                      ?.filter(shop => selectedShopIds.includes(shop.id))
+                      .map(shop => shop.name || 'Unnamed Shop')
+                      .join(', ') || `${selectedShopIds.length} selected`}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[240px] p-0">
+              <Command>
+                <CommandInput placeholder="Filter shops..." />
+                <CommandList>
+                  <CommandGroup>
+                    {business?.shops?.map((shop) => (
+                      <CommandItem
+                        key={shop.id}
+                        value={shop.id}
+                        onSelect={() => handleShopSelection(shop.id)}
+                      >
+                        <Checkbox
+                          checked={selectedShopIds.includes(shop.id)}
+                          className="mr-2"
+                        />
+                        {shop.name || 'Unnamed Shop'}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
-
-      {dashboardLoading && <LoadingSpinner />}
-      {dashboardError && <ErrorAlert message={dashboardError} />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <Card>
