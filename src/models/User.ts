@@ -80,7 +80,10 @@ class User extends Model<UserAttributes> implements UserAttributes {
 
   static associate(models: any) {
     this.belongsTo(models.Location, { foreignKey: 'locationId', as: 'location' });
-    this.hasMany(models.Employee, { foreignKey: 'user_id', as: 'employee' });
+    this.hasMany(models.Employee, { 
+      foreignKey: 'userId',
+      as: 'user'
+    });
     this.belongsTo(models.Shop, { foreignKey: 'shopId', as: 'shop' });  
     this.hasMany(models.Sales, { foreignKey: 'salesPersonId', as: 'sales' }); 
   }

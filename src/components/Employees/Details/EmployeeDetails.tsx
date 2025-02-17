@@ -5,21 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui
 import { Avatar, AvatarFallback } from "@/components/Shared/ui/avatar"
 import { Badge } from "@/components/Shared/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/Shared/ui/table"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft, ClipboardList } from "lucide-react"
 import { Employee } from "@/types/employee"
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
+import { useEffect, useState } from 'react';
+import { SecurityLog } from "@/types/securityLog"
+import { safeIpcInvoke } from '@/lib/ipc';
 
 interface EmployeeDetailsProps {
   employee: Employee;
   onBack: () => void;
 }
-
-const employeeActivities = [
-  { id: 1, action: "Logged in", date: "2023-05-15 09:00:00", performance: "Good" },
-  { id: 2, action: "Processed order #1234", date: "2023-05-15 10:30:00", performance: "Excellent" },
-  { id: 3, action: "Updated inventory", date: "2023-05-15 14:15:00", performance: "Good" },
-  { id: 4, action: "Handled customer inquiry", date: "2023-05-15 16:45:00", performance: "Average" },
-]
 
 const getRoleColor = (role: string): string => {
   switch (role.toLowerCase()) {
@@ -36,10 +32,37 @@ const getRoleColor = (role: string): string => {
 
 export function EmployeeDetails({ employee, onBack }: EmployeeDetailsProps) {
   const { user, business, availableShops } = useAuthLayout();
+  const [activities, setActivities] = useState<SecurityLog[]>([]);
+  const [error, setError] = useState('');
 
   const currentShop = (user?.role === 'admin' || user?.role === 'shop_owner')
     ? business?.shops?.find(shop => shop.id === employee.shopId)
     : availableShops?.find(shop => shop.id === employee.shopId);
+
+  const fetchActivities = async () => {
+    try {
+      const response = await safeIpcInvoke<SecurityLog[]>(
+        'getEmployeeActivities',
+        { userId: employee.user?.id ?? '' },
+        []
+      );
+
+      if (response) {
+        setActivities(response);
+        setError('');
+      } else {
+        setError('Failed to load activities');
+      }
+    } catch (err) {
+      setError('Failed to load activities');
+    }
+  };
+
+  useEffect(() => {
+    if (employee.user?.id) {
+      fetchActivities();
+    }
+  }, [employee.user?.id]);
 
   return (
     <>
@@ -82,17 +105,34 @@ export function EmployeeDetails({ employee, onBack }: EmployeeDetailsProps) {
                 <TableRow>
                   <TableHead>Action</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Performance</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {employeeActivities.map((activity) => (
-                  <TableRow key={activity.id}>
-                    <TableCell>{activity.action}</TableCell>
-                    <TableCell>{activity.date}</TableCell>
-                    <TableCell>{activity.performance}</TableCell>
+                {error ? (
+                  <TableRow>
+                    <TableCell colSpan={2} className="text-center text-red-500">
+                      {error}
+                    </TableCell>
                   </TableRow>
-                ))}
+                ) : activities.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={2} className="text-center h-24">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <ClipboardList className="h-8 w-8" />
+                        No activities recorded yet
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  activities.map((activity) => (
+                    <TableRow key={activity.id}>
+                      <TableCell>{activity.event_type}</TableCell>
+                      <TableCell>
+                        {new Date(activity.created_at).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>

@@ -281,3 +281,52 @@ function getPreviousValue(valueData: Array<{ time: string; [key: string]: string
   return Number(lastEntry[Object.keys(lastEntry)[1]]) || 0;
 }
 
+export interface PriceHistory {
+  id: string;
+  productId: string;
+  price: number;
+  effectiveDate: Date;
+  endDate?: Date;
+  reason?: string;
+  createdBy: string;
+}
+
+export interface Inventory {
+  id: string;
+  name: string;
+  location: string;
+  description?: string;
+  businessId: string;
+  type: 'shop' | 'warehouse';
+  status: 'active' | 'inactive';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface InventoryProduct {
+  id: string;
+  inventoryId: string;
+  productId: string;
+  quantity: number;
+  minimumQuantity: number;
+  lastStockUpdate: Date;
+  product?: {
+    name: string;
+    sku: string;
+    description: string;
+    currentPrice: number;
+  };
+}
+
+export interface StockTransfer {
+  id: string;
+  sourceInventoryId: string;
+  destinationInventoryId: string;
+  productId: string;
+  quantity: number;
+  transferDate: Date;
+  status: 'pending' | 'completed' | 'cancelled';
+  notes?: string;
+  createdBy: string;
+  approvedBy?: string;
+}

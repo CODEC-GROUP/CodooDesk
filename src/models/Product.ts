@@ -122,6 +122,7 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
         additionalImages: {
           type:  DataTypes.JSON,
           allowNull: true,
+          defaultValue: [],
         },
         reorderPoint: {
           type: DataTypes.INTEGER,
@@ -176,6 +177,10 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
               const timestamp = Date.now().toString(36);
               const randomStr = Math.random().toString(36).substring(2, 5);
               product.sku = `PRD-${timestamp}-${randomStr}`.toUpperCase();
+            }
+            // Ensure additionalImages is always an array
+            if (!product.additionalImages) {
+              product.additionalImages = [];
             }
           },
           beforeSave: (product: Product) => {

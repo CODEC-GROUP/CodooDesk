@@ -36,12 +36,12 @@ export function registerFinanceDashboardHandlers() {
     dateRange 
   }) => {
     try {
-      // Build where clause based on shop access
+      // Build where clause based on user access
       const whereClause = shopIds?.length 
-        ? { shopId: { [Op.in]: shopIds } }
+        ? { '$shop.id$': { [Op.in]: shopIds } }  // Admin with multiple shops
         : shopId 
-          ? { shopId }
-          : { '$shop.businessId$': businessId };
+          ? { shopId }  // Regular user with single shop
+          : { '$shop.businessId$': businessId };  // Fallback to business scope
 
       const dateWhereClause = dateRange ? {
         date: {
@@ -327,6 +327,12 @@ export function registerFinanceDashboardHandlers() {
               ? ((expenseStats.total_expenses - prevExpenseTotal) / prevExpenseTotal) * 100
               : 0,
             totalOrders: incomeStats.totalOrders || 0,
+            profit_margin: prevIncomeTotal > 0 
+              ? ((profit - (prevIncomeTotal - prevExpenseTotal)) / 
+                (prevIncomeTotal - prevExpenseTotal)) * 100
+              : 0,
+            income_coverage: (incomeStats.total_income || 0) / 
+              (expenseStats.total_expenses || 1)
           },
           monthlyData: monthlyTrends,
           expenseCategories: expenseCategories.map(c => ({ 

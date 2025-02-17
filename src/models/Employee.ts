@@ -4,6 +4,8 @@ import User from './User.js';
 import Shop from './Shop.js';
 import Sales from './Sales.js';
 import Business from './BusinessInformation.js';
+import AuditLog from './AuditLog.js';
+import SecurityLog from './SecurityLog.js';
 
 export interface EmployeeAttributes {
   id?: string;
@@ -181,12 +183,20 @@ class Employee extends Model<EmployeeAttributes> implements EmployeeAttributes {
   }
 
   static associate(models: any) {
-    this.belongsTo(models.User, { foreignKey: 'userId', as: 'user' });
+    this.belongsTo(models.User, { 
+      foreignKey: 'userId',
+      as: 'user'
+    });
     this.belongsTo(models.Shop, { foreignKey: 'shopId', as: 'shop' });
     this.belongsTo(models.BusinessInformation, { foreignKey: 'businessId', as: 'business' });
     this.hasMany(models.Sales, {
       foreignKey: 'employeeId',
       as: 'sales'
+    });
+    this.hasMany(models.AuditLog, { 
+      foreignKey: 'userId',
+      sourceKey: 'userId',
+      as: 'activities'
     });
   }
 }

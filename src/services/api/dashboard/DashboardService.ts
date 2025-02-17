@@ -38,9 +38,13 @@ type GroupingType = string | ReturnType<typeof sequelizeFn> | ReturnType<typeof 
 
 export function registerDashboardHandlers() {
   // Get Inventory Dashboard Data
-  ipcMain.handle('dashboard:inventory:get', async (event: IpcMainInvokeEvent, { businessId, shopId }) => {
+  ipcMain.handle('dashboard:inventory:get', async (event: IpcMainInvokeEvent, { businessId, shopId, shopIds }) => {
     try {
-      const whereClause = shopId ? { shopId } : { '$shop.businessId$': businessId };
+      const whereClause = shopIds?.length 
+        ? { '$shop.id$': { [Op.in]: shopIds } }
+        : shopId 
+          ? { shopId }
+          : { '$shop.businessId$': businessId };
       
       // Get inventory statistics
       const inventoryStats = await InventoryItem.findAll({
@@ -159,9 +163,13 @@ export function registerDashboardHandlers() {
   });
 
   // Get Sales Dashboard Data
-  ipcMain.handle('dashboard:sales:get', async (event: IpcMainInvokeEvent, { businessId, shopId, dateRange }) => {
+  ipcMain.handle('dashboard:sales:get', async (event: IpcMainInvokeEvent, { businessId, shopId, shopIds, dateRange }) => {
     try {
-      const whereClause = shopId ? { shopId } : { '$shop.businessId$': businessId };
+      const whereClause = shopIds?.length 
+        ? { '$shop.id$': { [Op.in]: shopIds } }
+        : shopId 
+          ? { shopId }
+          : { '$shop.businessId$': businessId };
       const dateWhereClause = dateRange ? {
         createdAt: {
           [Op.between]: [dateRange.start, dateRange.end]

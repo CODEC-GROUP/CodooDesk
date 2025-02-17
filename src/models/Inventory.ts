@@ -14,7 +14,8 @@ export interface InventoryAttributes {
   level: number;
   value: number;
   description?: string;
-  shopId: string;
+  shopId?: string | null;
+  status?: 'Low' | 'Medium' | 'High';
 }
 
 class Inventory extends Model<InventoryAttributes> implements InventoryAttributes {
@@ -23,7 +24,8 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
   public level!: number;
   public value!: number;
   public description!: string;
-  public shopId!: string;
+  public shopId!: string | null;
+  public status!: 'Low' | 'Medium' | 'High';
 
   // Timestamps
   public readonly createdAt!: Date;
@@ -55,11 +57,16 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
         },
         shopId: {
           type: DataTypes.UUID,
-          allowNull: false,
+          allowNull: true,
           references: {
             model: 'Shops',
             key: 'id',
           },
+        },
+        status: {
+          type: DataTypes.STRING,
+          allowNull: true,
+          defaultValue: 'Low'
         },
       },
       {
@@ -97,6 +104,28 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
     //   as: 'forecasts'
     // });
   }
+
+  public async updateStock(quantity: number): Promise<void> {
+    this.level += quantity;
+    await this.save();
+  }
+
+  public async calculateValue(): Promise<void> {
+    const items = await this.getInventoryItems({
+      include: [Product]
+    });
+
+    this.value = items.reduce((sum, item) => {
+      const productValue = item.product?.purchasePrice 
+        ? item.product.purchasePrice * item.quantity
+        : 0;
+      return sum + productValue;
+    }, 0);
+    
+    await this.save();
+  }
+
+  declare public getInventoryItems: (options?: any) => Promise<InventoryItem[]>;
 }
 
 export default Inventory;

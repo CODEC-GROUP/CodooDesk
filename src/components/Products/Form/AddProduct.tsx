@@ -188,6 +188,16 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Add basic form validation
+    if (!formData.name || !formData.sellingPrice || !formData.purchasePrice) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setIsLoading(true);
       const endpoint = editMode ? 'inventory:product:update' : 'inventory:product:create';
@@ -305,288 +315,297 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
       <Button variant="ghost" onClick={onBack} className="mb-4">
         <ChevronLeft className="mr-2 h-5 w-5" /> Back
       </Button>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-xl font-semibold flex items-center text-gray-800">
-          {editMode ? 'Edit Product' : 'Add Product'}
-        </h1>
-        <div className="space-x-2">
-          <Button variant="outline" className="text-gray-600 border-gray-300 hover:bg-gray-50">Cancel</Button>
-          <Button className="bg-[#1A7DC4] hover:bg-[#1565a0]" onClick={handleSubmit} disabled={isLoading}>
-            {editMode ? 'Save Changes' : 'Create Product'}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2 space-y-6">
-          <Card className="shadow-sm">
-            <CardContent className="p-6">
-              <h2 className="text-lg font-semibold mb-4 text-gray-800">Information</h2>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="productName" className="text-sm font-medium text-gray-700">Product Name</Label>
-                  <Input 
-                    id="productName" 
-                    placeholder="Enter a short name for your product" 
-                    className="mt-1" 
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="productDescription" className="text-sm font-medium text-gray-700">Product Description</Label>
-                  <Textarea 
-                    id="productDescription" 
-                    placeholder="Product description" 
-                    className="mt-1 h-32"
-                    value={formData.description || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="p-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h2 className="text-lg font-semibold mb-4 text-gray-800">Featured Image</h2>
-                  <div
-                    className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center"
-                    onDragOver={handleDragOver}
-                    onDrop={handleDropFeaturedImage}
-                  >
-                    <label htmlFor="featuredImage" className="cursor-pointer">
-                      <Button
-                        variant="outline"
-                        className="w-full text-[#1A7DC4] border-[#1A7DC4] hover:bg-[#1A7DC4] hover:text-white"
-                        onClick={() => handleButtonClick('featuredImage')}
-                      >
-                        Add File
-                      </Button>
-                      <input
-                        id="featuredImage"
-                        type="file"
-                        className="hidden"
-                        onChange={handleFeaturedImageChange}
-                        accept="image/*"
-                      />
-                    </label>
-                    <p className="text-sm text-gray-500 mt-2">Or drag and drop files</p>
-                    {featuredImagePreview && (
-                      <div className="mt-4">
-                        <Image src={featuredImagePreview} alt="Featured preview" width={200} height={200} objectFit="cover" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold mb-4 text-gray-800">Additional Images(Optional)</h2>
-                  <div
-                    className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center"
-                    onDragOver={handleDragOver}
-                    onDrop={handleDropAdditionalImages}
-                  >
-                    <label htmlFor="additionalImages" className="cursor-pointer">
-                      <Button
-                        variant="outline"
-                        className="w-full text-[#1A7DC4] border-[#1A7DC4] hover:bg-[#1A7DC4] hover:text-white"
-                        onClick={() => handleButtonClick('additionalImages')}
-                      >
-                        Add Files
-                      </Button>
-                      <input
-                        id="additionalImages"
-                        type="file"
-                        className="hidden"
-                        onChange={handleAdditionalImagesChange}
-                        accept="image/*"
-                        multiple
-                      />
-                    </label>
-                    <p className="text-sm text-gray-500 mt-2">Or drag and drop files</p>
-                    {additionalImages.length > 0 && (
-                      <p className="text-sm text-green-600 mt-2">{additionalImages.length} images selected</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="p-6">
-              <h2 className="text-lg font-semibold mb-4 text-gray-800">Price/Type</h2>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="purchasePrice" className="text-sm font-medium text-gray-700">Purchase Price (FCFA)</Label>
-                  <Input 
-                    id="purchasePrice" 
-                    type="number"
-                    value={formData.purchasePrice}
-                    onChange={(e) => setFormData(prev => ({ ...prev, purchasePrice: e.target.value }))}
-                    className="mt-1"
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="sellingPrice" className="text-sm font-medium text-gray-700">Selling Price (FCFA)</Label>
-                  <Input 
-                    id="sellingPrice" 
-                    type="number"
-                    value={formData.sellingPrice}
-                    onChange={(e) => setFormData(prev => ({ ...prev, sellingPrice: e.target.value }))}
-                    className="mt-1"
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="productType" className="text-sm font-medium text-gray-700">Product Type</Label>
-                  <Select value={formData.productType} onValueChange={(value) => setFormData(prev => ({ ...prev, productType: value }))}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Product Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="type3">Physical Product</SelectItem>
-                      <SelectItem value="digital">Digital Product</SelectItem>
-                      <SelectItem value="service">Service</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {/* <div className="flex items-center space-x-2 mt-4">
-                <Switch id="tax" checked={addTax} onCheckedChange={setAddTax} />
-                <Label htmlFor="tax" className="text-sm font-medium text-gray-700">Add tax for this product(optional)</Label>
-              </div> */}
-              {/* <p className="text-sm text-gray-500 mt-2">This is digital item</p> */}
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="p-6">
-              <h2 className="text-lg font-semibold mb-4 text-gray-800">Stock Information</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="quantity" className="text-sm font-medium text-gray-700">Initial Quantity</Label>
-                  <Input 
-                    id="quantity" 
-                    type="number"
-                    min="0"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="reorderPoint" className="text-sm font-medium text-gray-700">Reorder Point</Label>
-                  <Input 
-                    id="reorderPoint" 
-                    type="number"
-                    min="0"
-                    value={formData.reorderPoint}
-                    onChange={(e) => setFormData(prev => ({ ...prev, reorderPoint: e.target.value }))}
-                    className="mt-1"
-                  />
-                  <p className="text-sm text-gray-500 mt-1">Stock level that triggers low stock warning</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+      
+      <form onSubmit={handleSubmit}>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-xl font-semibold flex items-center text-gray-800">
+            {editMode ? 'Edit Product' : 'Add Product'}
+          </h1>
+          <div className="space-x-2">
+            <Button variant="outline" className="text-gray-600 border-gray-300 hover:bg-gray-50" onClick={onBack}>
+              Cancel
+            </Button>
+            <Button 
+              type="submit"
+              className="bg-[#1A7DC4] hover:bg-[#1565a0]" 
+              disabled={isLoading}
+            >
+              {editMode ? 'Save Changes' : 'Create Product'}
+            </Button>
+          </div>
         </div>
 
-        <div className="space-y-6">
-          <Card className="shadow-sm">
-            <CardContent className="p-6">
-              <h2 className="text-lg font-semibold mb-4 text-gray-800">Shop, Category and Suppliers</h2>
-              <div className="space-y-4 pt-4">
+        <div className="grid grid-cols-3 gap-6">
+          <div className="col-span-2 space-y-6">
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold mb-4 text-gray-800">Information</h2>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="productName" className="text-sm font-medium text-gray-700">Product Name</Label>
+                    <Input 
+                      id="productName" 
+                      placeholder="Enter a short name for your product" 
+                      className="mt-1" 
+                      value={formData.name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="productDescription" className="text-sm font-medium text-gray-700">Product Description</Label>
+                    <Textarea 
+                      id="productDescription" 
+                      placeholder="Product description" 
+                      className="mt-1 h-32"
+                      value={formData.description || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+                  <div>
+                    <h2 className="text-lg font-semibold mb-4 text-gray-800">Featured Image</h2>
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center"
+                      onDragOver={handleDragOver}
+                      onDrop={handleDropFeaturedImage}
+                    >
+                      <label htmlFor="featuredImage" className="cursor-pointer">
+                        <Button
+                          variant="outline"
+                          className="w-full text-[#1A7DC4] border-[#1A7DC4] hover:bg-[#1A7DC4] hover:text-white"
+                          onClick={() => handleButtonClick('featuredImage')}
+                        >
+                          Add File
+                        </Button>
+                        <input
+                          id="featuredImage"
+                          type="file"
+                          className="hidden"
+                          onChange={handleFeaturedImageChange}
+                          accept="image/*"
+                        />
+                      </label>
+                      <p className="text-sm text-gray-500 mt-2">Or drag and drop files</p>
+                      {featuredImagePreview && (
+                        <div className="mt-4">
+                          <Image src={featuredImagePreview} alt="Featured preview" width={200} height={200} objectFit="cover" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold mb-4 text-gray-800">Additional Images(Optional)</h2>
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center"
+                      onDragOver={handleDragOver}
+                      onDrop={handleDropAdditionalImages}
+                    >
+                      <label htmlFor="additionalImages" className="cursor-pointer">
+                        <Button
+                          variant="outline"
+                          className="w-full text-[#1A7DC4] border-[#1A7DC4] hover:bg-[#1A7DC4] hover:text-white"
+                          onClick={() => handleButtonClick('additionalImages')}
+                        >
+                          Add Files
+                        </Button>
+                        <input
+                          id="additionalImages"
+                          type="file"
+                          className="hidden"
+                          onChange={handleAdditionalImagesChange}
+                          accept="image/*"
+                          multiple
+                        />
+                      </label>
+                      <p className="text-sm text-gray-500 mt-2">Or drag and drop files</p>
+                      {additionalImages.length > 0 && (
+                        <p className="text-sm text-green-600 mt-2">{additionalImages.length} images selected</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold mb-4 text-gray-800">Price/Type</h2>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="purchasePrice" className="text-sm font-medium text-gray-700">Purchase Price (FCFA)</Label>
+                    <Input 
+                      id="purchasePrice" 
+                      type="number"
+                      value={formData.purchasePrice}
+                      onChange={(e) => setFormData(prev => ({ ...prev, purchasePrice: e.target.value }))}
+                      className="mt-1"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="sellingPrice" className="text-sm font-medium text-gray-700">Selling Price (FCFA)</Label>
+                    <Input 
+                      id="sellingPrice" 
+                      type="number"
+                      value={formData.sellingPrice}
+                      onChange={(e) => setFormData(prev => ({ ...prev, sellingPrice: e.target.value }))}
+                      className="mt-1"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="productType" className="text-sm font-medium text-gray-700">Product Type</Label>
+                    <Select value={formData.productType} onValueChange={(value) => setFormData(prev => ({ ...prev, productType: value }))}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Product Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="type3">Physical Product</SelectItem>
+                        <SelectItem value="digital">Digital Product</SelectItem>
+                        <SelectItem value="service">Service</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {/* <div className="flex items-center space-x-2 mt-4">
+                  <Switch id="tax" checked={addTax} onCheckedChange={setAddTax} />
+                  <Label htmlFor="tax" className="text-sm font-medium text-gray-700">Add tax for this product(optional)</Label>
+                </div> */}
+                {/* <p className="text-sm text-gray-500 mt-2">This is digital item</p> */}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold mb-4 text-gray-800">Stock Information</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="quantity" className="text-sm font-medium text-gray-700">Initial Quantity</Label>
+                    <Input 
+                      id="quantity" 
+                      type="number"
+                      min="0"
+                      value={formData.quantity}
+                      onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="reorderPoint" className="text-sm font-medium text-gray-700">Reorder Point</Label>
+                    <Input 
+                      id="reorderPoint" 
+                      type="number"
+                      min="0"
+                      value={formData.reorderPoint}
+                      onChange={(e) => setFormData(prev => ({ ...prev, reorderPoint: e.target.value }))}
+                      className="mt-1"
+                    />
+                    <p className="text-sm text-gray-500 mt-1">Stock level that triggers low stock warning</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold mb-4 text-gray-800">Shop, Category and Suppliers</h2>
+                <div className="space-y-4 pt-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+                        <div className="space-y-2">
+                          <Label>Shop</Label>
+                          <Select 
+                            value={formData.shop_id} 
+                            onValueChange={(value) => setFormData(prev => ({ ...prev, shop_id: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select shop" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {business?.shops?.map((shop: any) => (
+                                <SelectItem key={shop.id} value={shop.id}>
+                                  {shop.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                       <div className="space-y-2">
-                        <Label>Shop</Label>
+                        <Label>Category</Label>
                         <Select 
-                          value={formData.shop_id} 
-                          onValueChange={(value) => setFormData(prev => ({ ...prev, shop_id: value }))}
+                          value={formData.category_id || ''} 
+                          onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: value }))}
+                          disabled={categories.length === 0}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select shop" />
+                            <SelectValue placeholder="Select category" />
                           </SelectTrigger>
                           <SelectContent>
-                            {business?.shops?.map((shop: any) => (
-                              <SelectItem key={shop.id} value={shop.id}>
-                                {shop.name}
+                            {categories.map((category) => (
+                              <SelectItem key={category.id} value={category.id}>
+                                {category.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
-                    )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Suppliers</Label>
                     <div className="space-y-2">
-                      <Label>Category</Label>
-                      <Select 
-                        value={formData.category_id || ''} 
-                        onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: value }))}
-                        disabled={categories.length === 0}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((category) => (
-                            <SelectItem key={category.id} value={category.id}>
-                              {category.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {suppliers.map((supplier) => (
+                        <div key={supplier.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`supplier-${supplier.id}`}
+                            checked={selectedSuppliers.includes(supplier.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedSuppliers([...selectedSuppliers, supplier.id]);
+                              } else {
+                                setSelectedSuppliers(selectedSuppliers.filter(id => id !== supplier.id));
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor={`supplier-${supplier.id}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                          >
+                            {supplier.name}
+                          </label>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
 
-                <div className="space-y-2">
-                  <Label>Suppliers</Label>
-                  <div className="space-y-2">
-                    {suppliers.map((supplier) => (
-                      <div key={supplier.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`supplier-${supplier.id}`}
-                          checked={selectedSuppliers.includes(supplier.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedSuppliers([...selectedSuppliers, supplier.id]);
-                            } else {
-                              setSelectedSuppliers(selectedSuppliers.filter(id => id !== supplier.id));
-                            }
-                          }}
-                        />
-                        <label
-                          htmlFor={`supplier-${supplier.id}`}
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                        >
-                          {supplier.name}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold mb-4 text-gray-800">Scan(Not available)</h2>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  <Camera className="mx-auto mb-2 text-gray-400" size={24} />
+                  <p className="text-sm text-gray-500">Scan Image</p>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="p-6">
-              <h2 className="text-lg font-semibold mb-4 text-gray-800">Scan(Not available)</h2>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                <Camera className="mx-auto mb-2 text-gray-400" size={24} />
-                <p className="text-sm text-gray-500">Scan Image</p>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+      </form>
     </>
   )
 }

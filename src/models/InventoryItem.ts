@@ -18,6 +18,7 @@ export interface InventoryItemAttributes {
   status: 'in_stock' | 'low_stock' | 'out_of_stock';
   last_restock_date?: Date;
   last_stocktake_date?: Date;
+  value: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -36,8 +37,10 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
   public status!: 'in_stock' | 'low_stock' | 'out_of_stock';
   public last_restock_date?: Date;
   public last_stocktake_date?: Date;
+  public value!: number;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
+  public product?: Product;
 
   static initModel(sequelize: Sequelize): typeof InventoryItem {
     return this.init(
@@ -74,7 +77,7 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
         quantity: {
           type: DataTypes.INTEGER,
           allowNull: false,
-          defaultValue: 0,
+          defaultValue: 0
         },
         minimum_quantity: {
           type: DataTypes.INTEGER,
@@ -114,6 +117,11 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
           type: DataTypes.DATE,
           allowNull: true,
         },
+        value: {
+          type: DataTypes.FLOAT,
+          allowNull: false,
+          defaultValue: 0
+        },
       },
       {
         sequelize,
@@ -123,9 +131,9 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
     );
   }
 
-  static associate() {
+  static associate(models: any) {
     // InventoryItem belongs to a Product
-    InventoryItem.belongsTo(Product, {
+    InventoryItem.belongsTo(models.Product, {
       foreignKey: 'product_id',
       as: 'product'
     });

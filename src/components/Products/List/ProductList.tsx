@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
-import { ListFilter, Pencil, Trash2, AlertCircle } from "lucide-react"
+import { ListFilter, Pencil, Trash2, AlertCircle, Search, Tags, PlusCircle, Filter, Store } from "lucide-react"
 import Image from 'next/image'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
@@ -24,6 +24,22 @@ import {
   DropdownMenuTrigger,
 } from "@/components/Shared/ui/dropdown-menu"
 import { useRouter } from 'next/navigation'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Badge,
+  BadgeProps,
+} from "@/components/ui/badge"
+import {
+  Label,
+} from "@/components/ui/label"
+import {
+  Separator,
+} from "@/components/ui/separator"
+import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command"
 
 interface ProductListProps {
   onAddProduct: () => void;
@@ -314,148 +330,161 @@ export function ProductList({ onAddProduct }: ProductListProps) {
 
   return (
     <div className="container mx-auto p-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
+        <div className="relative flex-1 min-w-[200px] max-w-[400px]">
+          <Input
+            placeholder="Search products..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pr-10"
+          />
+          <Search className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
+        </div>
+
+        <div className="min-w-[200px]">
+          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <SelectTrigger>
+              <div className="flex items-center gap-2">
+                <Tags className="h-4 w-4" />
+                <SelectValue placeholder="All Categories" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {Object.entries(categories).map(([id, name]) => (
+                <SelectItem key={id} value={id}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="min-w-[200px] justify-start">
+                <Store className="mr-2 h-4 w-4" />
+                {selectedShops.length > 0 ? `${selectedShops.length} selected` : "All Shops"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[240px] p-0">
+              <Command>
+                <CommandInput placeholder="Filter shops..." />
+                <CommandList>
+                  <CommandGroup>
+                    {business?.shops?.map((shop) => (
+                      <CommandItem
+                        key={shop.id}
+                        value={shop.id}
+                        onSelect={() => {
+                          const newValues = selectedShops.includes(shop.id)
+                            ? selectedShops.filter(id => id !== shop.id)
+                            : [...selectedShops, shop.id];
+                          setSelectedShops(newValues);
+                        }}
+                      >
+                        <Checkbox
+                          checked={selectedShops.includes(shop.id)}
+                          className="mr-2"
+                        />
+                        {shop.name || 'Unnamed Shop'}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        )}
+
+        <div className="ml-auto">
+          <Button onClick={onAddProduct} className="gap-2">
+            <PlusCircle className="h-4 w-4" />
+            Add Product
+          </Button>
+        </div>
+      </div>
+
       {products.length === 0 && !isLoading ? (
         <EmptyState onAddProduct={onAddProduct} />
       ) : (
         <>
-          <div className="mb-6">
-            <div className="flex justify-between items-center">
-              <div className="flex gap-4 items-center flex-1">
-                <Input
-                  placeholder="Search products..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="max-w-sm"
-                />
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {Object.entries(categories).map(([id, name]) => (
-                      <SelectItem key={id} value={id}>
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={onAddProduct}>Add Product</Button>
-            </div>
-
-            {(user?.role === 'admin' || user?.role === 'shop_owner') && (
-              <div className="space-y-4">
-                <h3 className="font-medium">Filter by Shops</h3>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start">
-                      <ListFilter className="mr-2 h-4 w-4" />
-                      {selectedShops.length === 0 
-                        ? "Select Shops" 
-                        : `${selectedShops.length} shop${selectedShops.length > 1 ? 's' : ''} selected`
-                      }
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56 p-2">
-                    {business?.shops?.map((shop: any) => (
-                      <div key={shop.id} className="flex items-center space-x-2 p-2">
-                        <Checkbox
-                          id={`shop-${shop.id}`}
-                          checked={selectedShops.includes(shop.id)}
-                          onCheckedChange={(checked) => handleShopSelection(shop.id, checked as boolean)}
-                        />
-                        <label
-                          htmlFor={`shop-${shop.id}`}
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                        >
-                          {shop.name || 'Unnamed Shop'}
-                        </label>
-                      </div>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
-
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProducts.length === 0 ? (
                     <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableCell colSpan={6} className="text-center py-8">
+                        <div className="flex flex-col items-center justify-center text-gray-500">
+                          <p className="mb-2">No products found</p>
+                          <p className="text-sm text-gray-400">
+                            Try adjusting your search or filter criteria
+                          </p>
+                        </div>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProducts.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8">
-                          <div className="flex flex-col items-center justify-center text-gray-500">
-                            <p className="mb-2">No products found</p>
-                            <p className="text-sm text-gray-400">
-                              Try adjusting your search or filter criteria
-                            </p>
+                  ) : (
+                    filteredProducts.map((product) => (
+                      <TableRow key={product.id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center space-x-3">
+                            <Image
+                              src={normalizeImagePath(product.featuredImage)}
+                              alt={product.name}
+                              width={40}
+                              height={40}
+                              className="rounded-md object-cover"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = '/assets/images/box.png';
+                              }}
+                            />
+                            <span>{product.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{product.category_id ? categories[product.category_id] : 'Uncategorized'}</TableCell>
+                        <TableCell>{product.quantity}</TableCell>
+                        <TableCell>{product.sellingPrice.toLocaleString()} FCFA</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(product.status)}`}>
+                            {product.status.replace('_', ' ')}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEdit(product)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(product)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
-                    ) : (
-                      filteredProducts.map((product) => (
-                        <TableRow key={product.id}>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center space-x-3">
-                              <Image
-                                src={normalizeImagePath(product.featuredImage)}
-                                alt={product.name}
-                                width={40}
-                                height={40}
-                                className="rounded-md object-cover"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement;
-                                  target.src = '/assets/images/box.png';
-                                }}
-                              />
-                              <span>{product.name}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{product.category_id ? categories[product.category_id] : 'Uncategorized'}</TableCell>
-                          <TableCell>{product.quantity}</TableCell>
-                          <TableCell>{product.sellingPrice.toLocaleString()} FCFA</TableCell>
-                          <TableCell>
-                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(product.status)}`}>
-                              {product.status.replace('_', ' ')}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end space-x-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleEdit(product)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDeleteClick(product)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </div>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
 
           <ConfirmationDialog
             isOpen={!!productToDelete}

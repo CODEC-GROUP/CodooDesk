@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import jsPDF from 'jspdf';
@@ -79,14 +79,29 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   
   const ITEMS_PER_PAGE = 10;
 
-  // Get shop IDs based on user role
-  const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
-    ? business?.shops?.map(shop => shop.id) || []
-    : [availableShops?.[0]?.id].filter(Boolean) as string[];
+  // Improved shop ID handling
+  const shopIds = useMemo(() => {
+    return (user?.role === 'admin' || user?.role === 'shop_owner')
+      ? business?.shops?.map(shop => shop.id) || []
+      : [availableShops?.[0]?.id].filter(Boolean) as string[];
+  }, [user, business, availableShops]);
 
   const fetchSales = async () => {
-    console.log('Starting fetchSales...', { user, business, searchTerm, filterValue });
-    if (!user) {
+    console.log('Starting fetchSales...');
+    
+    // Add business check first
+    if (!business?.id) {
+      console.error('No business configured');
+      toast({
+        title: "Error",
+        description: "Business configuration not loaded",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Improved user check
+    if (!user?.id) {
       console.error('No user found');
       toast({
         title: "Error",
@@ -96,18 +111,19 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
       return;
     }
 
-    const currentShopId = shopId || business?.shops?.[0]?.id;
-    console.log('Current shop ID:', currentShopId);
-    if (!currentShopId) {
-      console.error('No shop ID found');
+    // Handle empty shop IDs
+    if (shopIds.length === 0) {
+      console.error('No shop IDs available');
       toast({
         title: "Error",
-        description: "No shop selected",
+        description: "No shops available - configure shops first",
         variant: "destructive",
       });
       return;
     }
 
+    const currentShopId = shopId || shopIds[0];
+    
     try {
       console.log('Making IPC call with:', {
         user,
@@ -144,6 +160,12 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   };
 
   useEffect(() => {
+    if (business?.id && user?.id && shopIds.length > 0) {
+      fetchSales();
+    }
+  }, [business, user, shopIds]); // Added shopIds to dependencies
+
+  useEffect(() => {
     let result = [...sales];
 
     if (filterValue !== 'all') {
@@ -170,10 +192,6 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
-
-  useEffect(() => {
-    fetchSales();
-  }, [business, user]);
 
   const handleViewDetails = async (saleId: string) => {
     if (!saleId) {

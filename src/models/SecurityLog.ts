@@ -2,7 +2,7 @@ import { Model, DataTypes, Sequelize } from 'sequelize';
 
 export interface SecurityLogAttributes {
   id?: string;
-  user_id: string;
+  user_id: string | null;
   event_type: 'login' | 'logout' | 'password_change' | 'failed_login' | 'permission_change' | 'data_access' | 'system_change';
   event_description: string;
   ip_address: string;
@@ -10,14 +10,14 @@ export interface SecurityLogAttributes {
   severity: 'low' | 'medium' | 'high' | 'critical';
   status: 'success' | 'failure' | 'blocked';
   additional_data?: Record<string, any>;
-  shop_id: string;
-  readonly created_at: Date;
-  readonly updated_at: Date;
+  shop_id?: string | null;
+  readonly created_at?: Date;
+  readonly updated_at?: Date;
 }
 
 export default class SecurityLog extends Model<SecurityLogAttributes> implements SecurityLogAttributes {
   public id!: string;
-  public user_id!: string;
+  public user_id!: string | null;
   public event_type!: 'login' | 'logout' | 'password_change' | 'failed_login' | 'permission_change' | 'data_access' | 'system_change';
   public event_description!: string;
   public ip_address!: string;
@@ -25,7 +25,7 @@ export default class SecurityLog extends Model<SecurityLogAttributes> implements
   public severity!: 'low' | 'medium' | 'high' | 'critical';
   public status!: 'success' | 'failure' | 'blocked';
   public additional_data?: Record<string, any>;
-  public shop_id!: string;
+  public shop_id?: string | null;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
 
@@ -39,7 +39,7 @@ export default class SecurityLog extends Model<SecurityLogAttributes> implements
         },
         user_id: {
           type: DataTypes.UUID,
-          allowNull: false,
+          allowNull: true,
           references: {
             model: 'Users',
             key: 'id',
@@ -83,7 +83,7 @@ export default class SecurityLog extends Model<SecurityLogAttributes> implements
         },
         shop_id: {
           type: DataTypes.UUID,
-          allowNull: false,
+          allowNull: true,
           references: {
             model: 'Shops',
             key: 'id',
@@ -120,7 +120,10 @@ export default class SecurityLog extends Model<SecurityLogAttributes> implements
   }
 
   static associate(models: any) {
-    this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
+    this.belongsTo(models.User, {
+      foreignKey: 'user_id',
+      as: 'user'
+    });
     this.belongsTo(models.Shop, { foreignKey: 'shop_id', as: 'shop' });
   }
 }

@@ -4,7 +4,7 @@ import User from './User.js';
 import Shop from './Shop.js';
 
 export interface AuditLogAttributes {
-  id: string;
+  id?: string;
   shopId: string;
   userId: string;
   action: 'create' | 'update' | 'delete' | 'view' | 'login' | 'logout' | 'transfer' | 'adjustment' | 'void';

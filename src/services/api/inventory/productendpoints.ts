@@ -8,6 +8,7 @@ import ProductVariant from '../../../models/ProductVariant.js';
 import PriceHistory from '../../../models/PriceHistory.js';
 import User from '../../../models/User.js';
 import { sequelize } from '../../database/index.js';
+import AuditLog from '../../../models/AuditLog.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -114,10 +115,38 @@ export function registerProductHandlers() {
       // Create the product with sanitized data
       const product = await Product.create(sanitizedData, { transaction: t });
 
-      // Handle supplier associations separately
+      // Handle supplier associations with array validation
       if (data.suppliers && Array.isArray(data.suppliers)) {
+        // Validate supplier IDs exist
+        const existingSuppliers = await Supplier.findAll({
+          where: { id: data.suppliers },
+          transaction: t
+        });
+
+        if (existingSuppliers.length !== data.suppliers.length) {
+          const invalidIds = data.suppliers.filter((id: string) => 
+            !existingSuppliers.some(s => s.id === id)
+          );
+          throw new Error(`Invalid supplier IDs: ${invalidIds.join(', ')}`);
+        }
+
         await product.setSuppliers(data.suppliers);
       }
+
+      // Log activity - fix userId reference
+      await AuditLog.create({
+        shopId: product.shop_id,
+        userId: data.userId,
+        action: 'create',
+        entityType: 'product',
+        entityId: product.id,
+        newState: {
+          name: product.name,
+          sku: product.sku
+        },
+        status: 'success',
+        performedAt: new Date()
+      }, { transaction: t });
 
       await t.commit();
 

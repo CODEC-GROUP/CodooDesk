@@ -46,7 +46,7 @@ interface InventoryListProps {
 }
 
 export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
-  const [inventory, setInventory] = useState<InventoryItemWithDetails[]>([])
+  const [inventory, setInventory] = useState<InventoryItemWithDetails[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
@@ -72,41 +72,23 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
   const { toast } = useToast()
 
   useEffect(() => {
-    fetchInventory();
-  }, [warehouseId]);
-
-  const fetchInventory = async () => {
-    try {
-      setLoading(true);
-      const response = await safeIpcInvoke<InventoryItemResponse>(
-        'inventory:items:get-by-inventory',
-        {
-          inventoryId: warehouseId
-        },
-        { success: false }
-      );
-
-      if (response?.success && response.items) {
-        setInventory(response.items);
-      } else {
-        setError(response?.message || 'Failed to fetch inventory data');
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: response?.message || "Failed to fetch inventory"
-        });
+    const loadInventory = async () => {
+      try {
+        const data = await safeIpcInvoke<InventoryItemWithDetails[]>(
+          'inventory:item:get-all',
+          { inventoryId: warehouseId },
+          []  // Fallback to empty array
+        );
+        setInventory(data || []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load inventory');
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      setError('Failed to fetch inventory data');
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to fetch inventory data"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    loadInventory();
+  }, [warehouseId]);
 
   const toggleItemSelection = (itemId: string) => {
     setSelectedItems(prev =>
@@ -123,14 +105,34 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
     }
   }
 
-  const handleDeleteConfirm = () => {
-    if (itemToDelete) {
-      setInventory(inventory.filter(item => item.id !== itemToDelete))
-      setSelectedItems(selectedItems.filter(id => id !== itemToDelete))
-      setIsDeleteModalOpen(false)
-      setItemToDelete(null)
+  const handleDeleteConfirm = async () => {
+    if (!itemToDelete) return;
+
+    try {
+      const success = await safeIpcInvoke<boolean>(
+        'inventory:item:delete',
+        { id: itemToDelete },
+        false
+      );
+
+      if (success) {
+        setInventory(prev => prev?.filter(item => item.id !== itemToDelete) || []);
+        setSelectedItems(prev => prev.filter(id => id !== itemToDelete));
+        toast({ title: 'Success', description: 'Item deleted successfully' });
+      } else {
+        throw new Error('Failed to delete item');
+      }
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to delete item'
+      });
+    } finally {
+      setIsDeleteModalOpen(false);
+      setItemToDelete(null);
     }
-  }
+  };
 
   const openOverlay = (item: InventoryItemWithDetails) => {
     setSelectedItem(item);
@@ -197,7 +199,7 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {inventory.map((item) => (
+              {inventory?.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.product.name}</TableCell>
                   <TableCell>{item.product.sku}</TableCell>
@@ -225,7 +227,7 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
 
       {/* Mobile View */}
       <div className="md:hidden">
-        {inventory.map((item) => (
+        {inventory?.map((item) => (
           <Card key={item.id} className="mb-4">
             <CardContent className="p-4">
               <div className="flex justify-between items-start">

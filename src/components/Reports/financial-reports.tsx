@@ -6,7 +6,7 @@ import { Button } from "@/components/Shared/ui/button"
 //import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/Shared/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
-import { ArrowDown, ArrowUp, DollarSign, ShoppingCart, Users, CreditCard } from "lucide-react"
+import { ArrowDown, ArrowUp, DollarSign, ShoppingCart, Users, CreditCard, Activity } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { PieChart, Pie, Cell } from 'recharts'
 import { BarChart, Bar } from 'recharts'
@@ -106,9 +106,14 @@ interface ShopResponse {
 }
 
 export function FinancialReports() {
-  const { business, user } = useAuthLayout()
-  const [selectedShopId, setSelectedShopId] = useState<string | null>(null)
-  const [availableShops, setAvailableShops] = useState<Shop[]>([])
+  const { business, user, availableShops } = useAuthLayout()
+  const [selectedShopId, setSelectedShopId] = useState<string>(() => {
+    // Default to first available shop for non-admin users
+    if (user?.role !== 'admin' && user?.role !== 'shop_owner') {
+      return availableShops?.[0]?.id || '';
+    }
+    return '';
+  })
   const [dateRange, setDateRange] = useState<[Date, Date]>([
     new Date(new Date().setDate(1)), // First day of current month
     new Date()
@@ -116,35 +121,14 @@ export function FinancialReports() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Similar shop fetching logic as Dashboard
-  useEffect(() => {
-    const fetchShops = async () => {
-      if (!business?.id || !user) return
-      
-      try {
-        const response = await safeIpcInvoke<ShopResponse>('entities:shop:get-all', {
-          businessId: business.id,
-          userId: user.id,
-          role: user.role
-        }, { success: false, shops: [] })
-
-        if (response?.success) {
-          setAvailableShops(response.shops)
-          if (response.shops.length === 1) {
-            setSelectedShopId(response.shops[0].id)
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching shops:', err)
-      }
-    }
-
-    fetchShops()
-  }, [business?.id, user])
+  // Update shop objects handling
+  const shopObjects = (user?.role === 'admin' || user?.role === 'shop_owner')
+    ? business?.shops || []
+    : availableShops?.filter(Boolean) || []
 
   const [financeData, setFinanceData] = useState<FinanceData | null>(null)
 
-  // Add data refresh functionality
+  // Update the refreshData callback
   const refreshData = useCallback(async () => {
     if (!business?.id) return
     
@@ -152,16 +136,14 @@ export function FinancialReports() {
     setError(null)
 
     try {
-      // Determine shop filter based on role and selection
-      const shopFilter = user?.role === 'admin' || user?.role === 'owner' 
-        ? { shopIds: availableShops.map(shop => shop.id) }
-        : { shopId: selectedShopId }
-
       const response = await safeIpcInvoke<FinanceDashboardResponse>(
         DASHBOARD_CHANNELS.GET_FINANCE_DASHBOARD,
         {
           businessId: business.id,
-          ...shopFilter,
+          ...(selectedShopId ? { shopId: selectedShopId } : {}),
+          ...(!selectedShopId && (user?.role === 'admin' || user?.role === 'shop_owner') 
+            ? { shopIds: shopObjects.map(shop => shop.id) }
+            : {}),
           dateRange: {
             start: dateRange[0].toISOString(),
             end: dateRange[1].toISOString()
@@ -181,7 +163,7 @@ export function FinancialReports() {
     } finally {
       setLoading(false)
     }
-  }, [business?.id, selectedShopId, dateRange, user?.role, availableShops])
+  }, [business?.id, selectedShopId, dateRange, user?.role, shopObjects])
 
   // Add auto-refresh interval
   useEffect(() => {
@@ -217,16 +199,17 @@ export function FinancialReports() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Financial Reports</h1>
         <div className="flex gap-2">
-          {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+          {(user?.role === 'admin' || user?.role === 'shop_owner') && shopObjects.length > 0 && (
             <Select
-              value={selectedShopId || ''}
-              onValueChange={(value) => setSelectedShopId(value)}
+              value={selectedShopId}
+              onValueChange={setSelectedShopId}
             >
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select Shop" />
+                <SelectValue placeholder="All Shops" />
               </SelectTrigger>
               <SelectContent>
-                {availableShops.map((shop) => (
+                {shopObjects.length > 1 && <SelectItem value="">All Shops</SelectItem>}
+                {shopObjects.map(shop => (
                   <SelectItem key={shop.id} value={shop.id}>
                     {shop.name}
                   </SelectItem>
@@ -281,33 +264,27 @@ export function FinancialReports() {
         </div>
       </div>
 
-      <div className="grid gap-6 mb-8 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 mb-8 md:grid-cols-2 lg:grid-cols-3">
         <StatCard
           title="Total Income"
           value={`${(financeData.overview.total_income ?? 0).toLocaleString()} FCFA`}
           icon={DollarSign}
           color="bg-blue-100"
-          trend={financeData.overview.revenue_growth > 0 ? 'up' : 'down'}
-        />
-        <StatCard
-          title="Income Transactions"
-          value={(financeData.overview.totalOrders ?? 0).toLocaleString()}
-          icon={ShoppingCart}
-          color="bg-green-100"
-        />
-        <StatCard
-          title="Revenue Growth"
-          value={`${(financeData.overview.revenue_growth || 0).toFixed(2)}%`}
-          icon={Users}
-          color="bg-red-100"
-          trend={financeData.overview.revenue_growth > 0 ? 'up' : 'down'}
         />
         <StatCard
           title="Total Expenses"
-          value={`${financeData.overview.total_expenses.toLocaleString()} FCFA`}
+          value={`${(financeData.overview.total_expenses ?? 0).toLocaleString()} FCFA`}
           icon={CreditCard}
-          color="bg-purple-100"
-          trend={(financeData.overview.expense_growth || 0) > 0 ? 'down' : 'up'}
+          color="bg-red-100"
+        />
+        <StatCard
+          title="Net Profit"
+          value={`${(
+            (financeData.overview.total_income || 0) - 
+            (financeData.overview.total_expenses || 0)
+          ).toLocaleString()} FCFA`}
+          icon={Activity}
+          color="bg-green-100"
         />
       </div>
 
@@ -372,34 +349,51 @@ export function FinancialReports() {
         </Card>
         <Card>
           <CardContent className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Recent Transactions</h3>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Type</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {financeData.recentTransactions.map((transaction) => (
-                  <TableRow key={transaction.id}>
-                    <TableCell>{transaction.date}</TableCell>
-                    <TableCell>{transaction.description}</TableCell>
-                    <TableCell>{transaction.amount.toLocaleString()} FCFA</TableCell>
-                    <TableCell>
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        transaction.type === 'income' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {transaction.type === 'income' ? <ArrowUp className="w-3 h-3 mr-1" /> : <ArrowDown className="w-3 h-3 mr-1" />}
-                        {transaction.type}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <h3 className="text-lg font-semibold mb-4">Expense Ratio</h3>
+            <StatCard
+              title="Expense Ratio"
+              value={`${(
+                (financeData.overview.total_expenses / 
+                (financeData.overview.total_income || 1)) * 100
+              ).toFixed(1)}%`}
+              icon={CreditCard}
+              color="bg-orange-100"
+              trend={
+                (financeData.overview.total_expenses / 
+                (financeData.overview.total_income || 1)) * 100 < 60 ? 'up' : 'down'
+              }
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 mb-8 md:grid-cols-2">
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="text-lg font-semibold mb-4">Financial Health</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  +{(financeData.overview.revenue_growth || 0).toFixed(1)}%
+                </div>
+                <div className="text-sm">Revenue Growth</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">
+                  +{(financeData.overview.expense_growth || 0).toFixed(1)}%
+                </div>
+                <div className="text-sm">Expense Growth</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {(
+                    (financeData.overview.total_income / 
+                    (financeData.overview.total_expenses || 1)) 
+                  ).toFixed(1)}x
+                </div>
+                <div className="text-sm">Income Coverage</div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

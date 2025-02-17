@@ -13,10 +13,11 @@ import {
 import { Avatar, AvatarFallback } from "@/components/Shared/ui/avatar"
 import { Badge } from "@/components/Shared/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft, Pencil, PackageCheck, PackageX } from "lucide-react"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
+import { cn } from "@/lib/utils";
 
 // Mock data for customer orders
 const customerOrders = [
@@ -57,26 +58,41 @@ interface CustomerDetailsProps {
 
 interface Order {
   id: string;
-  date: string;
+  saleDate: string;
   status: string;
-  price: string;
+  price: number;
+  shop: {
+    id: string;
+    name: string;
+  };
+  paymentMethod: string;
+}
+
+interface CustomerResponse {
+  success: boolean;
+  customer: {
+    orders: Order[];
+    // ... other customer properties ...
+  } | null;
 }
 
 export function CustomerDetails({ customer, onBack }: CustomerDetailsProps) {
-  const [customerDetails, setCustomerDetails] = useState(null);
+  const [customerDetails, setCustomerDetails] = useState<{ orders: Order[] } | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const fetchCustomerDetails = async (customerId: string) => {
     try {
       setIsLoading(true);
-      const response = await safeIpcInvoke('entities:customer:get', {
+      const response = await safeIpcInvoke<CustomerResponse>('entities:customer:get', {
         id: customerId
       }, { success: false, customer: null });
 
       if (response?.success && response.customer) {
         setCustomerDetails(response.customer);
+        setOrders(response.customer.orders || []);
       } else {
         toast({
           title: "Error",
@@ -140,8 +156,35 @@ export function CustomerDetails({ customer, onBack }: CustomerDetailsProps) {
         <h1 className="text-2xl md:text-3xl font-semibold text-gray-800">Customer Information</h1>
         <div className="flex flex-col md:flex-row w-full md:w-auto">
           <div className="flex flex-col md:flex-row w-full">
-            <Button variant="outline" className="mr-2 mb-2 md:mb-0 w-full md:w-auto">Cancel</Button>
-            <Button className="w-full md:w-auto">Save</Button>
+            {isEditing ? (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsEditing(false)}
+                  className="mr-2 mb-2 md:mb-0 w-full md:w-auto"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  className="w-full md:w-auto"
+                  onClick={() => {
+                    // Handle save logic
+                    setIsEditing(false)
+                  }}
+                >
+                  Save
+                </Button>
+              </>
+            ) : (
+              <Button 
+                variant="outline" 
+                onClick={() => setIsEditing(true)}
+                className="w-full md:w-auto"
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -160,58 +203,106 @@ export function CustomerDetails({ customer, onBack }: CustomerDetailsProps) {
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-gray-500">First Name</label>
-                <Input defaultValue={customer.name.split(' ')[0]} className="w-full" />
+                <Input 
+                  defaultValue={customer.name.split(' ')[0]} 
+                  className="w-full" 
+                  disabled={!isEditing}
+                  readOnly={!isEditing}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Last Name</label>
-                <Input defaultValue={customer.name.split(' ')[1]} className="w-full" />
+                <Input 
+                  defaultValue={customer.name.split(' ')[1]} 
+                  className="w-full" 
+                  disabled={!isEditing}
+                  readOnly={!isEditing}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Phone Number</label>
-                <Input defaultValue={customer.phone} className="w-full" />
+                <Input 
+                  defaultValue={customer.phone} 
+                  className="w-full" 
+                  disabled={!isEditing}
+                  readOnly={!isEditing}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Address</label>
-                <Input defaultValue="Country, Region, City" className="w-full" />
+                <Input 
+                  defaultValue="Country, Region, City" 
+                  className="w-full" 
+                  disabled={!isEditing}
+                  readOnly={!isEditing}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Date of Birth</label>
-                <Input type="date" className="w-full" />
+                <Input 
+                  type="date" 
+                  className="w-full" 
+                  disabled={!isEditing}
+                  readOnly={!isEditing}
+                />
               </div>
             </div>
           </CardContent>
         </Card>
-        {/* <Card>
+        <Card>
           <CardHeader>
             <CardTitle>Customer Orders</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>OrderID</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Order Status</TableHead>
-                  <TableHead>Price</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell>{order.id}</TableCell>
-                    <TableCell>{order.date}</TableCell>
-                    <TableCell>
-                      <Badge className={`font-medium ${getStatusColor(order.status)}`}>
-                        {order.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{order.price}</TableCell>
+            <div className="max-h-[300px] overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-white dark:bg-gray-950 z-10 shadow-sm">
+                  <TableRow>
+                    <TableHead>Order ID</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Shop</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Total</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {orders.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center">
+                        <div className="flex flex-col items-center justify-center py-4">
+                          <PackageX className="h-8 w-8 text-gray-400 mb-2" />
+                          <p className="text-gray-500">No orders found for this customer</p>
+                          <p className="text-sm text-gray-400 mt-1">All future orders will appear here</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    orders.map((order) => (
+                      <TableRow key={order.id}>
+                        <TableCell>#{order.id.slice(0, 6).toUpperCase()}</TableCell>
+                        <TableCell>
+                          {new Date(order.saleDate).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>{order.shop.name}</TableCell>
+                        <TableCell>
+                          <Badge className={`font-medium ${getStatusColor(order.status)}`}>
+                            {order.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {new Intl.NumberFormat('en-US', {
+                            style: 'currency',
+                            currency: 'XAF'
+                          }).format(order.price)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
-        </Card> */}
+        </Card>
       </div>
     </>
   )

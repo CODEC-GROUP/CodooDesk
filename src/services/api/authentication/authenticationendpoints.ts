@@ -7,6 +7,8 @@ import Shop from '../../../models/Shop.js';
 import BusinessInformation from '../../../models/BusinessInformation.js';
 import { Op } from 'sequelize';
 import Location from '../../../models/Location.js';
+import SecurityLog from '../../../models/SecurityLog.js';
+import { DataTypes } from 'sequelize';
 // IPC Channel names
 const IPC_CHANNELS = {
   REGISTER: 'auth:register',
@@ -312,12 +314,12 @@ export function registerAuthHandlers() {
   });
 
   // Login user handler
-  ipcMain.handle(IPC_CHANNELS.LOGIN, async (event, { email, password }) => {
+  ipcMain.handle(IPC_CHANNELS.LOGIN, async (event, credentials) => {
     console.log('=== LOGIN START ===');
-    console.log('Login attempt with email:', email);
+    console.log('Login attempt with email:', credentials.email);
     
     try {
-      if (!email || !password) {
+      if (!credentials.email || !credentials.password) {
         console.log('Login failed: Missing credentials');
         return {
           success: false,
@@ -327,17 +329,22 @@ export function registerAuthHandlers() {
 
       console.log('Finding user in database...');
       const user = await User.findOne({
-        where: { email: email.toLowerCase() },
-        include: [{
-          model: Employee,
-          as: 'employee',
-          attributes: ['shopId']
-        }],
-        logging: (sql) => console.log('Executing SQL:', sql)
+        where: { email: credentials.email.toLowerCase() },
+        attributes: ['id', 'username', 'email', 'password_hash', 'is_staff', 'role', 'locationId', 'shopId', 'createdAt', 'updatedAt']
       });
 
       if (!user) {
-        console.log('Login failed: No user found with email:', email);
+        console.log('Login failed: No user found with email:', credentials.email);
+        await SecurityLog.create({
+          user_id: null,
+          event_type: 'failed_login',
+          ip_address: event.sender.getURL().split(':')[2] || 'unknown',
+          user_agent: event.sender.getUserAgent(),
+          status: 'failure',
+          event_description: 'Attempted login with non-existent email',
+          severity: 'medium',
+          shop_id: null,
+        });
         return {
           success: false,
           message: 'User not found'
@@ -345,10 +352,20 @@ export function registerAuthHandlers() {
       }
 
       console.log('User found, verifying password...');
-      const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      const isPasswordValid = await bcrypt.compare(credentials.password, user.password_hash);
 
       if (!isPasswordValid) {
-        console.log('Login failed: Invalid password for user:', email);
+        console.log('Login failed: Invalid password for user:', credentials.email);
+        await SecurityLog.create({
+          user_id: user.id,
+          event_type: 'failed_login',
+          ip_address: event.sender.getURL().split(':')[2] || 'unknown',
+          user_agent: event.sender.getUserAgent(),
+          status: 'failure',
+          event_description: 'Incorrect password entered',
+          severity: 'medium',
+          shop_id: user.shopId || null,
+        });
         return {
           success: false,
           message: 'Incorrect password'
@@ -500,6 +517,18 @@ export function registerAuthHandlers() {
         }
       }
 
+      // Log successful login
+      await SecurityLog.create({
+        user_id: user.id,
+        event_type: 'login',
+        ip_address: event.sender.getURL().split(':')[2] || 'unknown',
+        user_agent: event.sender.getUserAgent(),
+        status: 'success',
+        event_description: 'User logged in successfully',
+        severity: 'low',
+        shop_id: user.shopId || null,
+      });
+
       return {
         success: true,
         message: 'Login successful',
@@ -511,6 +540,18 @@ export function registerAuthHandlers() {
         token: 'jwt-token-here'
       };
     } catch (error) {
+      // Log unexpected errors
+      await SecurityLog.create({
+        user_id: null,
+        event_type: 'system_change',
+        ip_address: event.sender.getURL().split(':')[2] || 'unknown',
+        user_agent: event.sender.getUserAgent(),
+        status: 'failure',
+        event_description: 'System error during login process',
+        severity: 'high',
+        shop_id: null,
+      });
+      
       console.error('Login error:', error);
       return {
         success: false,
@@ -520,11 +561,23 @@ export function registerAuthHandlers() {
   });
 
   // Logout handler
-  ipcMain.handle(IPC_CHANNELS.LOGOUT, async (event) => {
+  ipcMain.handle(IPC_CHANNELS.LOGOUT, async (event, { userId }) => {
     console.log('=== LOGOUT START ===');
     console.log('Logout request received');
     try {
       // Add any necessary cleanup here (e.g., invalidating sessions)
+      // Log logout
+      await SecurityLog.create({
+        user_id: userId,
+        event_type: 'logout',
+        ip_address: event.sender.getURL().split(':')[2] || 'unknown',
+        user_agent: event.sender.getUserAgent(),
+        status: 'success',
+        event_description: 'User logged out successfully',
+        severity: 'low',
+        shop_id: null,
+      });
+
       return {
         success: true,
         message: 'Logged out successfully'
@@ -564,6 +617,19 @@ export function registerAuthHandlers() {
         success: false,
         isAuthenticated: false
       };
+    }
+  });
+
+  ipcMain.handle('getEmployeeActivities', async (event, { userId }) => {
+    try {
+      return await SecurityLog.findAll({
+        where: { user_id: userId },
+        order: [['created_at', 'DESC']],
+        limit: 50
+      });
+    } catch (error) {
+      console.error('Error fetching activities:', error);
+      return [];
     }
   });
 

@@ -5,6 +5,8 @@ import Shop from '../../../models/Shop.js';
 import { sequelize } from '../../database/index.js';
 import { FindOptions, FindAttributeOptions, Includeable } from 'sequelize';
 import { Op } from 'sequelize';
+import Order from '../../../models/Order.js';
+import Product from '../../../models/Product.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -127,11 +129,51 @@ export function registerCustomerHandlers() {
   // Get customer by ID handler
   ipcMain.handle(IPC_CHANNELS.GET_CUSTOMER, async (event, { id }) => {
     try {
-      const customer = await Customer.findByPk(id);
+      const customer = await Customer.findByPk(id, {
+        include: [{
+          model: Sales,
+          as: 'sales',
+          include: [
+            {
+              model: Order,
+              as: 'orders',
+              include: [{
+                model: Product,
+                as: 'product',
+                attributes: ['id', 'name', 'sellingPrice']
+              }]
+            },
+            {
+              model: Shop,
+              as: 'shop',
+              attributes: ['id', 'name']
+            }
+          ]
+        }]
+      });
+
       if (!customer) {
         return { success: false, message: 'Customer not found' };
       }
-      return { success: true, customer };
+
+      // Format sales as orders for frontend display
+      const orders = customer.sales?.flatMap(sale => 
+        sale.orders?.map(order => ({
+          ...(order as any).get({ plain: true }),
+          saleDate: sale.createdAt,
+          shop: (sale as any).shop,
+          paymentMethod: sale.paymentMethod,
+          status: sale.status
+        })) || []
+      ) || [];
+
+      return { 
+        success: true, 
+        customer: {
+          ...customer.get({ plain: true }),
+          orders
+        } 
+      };
     } catch (error) {
       return { success: false, message: 'Error retrieving customer', error };
     }

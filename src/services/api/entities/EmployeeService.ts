@@ -6,11 +6,15 @@ import { Op } from 'sequelize';
 import { sequelize } from '../../database/index.js';
 import bcrypt from 'bcryptjs';
 import Shop from '../../../models/Shop.js';
+import AuditLog from '../../../models/AuditLog.js';
+import SecurityLog from '../../../models/SecurityLog.js';
 
 // Add this interface at the top of the file
 interface EmployeeWithAssociations extends Employee {
   user?: User;
   shop?: Shop;
+  activities?: AuditLog[];
+  sessions?: SecurityLog[];
 }
 
 // IPC Channel names
@@ -23,6 +27,8 @@ const IPC_CHANNELS = {
   GET_EMPLOYEE_SALES: 'entities:employee:get-sales',
   GET_EMPLOYEE_INCOME: 'entities:employee:get-income',
   UPDATE_EMPLOYEE_ROLE: 'entities:employee:update-role',
+  GET_EMPLOYEE_ACTIVITIES: 'entities:employee:get-activities',
+  GET_EMPLOYEE_SESSIONS: 'entities:employee:get-sessions',
 };
 
 // Register IPC handlers
@@ -474,6 +480,56 @@ export function registerEmployeeHandlers() {
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Error updating role'
+      };
+    }
+  });
+
+  // Get employee activities handler
+  ipcMain.handle(IPC_CHANNELS.GET_EMPLOYEE_ACTIVITIES, async (event, { employeeId }) => {
+    try {
+      const employee = await Employee.findByPk(employeeId, {
+        include: [{
+          model: AuditLog,
+          as: 'activities',
+          order: [['performedAt', 'DESC']],
+          limit: 100
+        }]
+      }) as unknown as EmployeeWithAssociations | null;
+
+      return { 
+        success: true, 
+        data: employee?.activities || [] 
+      };
+    } catch (error) {
+      console.error('Error fetching activities:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error fetching activities' 
+      };
+    }
+  });
+
+  // Get employee sessions handler
+  ipcMain.handle(IPC_CHANNELS.GET_EMPLOYEE_SESSIONS, async (event, { employeeId }) => {
+    try {
+      const employee = await Employee.findByPk(employeeId, {
+        include: [{
+          model: SecurityLog,
+          as: 'sessions',
+          where: { eventType: { [Op.in]: ['login', 'logout'] } },
+          order: [['created_at', 'DESC']],
+          limit: 100
+        }]
+      }) as unknown as EmployeeWithAssociations | null;
+      return { 
+        success: true, 
+        data: employee?.sessions || [] 
+      };
+    } catch (error) {
+      console.error('Error fetching sessions:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error fetching sessions' 
       };
     }
   });

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Legend } from 'recharts'
-import { DollarSign, ShoppingCart, Package, CreditCard, ChevronDown } from 'lucide-react'
+import { DollarSign, ShoppingCart, Package, CreditCard, ChevronDown, TrendingUp } from 'lucide-react'
 import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
 import { safeIpcInvoke } from '@/lib/ipc'
 import { LoadingSpinner } from '@/components/Shared/ui/LoadingSpinner'
@@ -169,6 +169,17 @@ const CategoryChart = ({ data, isLoading, error }: {
 };
 
 // Update the filter controls
+interface FilterControlsProps {
+  date: DateRange | undefined;
+  setDate: (date: DateRange | undefined) => void;
+  currentView: TimeView;
+  setCurrentView: (view: TimeView) => void;
+  currentShopId: string | null;
+  setCurrentShopId: (id: string) => void;
+  user: any;
+  shopObjects: Shop[];
+}
+
 const FilterControls = ({ 
   date, 
   setDate,
@@ -176,36 +187,29 @@ const FilterControls = ({
   setCurrentView,
   currentShopId,
   setCurrentShopId,
-  availableShops,
-  user
-}: { 
-  date: DateRange | undefined;
-  setDate: (date: DateRange | undefined) => void;
-  currentView: TimeView;
-  setCurrentView: (view: TimeView) => void;
-  currentShopId: string | null;
-  setCurrentShopId: (id: string) => void;
-  availableShops: Shop[];
-  user: any;
-}) => {
+  user,
+  shopObjects
+}: FilterControlsProps) => {
   const { t } = useTranslation();
   
   const renderShopSelector = () => {
-    if (availableShops.length <= 1) return null;
+    // Allow shop owners with multiple shops to see the selector
+    const shouldShow = (user?.role === 'admin' || user?.role === 'shop_owner') && 
+                      shopObjects.length > 0; // Show if any shops exist
+    
+    if (!shouldShow) return null;
 
     return (
       <Select
         value={currentShopId || ''}
-        onValueChange={(value) => setCurrentShopId(value)}
+        onValueChange={setCurrentShopId}
       >
         <SelectTrigger className="w-[200px]">
-          <SelectValue placeholder={t('Select Shop')} />
+          <SelectValue placeholder="All Shops" />
         </SelectTrigger>
         <SelectContent>
-          {(user?.role === 'admin' || user?.role === 'Shop_owner') && (
-            <SelectItem value="">All Shops</SelectItem>
-          )}
-          {availableShops.map(shop => (
+          {shopObjects.length > 1 && <SelectItem value="">All Shops</SelectItem>}
+          {shopObjects.map(shop => (
             <SelectItem key={shop.id} value={shop.id}>
               {shop.name}
             </SelectItem>
@@ -268,9 +272,14 @@ const CHART_CONTAINER = "h-[300px] mt-4";
 const GRID_LAYOUT = "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6";
 
 export function Dashboard() {
-  const { business, user } = useAuthLayout();
-  const [currentShopId, setCurrentShopId] = useState<string | null>(null);
-  const [availableShops, setAvailableShops] = useState<Shop[]>([]);
+  const { business, user, availableShops } = useAuthLayout();
+  const [currentShopId, setCurrentShopId] = useState<string | null>(() => {
+    // Default to first available shop for non-admin users
+    if (user?.role !== 'admin' && user?.role !== 'shop_owner') {
+      return availableShops?.[0]?.id || null;
+    }
+    return null; // Admins see all shops by default
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
@@ -280,6 +289,11 @@ export function Dashboard() {
   });
   const { t } = useTranslation();
   const [currentView, setCurrentView] = useState<TimeView>('daily');
+
+  // Update shop objects handling
+  const shopObjects = (user?.role === 'admin' || user?.role === 'shop_owner')
+    ? business?.shops || []
+    : availableShops?.filter(Boolean) || [];
 
   const { data: categoriesData, isLoading: isCategoriesLoading, error: categoriesError } = useQuery({
     queryKey: ['topCategories', business?.id, currentShopId, date?.from, date?.to, currentView],
@@ -302,36 +316,6 @@ export function Dashboard() {
     enabled: !!business?.id
   });
 
-  // Fetch available shops based on user role
-  useEffect(() => {
-    const fetchShops = async () => {
-      if (!business?.id || !user) return;
-
-      try {
-        const response = await safeIpcInvoke<{ success: boolean; shops: Shop[] }>(
-          'entities:shop:get-all',
-          {
-            businessId: business.id,
-            userId: user.id,
-            role: user.role
-          },
-          { success: false, shops: [] }
-        );
-
-        if (response?.success) {
-          setAvailableShops(response.shops);
-          if (response.shops.length === 1) {
-            setCurrentShopId(response.shops[0].id);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching shops:', error);
-      }
-    };
-
-    fetchShops();
-  }, [business?.id, user]);
-
   // Fetch dashboard data with shop filtering
   const fetchDashboardData = async () => {
     if (!business?.id) return;
@@ -339,11 +323,11 @@ export function Dashboard() {
     try {
       setLoading(true);
       
-      // Determine shop filter based on role and selection
+      // Update shop filter based on role and selection
       const shopFilter = currentShopId 
         ? { shopId: currentShopId }
-        : user?.role === 'admin' || user?.role === 'shop_owner'
-          ? { shopIds: availableShops.map(shop => shop.id) }
+        : (user?.role === 'admin' || user?.role === 'shop_owner')
+          ? { shopIds: shopObjects.map(shop => shop.id) }
           : {};
 
       const dateFilter = date ? {
@@ -599,8 +583,8 @@ export function Dashboard() {
             setCurrentView={setCurrentView}
             currentShopId={currentShopId}
             setCurrentShopId={setCurrentShopId}
-            availableShops={availableShops}
             user={user}
+            shopObjects={shopObjects}
           />
         </div>
 
@@ -614,8 +598,7 @@ export function Dashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">Total Revenue</p>
                 <h3 className="text-2xl font-semibold">
-                  {formatNumber(finance.overview.total_income)} 
-                  <span className="text-sm font-normal ml-1">FCFA</span>
+                  {formatNumber(sales?.weeklyStats?.totalRevenue || 0)} FCFA
                 </h3>
               </div>
             </CardContent>
@@ -623,12 +606,15 @@ export function Dashboard() {
           <Card className={CARD_CLASSES}>
             <CardContent className="p-4 md:p-6 flex items-center gap-4">
               <div className="bg-green-100/80 p-2 rounded-lg">
-                <ShoppingCart className="h-6 w-6 text-green-600" />
+                <TrendingUp className="h-6 w-6 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Orders</p>
+                <p className="text-sm text-muted-foreground">Net Profit</p>
                 <h3 className="text-2xl font-semibold">
-                  {formatNumber(finance.overview.totalOrders)}
+                  {formatNumber(
+                    (finance.overview.total_income || 0) - 
+                    (finance.overview.total_expenses || 0)
+                  )} FCFA
                 </h3>
               </div>
             </CardContent>

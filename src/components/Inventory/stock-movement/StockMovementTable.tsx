@@ -30,6 +30,9 @@ import { useToast } from "@/components/Shared/ui/use-toast"
 import { safeIpcInvoke } from "@/lib/ipc"
 import { useAppTranslation } from '@/hooks/use-translation'
 
+// Create a type for new movements without ID
+type NewStockMovement = Omit<StockMovement, 'id'>;
+
 export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
   const [movements, setMovements] = useState<StockMovement[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,46 +45,22 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
   const { toast } = useToast()
   const { t } = useAppTranslation()
 
-  useEffect(() => {
-    fetchMovements();
-  }, [currentPage, dateRange, selectedProducts]);
-
-  const fetchMovements = async () => {
+  const loadMovements = async () => {
     try {
-      setLoading(true);
-      const response = await safeIpcInvoke<StockMovementResponse>(
-        'stock-movement:get-all',
-        {
-          inventoryId,
-          startDate: dateRange[0],
-          endDate: dateRange[1],
-          productId: selectedProducts.length === 1 ? selectedProducts[0] : undefined,
-          page: currentPage,
-          limit: 10
-        },
-        { success: false }
+      const data = await safeIpcInvoke<StockMovement[]>(
+        'stock-movement:get-by-inventory',
+        { inventoryId },
+        []
       );
-
-      if (response?.success && response.movements) {
-        setMovements(response.movements);
-        setTotalPages(response.pages || 1);
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: response?.message || "Failed to fetch movements"
-        });
-      }
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to fetch stock movements"
-      });
+      setMovements(data || []);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadMovements();
+  }, [inventoryId]);
 
   const handlePhysicalCount = async (productId: string, count: number) => {
     try {
@@ -96,10 +75,10 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
             physical_count: count,
             system_count: systemCount,
             reason: 'Physical count adjustment',
-            performedBy_id: 'current-user-id' // Replace with actual user ID
+            performedBy_id: 'current-user-id'
           }
         },
-        { success: false }
+        { success: false }  // Fallback value
       );
 
       if (response?.success) {
@@ -107,7 +86,7 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
           title: "Success",
           description: "Stock adjustment recorded successfully"
         });
-        fetchMovements();
+        loadMovements();
       } else {
         toast({
           variant: "destructive",
@@ -167,14 +146,13 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
     setSelectedMovement(null);
   }
 
-  const handleAddMovement = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAddMovement = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const costPerUnit = Number(formData.get('cost_per_unit')) || 0;
     const quantity = Number(formData.get('quantity'));
 
-    const newMovement: StockMovement = {
-      id: (movements.length + 1).toString(),
+    const newMovement: NewStockMovement = {
       movementType: formData.get('type') as StockMovement['movementType'],
       quantity,
       date: formData.get('date') as string,
@@ -188,8 +166,30 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
       total_cost: quantity * costPerUnit,
       createdAt: new Date(),
     }
-    setMovements([...movements, newMovement])
-    setShowAddForm(false)
+    try {
+      const response = await safeIpcInvoke<StockMovement>(
+        'stock-movement:create',
+        {
+          ...newMovement,
+          inventoryId
+        },
+        null
+      );
+
+      if (response) {
+        setMovements(prev => [...prev, response]);
+        setShowAddForm(false);
+      } else {
+        throw new Error("Failed to create movement");
+      }
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error('Unknown error occurred');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message
+      });
+    }
   }
 
   const handleMovementTypeChange = (value: "Inbound" | "Outbound") => {

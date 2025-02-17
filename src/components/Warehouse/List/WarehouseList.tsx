@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import {
@@ -20,41 +20,102 @@ import {
   TableRow,
 } from "@/components/Shared/ui/table"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
-import { PenIcon, TrashIcon, FileDown, Plus, Search } from 'lucide-react'
+import { PenIcon, TrashIcon, FileDown, Plus, Search, Package } from 'lucide-react'
 import { DeleteConfirmationModal } from '@/components/Shared/ui/Modal/delete-confrimation-modal'
 import { Card, CardContent } from "@/components/Shared/ui/card"
 import AddWarehouse from '../Form/AddWarehouse'
 import { InventoryList } from '@/components/Inventory/InventoryList/Inventory-list'
 import { useAppTranslation } from '@/hooks/useAppTranslation'
+import { safeIpcInvoke } from '@/lib/ipc'
+import { useAuthLayout } from '@/components/Shared/Layout/AuthLayout'
+import { LoadingSpinner } from '@/components/Shared/ui/LoadingSpinner'
+import { ErrorAlert } from '@/components/Shared/ui/ErrorAlert'
+import { toast } from '@/hooks/use-toast'
 
-type WarehouseItem = {
+interface WarehouseItem {
   id: string
   name: string
   level: number
   value: number
   status: 'Low' | 'Medium' | 'High'
+  description?: string
+  shopId: string | null
 }
 
-const warehouseData: WarehouseItem[] = [
-  { id: '1', name: 'Inventory A', level: 1, value: 1000, status: 'Low' },
-  { id: '2', name: 'Douala Nov inventory', level: 2, value: 800, status: 'Medium' },
-  { id: '3', name: 'Dubai Oct inventory', level: 3, value: 1200, status: 'High' },
-]
+interface PaginationState {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
 
 export function WarehouseList() {
   const { t } = useAppTranslation()
-  const [warehouses, setWarehouses] = useState<WarehouseItem[]>(warehouseData)
+  const { business, currentShopId, user } = useAuthLayout()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [warehouses, setWarehouses] = useState<WarehouseItem[]>([])
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<string | null>(null)
   const [showAddWarehouse, setShowAddWarehouse] = useState(false)
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
+  const [pagination, setPagination] = useState<PaginationState>({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  })
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const statusTranslations = {
     Low: t('warehouse.status.low'),
     Medium: t('warehouse.status.medium'),
     High: t('warehouse.status.high')
-  };
+  }
+
+  const fetchWarehouses = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const response = await safeIpcInvoke<{
+        success: boolean
+        data: {
+          items: WarehouseItem[]
+          pagination: PaginationState
+        }
+      }>('inventory:get-by-shop', {
+        shopId: currentShopId,
+        isAdmin: user?.isAdmin,
+        pagination: {
+          page: pagination.page,
+          limit: pagination.limit
+        }
+      })
+
+      if (response?.success) {
+        setWarehouses(response.data.items)
+        setPagination(response.data.pagination)
+      } else {
+        throw new Error(response?.message || 'Failed to fetch inventories')
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch inventories'
+      setError(message)
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchWarehouses()
+  }, [pagination.page, pagination.limit, currentShopId])
 
   const toggleItemSelection = (itemId: string) => {
     setSelectedItems(prev =>
@@ -64,19 +125,73 @@ export function WarehouseList() {
     )
   }
 
-  const handleDeleteClick = () => {
-    if (selectedItems.length > 0) {
-      setItemToDelete(selectedItems[0])
-      setIsDeleteModalOpen(true)
+  const handleDeleteClick = (id: string) => {
+    setItemToDelete(id)
+    setIsDeleteModalOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!itemToDelete) return
+
+    try {
+      setIsDeleting(true)
+      const response = await safeIpcInvoke<{ success: boolean }>('inventory:delete', {
+        id: itemToDelete
+      })
+
+      if (response?.success) {
+        setWarehouses(prev => prev.filter(item => item.id !== itemToDelete))
+        setSelectedItems(prev => prev.filter(id => id !== itemToDelete))
+        toast({
+          title: 'Success',
+          description: 'Inventory deleted successfully'
+        })
+      } else {
+        throw new Error(response?.message || 'Failed to delete inventory')
+      }
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to delete inventory'
+      })
+    } finally {
+      setIsDeleting(false)
+      setIsDeleteModalOpen(false)
+      setItemToDelete(null)
     }
   }
 
-  const handleDeleteConfirm = () => {
-    if (itemToDelete) {
-      setWarehouses(warehouses.filter(item => item.id !== itemToDelete))
-      setSelectedItems(selectedItems.filter(id => id !== itemToDelete))
-      setIsDeleteModalOpen(false)
-      setItemToDelete(null)
+  const handleBulkDelete = async () => {
+    if (selectedItems.length === 0) return
+
+    try {
+      setIsDeleting(true)
+      const results = await Promise.all(
+        selectedItems.map(id =>
+          safeIpcInvoke<{ success: boolean }>('inventory:delete', { id })
+        )
+      )
+
+      const failedDeletions = results.filter(r => !r.success)
+      if (failedDeletions.length === 0) {
+        setWarehouses(prev => prev.filter(item => !selectedItems.includes(item.id)))
+        setSelectedItems([])
+        toast({
+          title: 'Success',
+          description: 'Selected inventories deleted successfully'
+        })
+      } else {
+        throw new Error(`Failed to delete ${failedDeletions.length} inventories`)
+      }
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to delete inventories'
+      })
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -86,131 +201,159 @@ export function WarehouseList() {
 
   const handleBackToList = () => {
     setShowAddWarehouse(false)
-  }
-
-  const handleWarehouseClick = (warehouseId: string) => {
-    setSelectedWarehouseId(warehouseId)
+    fetchWarehouses() // Refresh the list after adding
   }
 
   if (showAddWarehouse) {
     return <AddWarehouse onBack={handleBackToList} />
   }
 
-  if (selectedWarehouseId) {
-    return <InventoryList warehouseId={selectedWarehouseId} onBack={() => setSelectedWarehouseId(null)} />
-  }
-
   return (
-    <div className="container mx-auto p-6 bg-white">
-      <div className="flex flex-col md:flex-row items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Inventory List</h1>
-        <div className="flex space-x-2">
-          <Button variant="outline">
-            <FileDown className="mr-2 h-4 w-4" />
-            Export
-          </Button>
+    <div className="container mx-auto py-10">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Inventory Management</h1>
+        <div className="space-x-2">
+          {selectedItems.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={handleBulkDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : `Delete Selected (${selectedItems.length})`}
+            </Button>
+          )}
           <Button onClick={handleAddItemClick}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Inventory
+            <Plus className="mr-2 h-4 w-4" /> Add New Inventory
           </Button>
         </div>
       </div>
 
-      <div className="flex justify-between items-center mb-4">
-        <div className="w-48">
-          <Select>
-            <SelectTrigger>
-              <SelectValue placeholder="Filter" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Items</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="relative w-64">
-          <Input type="text" placeholder="Search..." className="pl-10" />
-          <Search className="h-5 w-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" size="icon">
-            <PenIcon className="h-4 w-4" />
-          </Button>
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={handleDeleteClick}
-            disabled={selectedItems.length === 0}
-          >
-            <TrashIcon className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      {error && <ErrorAlert message={error} className="mb-4" />}
 
-      <div className="hidden md:block">
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]"></TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Level</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {warehouses.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer hover:bg-gray-100" onClick={() => handleWarehouseClick(item.id)}>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+      <Card>
+        <CardContent className="p-0">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">
                     <Checkbox
-                      checked={selectedItems.includes(item.id)}
-                      onCheckedChange={() => toggleItemSelection(item.id)}
+                      checked={selectedItems.length === warehouses.length && warehouses.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedItems(warehouses.map(w => w.id))
+                        } else {
+                          setSelectedItems([])
+                        }
+                      }}
                     />
-                  </TableCell>
-                  <TableCell>{item.name}</TableCell>
-                  <TableCell>{item.level}</TableCell>
-                  <TableCell>{item.value}</TableCell>
-                  <TableCell>
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold
-                      ${item.status === 'Low' ? 'bg-yellow-100 text-yellow-800' : item.status === 'Medium' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'}`}>
-                      {item.status}
-                    </span>
-                  </TableCell>
+                  </TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Level</TableHead>
+                  <TableHead>Value</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-10">
+                      <LoadingSpinner />
+                    </TableCell>
+                  </TableRow>
+                ) : warehouses.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-10">
+                      No inventories found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  warehouses.map((warehouse) => (
+                    <TableRow key={warehouse.id}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedItems.includes(warehouse.id)}
+                          onCheckedChange={() => toggleItemSelection(warehouse.id)}
+                        />
+                      </TableCell>
+                      <TableCell>{warehouse.name}</TableCell>
+                      <TableCell>{statusTranslations[warehouse.status]}</TableCell>
+                      <TableCell>{warehouse.level}</TableCell>
+                      <TableCell>{warehouse.value}</TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteClick(warehouse.id)}
+                          disabled={isDeleting}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Mobile View */}
-      <div className="md:hidden">
-        {warehouses.map((item) => (
-          <Card key={item.id} className="mb-4 cursor-pointer w-full" onClick={() => handleWarehouseClick(item.id)}>
-            <CardContent className="flex flex-col p-4">
-              <div className="flex justify-between">
-                <span className="text-sm font-medium">{item.name}</span>
-                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold
-                  ${item.status === 'Low' ? 'bg-yellow-100 text-yellow-800' : item.status === 'Medium' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'}`}>
-                  {item.status}
-                </span>
-              </div>
-              <div className="flex justify-between mt-2">
-                <p className="text-sm text-gray-500">Level: {item.level}</p>
-                <p className="text-sm text-gray-500">Value: {item.value}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {/* Pagination */}
+      {!loading && warehouses.length > 0 && (
+        <div className="flex justify-between items-center mt-4">
+          <div className="flex items-center space-x-2">
+            <Select
+              value={pagination.limit.toString()}
+              onValueChange={(value) =>
+                setPagination(prev => ({ ...prev, page: 1, limit: parseInt(value) }))
+              }
+            >
+              <SelectTrigger className="w-[100px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / page</SelectItem>
+                <SelectItem value="25">25 / page</SelectItem>
+                <SelectItem value="50">50 / page</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-gray-600">
+              Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
+              {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
+              {pagination.total} results
+            </span>
+          </div>
+          <div className="space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+              disabled={pagination.page === 1}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+              disabled={pagination.page === pagination.totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
 
       <DeleteConfirmationModal
         isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
+        onClose={() => {
+          setIsDeleteModalOpen(false)
+          setItemToDelete(null)
+        }}
         onConfirm={handleDeleteConfirm}
+        title="Delete Inventory"
+        message="Are you sure you want to delete this inventory? This action cannot be undone."
+        isLoading={isDeleting}
       />
     </div>
   )
