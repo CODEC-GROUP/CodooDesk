@@ -37,6 +37,7 @@ interface ReturnedItem {
   quantity: number;
   price: number;
   reason: string;
+  description: string;
 }
 
 interface Return {
@@ -51,6 +52,7 @@ interface Return {
     id: string;
     name: string;
   };
+  paymentMethod: string;
 }
 
 interface ReturnResponse {
@@ -135,8 +137,20 @@ const Returns = () => {
   const [sale, setSale] = useState<Sale | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
-  const [selectedShopId, setSelectedShopId] = useState("all");
+  const [selectedShopId, setSelectedShopId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"list" | "add-return">("list");
+
+  useEffect(() => {
+    if (business?.shops && business.shops.length > 0) {
+      // For admin/shop_owner, keep it empty to show all shops initially
+      if (user?.role === 'admin' || user?.role === 'shop_owner') {
+        setSelectedShopId('all');
+      } else {
+        // For other roles, set it to their assigned shop
+        setSelectedShopId(business.shops[0].id);
+      }
+    }
+  }, [business?.shops, user?.role]);
 
   const indexOfLastItem = currentPage * itemsPerPage
   const indexOfFirstItem = indexOfLastItem - itemsPerPage
@@ -210,6 +224,7 @@ const Returns = () => {
     try {
       setIsLoading(true);
       console.log('Starting fetchReturns...', { user, business });
+      
       if (!user) {
         console.error('No user found');
         toast({
@@ -234,16 +249,18 @@ const Returns = () => {
         return;
       }
 
-      const response = await safeIpcInvoke<ReturnResponse>('entities:return:get-all',
-        {
-          shopIds,
-          userRole: user?.role
-        },
-        {
-          success: false,
-          returns: []
-        }
+      const params = {
+        shopIds,
+        userRole: user.role,
+        shopId: business?.shops?.[0]?.id
+      };
+
+      const response = await safeIpcInvoke<ReturnResponse>(
+        'entities:return:get-all',
+        params,
+        { success: false, returns: [] }
       );
+      console.log('ReturnsResponse:', response);
 
       if (response?.success && response.returns) {
         setReturns(response.returns);
@@ -376,6 +393,19 @@ const Returns = () => {
       return;
     }
 
+    const reason = formData.get('reason') as string;
+    const paymentMethod = formData.get('paymentMethod') as string;
+    const description = formData.get('description') as string;
+
+    if (!reason || !paymentMethod) {
+      toast({
+        title: "Error",
+        description: "Please select a reason and payment method",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const returnData = {
         saleId: sale.id,
@@ -384,24 +414,28 @@ const Returns = () => {
           : business?.shops?.[0]?.id,
         items: [
           {
-            orderId: selectedProduct.id, // Move orderId to item level
+            orderId: selectedProduct.id,
             productId: selectedProduct.product_id,
             productName: selectedProduct.name,
             quantity: returnQuantity,
             price: selectedProduct.price,
-            reason: formData.get('reason') as string
+            reason,
+            description
           }
         ],
         total: returnQuantity * selectedProduct.price,
         status: 'pending',
         customer: {
-          id: sale.customer_id,// Use proper customer ID
+          id: sale.customer_id,
           name: sale.customer?.first_name || 'Walking Customer',
-        }
+        },
+        paymentMethod
       };
 
+      console.log('Creating return with data:', returnData);
       setIsProcessing(true);
       const response = await safeIpcInvoke<ReturnActionResponse>('entities:return:create', { returnData }, { success: false });
+      console.log('Return creation response:', response);
 
       if (response?.success && response.return) {
         toast({
@@ -415,6 +449,8 @@ const Returns = () => {
         setReturnQuantity(0);
         setReturnAmount(0);
         setIsAddReturnOpen(false);
+        setActiveTab("list");
+        await fetchReturns(); // Refresh the returns list
       } else {
         toast({
           title: "Error",
@@ -510,12 +546,35 @@ const Returns = () => {
     setSearchTerm(value);
     if (value.length >= 2) {
       try {
-        const result = await safeIpcInvoke<ReturnResponse>('entities:order:search', {
-          searchTerm: value,
-          shopId: localStorage.getItem('shopId') || ''
+        const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+          ? business?.shops?.map(shop => shop.id) || []
+          : [business?.shops?.[0]?.id].filter(Boolean);
+
+        console.log('Search params:', { 
+          searchTerm: value, 
+          shopIds,
+          userRole: user?.role,
+          businessShops: business?.shops
         });
 
+        if (shopIds.length === 0) {
+          console.error('No shop IDs available');
+          toast({
+            title: 'Error',
+            description: 'No shops available',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        const result = await safeIpcInvoke<ReturnResponse>('entities:return:get-suggestions', {
+          searchTerm: value,
+          shopIds
+        });
+
+        console.log('Search result:', result);
         if (result?.success && result.suggestions) {
+          console.log('Suggestions:', result.suggestions);
           setSuggestions(result.suggestions);
           setShowSuggestions(true);
         }
@@ -535,23 +594,24 @@ const Returns = () => {
 
   const handleSuggestionClick = async (suggestion: OrderSuggestion) => {
     try {
-      const response = await safeIpcInvoke<SaleDetailsResponse>('entities:order:get-details', {
-        orderId: suggestion.id,
+      const response = await safeIpcInvoke<SaleDetailsResponse>('order-management:get-sale-details', {
+        id: suggestion.id,
       });
 
       if (response?.success && response.sale) {
+        setSale(response.sale);
         const order: Order = {
           id: response.sale?.id || '',
           customerName: response.sale?.customer?.first_name || 'Walking Customer',
           date: response.sale?.createdAt?.toISOString() || '',
           total: response.sale?.netAmount || 0,
           product: response.sale?.orders?.[0] ? {
-            id: response.sale?.orders?.[0]?.product?.id || '',
+            id: response.sale?.orders?.[0]?.id || '', // This is the order ID
             name: response.sale?.orders?.[0]?.product?.name || '',
             price: response.sale?.orders?.[0]?.sellingPrice || 0,
             quantity: response.sale?.orders?.[0]?.quantity || 0,
             total: (response.sale?.orders?.[0]?.quantity || 0) * (response.sale?.orders?.[0]?.sellingPrice || 0),
-            product_id: response.sale?.orders?.[0]?.product?.id || ''
+            product_id: response.sale?.orders?.[0]?.product?.id || '' // This is the actual product ID
           } : {
             id: '',
             name: '',
@@ -562,6 +622,7 @@ const Returns = () => {
           },
         };
 
+        console.log('Selected order:', order);
         setSelectedOrder(order);
         setSelectedProduct(null);
         setReturnQuantity(0);
@@ -811,11 +872,14 @@ const Returns = () => {
                             <input
                               type="radio"
                               checked={selectedProduct?.id === selectedOrder.product.id}
-                              onChange={() => setSelectedProduct(selectedOrder.product)}
+                              onChange={() => {
+                                console.log('Setting selected product:', selectedOrder.product);
+                                setSelectedProduct(selectedOrder.product);
+                              }}
                             />
                           </TableCell>
                           <TableCell>{selectedOrder.product.name}</TableCell>
-                          <TableCell>{selectedOrder.product.price} XAF</TableCell>
+                          <TableCell>{selectedOrder.product.price.toLocaleString()} XAF</TableCell>
                           <TableCell>{selectedOrder.product.quantity}</TableCell>
                           <TableCell>
                             <Input
@@ -828,7 +892,7 @@ const Returns = () => {
                               disabled={!selectedProduct}
                             />
                           </TableCell>
-                          <TableCell>{returnAmount} XAF</TableCell>
+                          <TableCell>{returnAmount.toLocaleString()} XAF</TableCell>
                         </TableRow>
                       </TableBody>
                     </Table>
@@ -839,7 +903,7 @@ const Returns = () => {
                 <div className="space-y-4">
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="reason" className="text-right">Reason</Label>
-                    <Select>
+                    <Select name="reason" defaultValue="">
                       <SelectTrigger className="col-span-3">
                         <SelectValue placeholder="Select reason" />
                       </SelectTrigger>
@@ -855,6 +919,7 @@ const Returns = () => {
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="description" className="text-right">Description</Label>
                     <Textarea
+                      name="description"
                       className="col-span-3"
                       placeholder="Additional details about the return..."
                     />
@@ -862,7 +927,7 @@ const Returns = () => {
 
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="paymentMethod" className="text-right">Refund Method</Label>
-                    <Select>
+                    <Select name="paymentMethod" defaultValue="">
                       <SelectTrigger className="col-span-3">
                         <SelectValue placeholder="Select refund method" />
                       </SelectTrigger>

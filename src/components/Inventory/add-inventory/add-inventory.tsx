@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useReducer } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import { Label } from "@/components/Shared/ui/label"
@@ -13,49 +13,58 @@ import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { Calendar as CalendarIcon, Search, Upload, ArrowLeft } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { safeIpcInvoke } from "@/lib/ipc"
+import { toast } from "@/hooks/use-toast"
+import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 
 // Define the Product type
 interface Product {
-  id: number; // or string, depending on your ID type
+  id: string; // Changed from number to string
   name: string;
   sku: string;
   category: string;
   image?: string; // Optional property for the product image
+  supplierId: string;
+  unitType?: string;
+  sellingPrice: number;
+  purchasePrice: number;
+  suppliers: { id: number; name: string }[];
+  featuredImage?: string;
+  quantity?: number;
 }
 
-// Mock data for products and suppliers
-const products: Product[] = [
-  { id: 1, name: "Laptop", sku: "LAP001", category: "Electronics" },
-  { id: 2, name: "Smartphone", sku: "PHN001", category: "Electronics" },
-  { id: 3, name: "T-Shirt", sku: "TSH001", category: "Clothing" },
-]
+// Add these interfaces
+interface Supplier {
+  id: number;
+  name: string;
+}
 
-const suppliers = [
-  { id: 1, name: "TechSupplier Inc." },
-  { id: 2, name: "ClothingWholesale Ltd." },
-  { id: 3, name: "GeneralGoods Co." },
-]
+interface SpendingAccount {
+  id: number;
+  name: string;
+}
 
-const spendingAccounts = [
-  { id: 1, name: "Main Account" },
-  { id: 2, name: "Secondary Account" },
-  { id: 3, name: "Savings Account" },
-]
-
-const expenseTypes = [
-  { id: 1, name: "Operational" },
-  { id: 2, name: "Marketing" },
-  { id: 3, name: "Miscellaneous" },
-]
+interface OhadaCodeAttributes {
+  dataValues: {
+    id: string;
+    code: string;
+    name: string;
+    description: string;
+  };
+}
 
 interface AddInventoryProps {
   onBack: () => void;
+  warehouseId: string;
+  onSuccess: () => void;
+  parentView?: 'inventory' | 'warehouse';
 }
 
-const AddInventory: React.FC<AddInventoryProps> = ({ onBack }) => {
+const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSuccess, parentView = 'inventory' }) => {
+  const { user } = useAuthLayout();
   const router = useRouter()
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [selectedSupplier, setSelectedSupplier] = useState(null)
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
   const [purchaseDate, setPurchaseDate] = useState<Date>()
   const [quantity, setQuantity] = useState("")
   const [batchNumber, setBatchNumber] = useState("")
@@ -64,46 +73,157 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack }) => {
   const [searchTerm, setSearchTerm] = useState("")
   const [supplierSearchTerm, setSupplierSearchTerm] = useState("")
   const [sellingPrice, setSellingPrice] = useState("")
-  const [selectedSpendingAccount, setSelectedSpendingAccount] = useState(null)
-  const [selectedExpenseType, setSelectedExpenseType] = useState(null)
+  const [selectedExpenseType, setSelectedExpenseType] = useState<string>("601")
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
+  const [ohadaCodes, setOhadaCodes] = useState<OhadaCodeAttributes[]>([])
+  const [, forceUpdate] = useReducer(x => x + 1, 0)
 
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.category.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
-  const filteredSuppliers = suppliers.filter(supplier =>
+  const filteredSuppliers = selectedProduct?.suppliers?.filter(supplier =>
     supplier.name.toLowerCase().includes(supplierSearchTerm.toLowerCase())
-  )
+  ) || [];
 
-  const handleAddInventory = () => {
-    // Here you would typically send the data to your backend
-    console.log({
-      product: selectedProduct,
-      supplier: selectedSupplier,
-      purchaseDate,
-      quantity,
-      batchNumber,
-      stockDescription,
-      unitType,
-      sellingPrice,
-      spendingAccount: selectedSpendingAccount,
-      expenseType: selectedExpenseType,
-    })
-    // Reset form or show success message
-  }
+  useEffect(() => {
+    const searchProducts = async () => {
+      if (searchTerm) {
+        try {
+          const result = await safeIpcInvoke(
+            'inventory:product:search',
+            { query: searchTerm },
+            { products: [] }
+          );
+          
+          console.log('Product search response:', result);
+          
+          setFilteredProducts(result?.products || []);
+        } catch (error) {
+          console.error('Product search failed:', error);
+          setFilteredProducts([]);
+        }
+      }
+    };
+    searchProducts();
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const fetchOhadaCodes = async () => {
+      try {
+        const result = await safeIpcInvoke<{ success: boolean; codes: OhadaCodeAttributes[] }>(
+          'finance:ohada-codes:get-by-type',
+          { type: 'expense' },
+          { success: false, codes: [] }
+        );
+        
+        if (result?.success) {
+          setOhadaCodes(result.codes);
+          // Set default to "Purchase of goods" (code 601)
+          const defaultCode = result.codes.find((code: OhadaCodeAttributes) => code.dataValues.code === "601");
+          if (defaultCode) setSelectedExpenseType(defaultCode.dataValues.id);
+        }
+      } catch (error) {
+        console.error('Failed to fetch OHADA codes:', error);
+      }
+    };
+    fetchOhadaCodes();
+  }, []);
+
+  useEffect(() => {
+    if (selectedProduct?.suppliers && selectedProduct.suppliers.length > 0) {
+      setSelectedSupplier(selectedProduct.suppliers[0]);
+    }
+  }, [selectedProduct]);
+
+  useEffect(() => {
+    console.log('Current quantity state:', quantity);
+  }, [quantity]);
+
+  const handleAddInventory = async () => {
+    // Validate required fields
+    if (!selectedProduct) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please select a product' });
+      return;
+    }
+
+    if (!quantity || parseInt(quantity, 10) <= 0) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please enter a valid quantity' });
+      return;
+    }
+
+    if (!sellingPrice || parseFloat(sellingPrice) <= 0) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please enter a valid selling price' });
+      return;
+    }
+
+    if (!unitType) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please select a unit type' });
+      return;
+    }
+
+    const itemData = {
+      product_id: selectedProduct.id,
+      inventory_id: warehouseId,
+      quantity: parseInt(quantity, 10),
+      unit_cost: selectedProduct.purchasePrice,
+      selling_price: parseFloat(sellingPrice),
+      batch_number: batchNumber,
+      unit_type: unitType,
+      stock_type: 'purchase',
+      supplier_id: selectedSupplier?.id,
+      userId: user?.id, // Add user ID from AuthLayout context
+    };
+
+    console.log('Sending inventory item data:', itemData);
+    console.log('Selected product:', selectedProduct);
+
+    try {
+      const result = await safeIpcInvoke<{ success: boolean; message?: string; error?: string }>(
+        'inventory:item:create',
+        { itemData },
+        { success: false }
+      );
+
+      if (result?.success) {
+        toast({ 
+          title: 'Success', 
+          description: `Successfully added ${quantity} ${unitType}(s) of ${selectedProduct.name} to inventory`,
+          variant: 'default'
+        });
+        onBack();
+        onSuccess();
+      } else {
+        toast({ 
+          variant: 'destructive', 
+          title: 'Error', 
+          description: result?.message || 'Failed to add inventory. Please try again.' 
+        });
+      }
+    } catch (error) {
+      console.error('Failed to add inventory:', error);
+      toast({ 
+        variant: 'destructive', 
+        title: 'Error', 
+        description: error instanceof Error ? error.message : 'Failed to add inventory. Please try again.' 
+      });
+    }
+  };
 
   const handleBack = () => {
-    onBack()
-  }
+    if (parentView === 'inventory') {
+      onBack();
+    } else {
+      // If coming from warehouse list, navigate back to inventory list
+      onBack();
+    }
+  };
 
   return (
     <div className="container mx-auto py-10">
-      <Button onClick={handleBack} variant="outline" className="mb-4">
-        <ArrowLeft className="mr-2 h-4 w-4" /> Back
-      </Button>
-      <h1 className="text-3xl font-bold mb-6">Add Inventory</h1>
+      <div className="flex items-center mb-6">
+        <Button variant="ghost" onClick={handleBack} className="mr-4">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+        <h1 className="text-3xl font-bold">Add Inventory Item</h1>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>New Inventory Entry</CardTitle>
@@ -112,36 +232,53 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack }) => {
         <CardContent className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="product-search">Product Search</Label>
-            <div className="flex space-x-2">
+            <div className="relative">
               <Input
                 id="product-search"
                 placeholder="Search by name, SKU, or category"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
-              <Button variant="outline" size="icon">
-                <Search className="h-4 w-4" />
-              </Button>
+              {filteredProducts.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg">
+                  {filteredProducts.length === 0 && searchTerm ? (
+                    <div className="p-2 text-muted-foreground">No products found</div>
+                  ) : (
+                    filteredProducts.map((product) => (
+                      <div
+                        key={product.id}
+                        className="p-2 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => {
+                          setSearchTerm('');
+                          setSelectedProduct(product);
+                          
+                          // Convert "digital" unit type to "piece"
+                          const resolvedUnitType = product.unitType === 'digital' ? 'piece' : product.unitType || 'piece';
+                          setUnitType(resolvedUnitType);
+                          
+                          // Convert numeric price to string without formatting
+                          setSellingPrice(product.sellingPrice?.toString() || '');
+                          
+                          // Convert quantity to string explicitly
+                          const qty = product.quantity?.toString() || '';
+                          console.log('Setting quantity:', qty);
+                          setQuantity(qty);
+                          
+                          // Clear supplier if none available
+                          setSelectedSupplier(null);
+                        }}
+                      >
+                        {product.name} - {product.sku}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
-            
-            {searchTerm && (
-              <Select onValueChange={(value) => setSelectedProduct(JSON.parse(value))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a product" />
-                </SelectTrigger>
-                <SelectContent>
-                  {filteredProducts.map((product) => (
-                    <SelectItem key={product.id} value={JSON.stringify(product)}>
-                      {product.name} - {product.sku}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="supplier-search">Supplier Search</Label>
+            <Label htmlFor="supplier-search">Supplier (Optional)</Label>
             <div className="flex space-x-2">
               <Input
                 id="supplier-search"
@@ -169,15 +306,23 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack }) => {
             )}
           </div>
 
-          {selectedProduct && !selectedProduct?.image && (
+          {selectedProduct && (
             <div className="space-y-2">
-              <Label htmlFor="product-image">Product Image</Label>
-              <div className="flex items-center space-x-2">
-                <Input id="product-image" type="file" accept="image/*" />
-                <Button variant="outline" size="icon">
-                  <Upload className="h-4 w-4" />
-                </Button>
-              </div>
+              <Label>Product Image</Label>
+              {selectedProduct.featuredImage ? (
+                <img 
+                  src={`file:///${selectedProduct.featuredImage.replace(/\\/g, '/')}`}
+                  alt={selectedProduct.name}
+                  className="h-32 w-32 object-cover rounded-md"
+                />
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <Input id="product-image" type="file" accept="image/*" />
+                  <Button variant="outline" size="icon">
+                    <Upload className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
@@ -214,6 +359,7 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack }) => {
               type="number"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
+              placeholder="Enter quantity"
             />
           </div>
 
@@ -237,15 +383,19 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack }) => {
 
           <div className="space-y-2">
             <Label htmlFor="unit-type">Unit Type</Label>
-            <Select onValueChange={setUnitType}>
+            <Select 
+              value={unitType}
+              onValueChange={setUnitType}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select unit type" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="piece">Piece</SelectItem>
-                <SelectItem value="kg">Kilogram</SelectItem>
-                <SelectItem value="liter">Liter</SelectItem>
-                <SelectItem value="meter">Meter</SelectItem>
+                <SelectItem value="kg">Kilogram (kg)</SelectItem>
+                <SelectItem value="liter">Liter (l)</SelectItem>
+                <SelectItem value="meter">Meter (m)</SelectItem>
+                <SelectItem value="digital">Digital Unit</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -262,36 +412,31 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack }) => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="spending-account">Spending Account</Label>
-            <Select onValueChange={(value) => setSelectedSpendingAccount(JSON.parse(value))}>
+            <Label htmlFor="expense-type">Expense Type</Label>
+            <Select 
+              value={selectedExpenseType}
+              onValueChange={(value) => setSelectedExpenseType(value)}
+            >
               <SelectTrigger>
-                <SelectValue placeholder="Select a spending account" />
+                <SelectValue placeholder="Select expense type">
+                  {ohadaCodes.find(c => c.dataValues.id === selectedExpenseType)?.dataValues.name || "Select type"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {spendingAccounts.map((account) => (
-                  <SelectItem key={account.id} value={JSON.stringify(account)}>
-                    {account.name}
+                {ohadaCodes.map((code: any) => (
+                  <SelectItem key={code.dataValues.id} value={code.dataValues.id}>
+                    {code.dataValues.code} - {code.dataValues.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="expense-type">Expense Type</Label>
-            <Select onValueChange={(value) => setSelectedExpenseType(JSON.parse(value))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select an expense type" />
-              </SelectTrigger>
-              <SelectContent>
-                {expenseTypes.map((type) => (
-                  <SelectItem key={type.id} value={JSON.stringify(type)}>
-                    {type.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {selectedProduct && (
+            <div className="text-sm text-muted-foreground">
+              Loaded: {selectedProduct.name} (Price: {selectedProduct.sellingPrice}, Unit: {selectedProduct.unitType})
+            </div>
+          )}
         </CardContent>
         <CardFooter>
           <Button onClick={handleAddInventory} className="w-full">Add Inventory</Button>

@@ -43,10 +43,12 @@ import { safeIpcInvoke } from "@/lib/ipc"
 interface InventoryListProps {
   warehouseId: string;
   onBack: () => void;
+  warehouseName: string;
+  parentView?: 'inventory' | 'warehouse';
 }
 
-export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
-  const [inventory, setInventory] = useState<InventoryItemWithDetails[] | null>(null)
+export function InventoryList({ warehouseId, onBack, warehouseName, parentView = 'warehouse' }: InventoryListProps) {
+  const [inventory, setInventory] = useState<InventoryItemWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
@@ -54,6 +56,7 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
   const [itemToDelete, setItemToDelete] = useState<string | null>(null)
   const [selectedItem, setSelectedItem] = useState<InventoryItemWithDetails | null>(null)
   const [showAddInventory, setShowAddInventory] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [columnVisibility, setColumnVisibility] = useState({
     name: true,
     sku: true,
@@ -62,7 +65,6 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
     unitPrice: true,
     sellingPrice: true,
     totalValue: true,
-    supplier: true,
     status: true,
     productsSold: true,
     productsLeft: true,
@@ -71,24 +73,34 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
   });
   const { toast } = useToast()
 
-  useEffect(() => {
-    const loadInventory = async () => {
-      try {
-        const data = await safeIpcInvoke<InventoryItemWithDetails[]>(
-          'inventory:item:get-all',
-          { inventoryId: warehouseId },
-          []  // Fallback to empty array
-        );
-        setInventory(data || []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load inventory');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadInventory = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await safeIpcInvoke<InventoryItemWithDetails[]>(
+        'inventory:item:get-all-by-inventory-id',
+        { inventoryId: warehouseId },
+        []
+      );
+      
+      setInventory(Array.isArray(data) ? data : []);
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load inventory');
+      setInventory([]);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load inventory items. Please try again.'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadInventory();
-  }, [warehouseId]);
+  }, [warehouseId, refreshTrigger]);
 
   const toggleItemSelection = (itemId: string) => {
     setSelectedItems(prev =>
@@ -116,7 +128,7 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
       );
 
       if (success) {
-        setInventory(prev => prev?.filter(item => item.id !== itemToDelete) || []);
+        setInventory(prev => prev.filter(item => item.id !== itemToDelete));
         setSelectedItems(prev => prev.filter(id => id !== itemToDelete));
         toast({ title: 'Success', description: 'Item deleted successfully' });
       } else {
@@ -150,124 +162,254 @@ export function InventoryList({ warehouseId, onBack }: InventoryListProps) {
     setShowAddInventory(false)
   }
 
-  if (showAddInventory) {
-    return <AddInventory onBack={handleBackToList} />
-  }
+  const handleAddItemSuccess = () => {
+    setShowAddInventory(false);
+    setRefreshTrigger(prev => prev + 1);
+    toast({
+      title: 'Success',
+      description: 'Item added successfully'
+    });
+  };
 
   if (selectedItem) {
-    return <InventoryDetails 
-      item={{
-        id: selectedItem.id,
-        name: selectedItem.product.name,
-        sku: selectedItem.product.sku,
-        category: selectedItem.product.category || 'default',
-        quantity: selectedItem.quantity,
-        unitPrice: selectedItem.unit_cost,
-        sellingPrice: selectedItem.selling_price,
-        totalValue: selectedItem.total_value,
-        supplier: selectedItem.supplier.name,
-        status: selectedItem.status === 'in_stock' ? 'In Stock' :
-               selectedItem.status === 'low_stock' ? 'Low Stock' : 'Out of Stock',
-        lastUpdated: selectedItem.last_restock_date?.toISOString() || new Date().toISOString(),
-        description: selectedItem.product.description || 'No description available',
-        productsSold: selectedItem.sales_data?.total_sold || 0,
-        productsLeft: selectedItem.quantity,
-        returnsToShop: 0,
-        returnsToSupplier: 0
-      }} 
-      onClose={closeOverlay} 
+    return (
+      <InventoryDetails
+        item={selectedItem}
+        onBack={() => setSelectedItem(null)}
+        onItemUpdated={(updatedItem) => {
+          setInventory(prev => prev.map(item => 
+            item.id === updatedItem.id ? updatedItem : item
+          ));
+          setSelectedItem(null);
+        }}
+      />
+    );
+  }
+
+  if (showAddInventory) {
+    return <AddInventory 
+      onBack={handleBackToList} 
+      warehouseId={warehouseId}
+      onSuccess={handleAddItemSuccess}
+      parentView="inventory"
     />
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto py-10">
+        <Button variant="outline" onClick={onBack} className="mb-4">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+        <ErrorAlert 
+          message={error}
+          title="Failed to Load Inventory"
+          retry={loadInventory}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto p-6">
-      <div className="md:block">
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Product</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Quantity</TableHead>
-                <TableHead>Reorder Point</TableHead>
-                <TableHead>Unit Cost</TableHead>
-                <TableHead>Selling Price</TableHead>
-                <TableHead>Total Value</TableHead>
-                <TableHead>Last Restocked</TableHead>
-                <TableHead>Supplier</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {inventory?.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{item.product.name}</TableCell>
-                  <TableCell>{item.product.sku}</TableCell>
-                  <TableCell>
-                    <Badge variant={
-                      item.status === 'in_stock' ? 'default' :
-                      item.status === 'low_stock' ? 'secondary' : 'destructive'
-                    }>
-                      {item.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{item.quantity}</TableCell>
-                  <TableCell>{item.reorder_point}</TableCell>
-                  <TableCell>{item.unit_cost}</TableCell>
-                  <TableCell>{item.selling_price}</TableCell>
-                  <TableCell>{item.total_value}</TableCell>
-                  <TableCell>{item.last_restock_date ? item.last_restock_date.toISOString().split('T')[0] : 'N/A'}</TableCell>
-                  <TableCell>{item.supplier.name}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+    <div className="container mx-auto py-10">
+      <div className="flex items-center mb-6">
+        <Button 
+          variant="outline" 
+          onClick={onBack}
+          className="mr-4"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+        <h1 className="text-3xl font-bold flex-1">
+          {warehouseName} - Inventory Items
+        </h1>
+        <div className="space-x-2">
+          {selectedItems.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={() => setIsDeleteModalOpen(true)}
+              disabled={loading}
+            >
+              Delete Selected ({selectedItems.length})
+            </Button>
+          )}
+          <Button onClick={() => setShowAddInventory(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Add Item
+          </Button>
         </div>
       </div>
+      <Card>
+        <CardContent className="p-0">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={selectedItems.length === inventory.length && inventory.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedItems(inventory.map(item => item.id))
+                        } else {
+                          setSelectedItems([])
+                        }
+                      }}
+                    />
+                  </TableHead>
+                  <TableHead>Product</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Quantity</TableHead>
+                  <TableHead>Reorder Point</TableHead>
+                  <TableHead>Unit Cost</TableHead>
+                  <TableHead>Selling Price</TableHead>
+                  <TableHead>Total Value</TableHead>
+                  <TableHead>Last Restocked</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-10">
+                      <LoadingSpinner />
+                    </TableCell>
+                  </TableRow>
+                ) : inventory.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-10">
+                      No inventory items found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  inventory.map((item) => (
+                    <TableRow 
+                      key={item.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setSelectedItem(item)}
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedItems.includes(item.id)}
+                          onCheckedChange={() => {
+                            setSelectedItems(prev => 
+                              prev.includes(item.id)
+                                ? prev.filter(id => id !== item.id)
+                                : [...prev, item.id]
+                            )
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>{item.product.name}</TableCell>
+                      <TableCell>{item.product.sku}</TableCell>
+                      <TableCell>
+                        <Badge variant={
+                          item.status === 'in_stock' ? 'default' :
+                          item.status === 'low_stock' ? 'secondary' : 'destructive'
+                        }>
+                          {item.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{item.quantity}</TableCell>
+                      <TableCell>{item.reorder_point}</TableCell>
+                      <TableCell>{item.unit_cost}</TableCell>
+                      <TableCell>{item.selling_price}</TableCell>
+                      <TableCell>{item.total_value}</TableCell>
+                      <TableCell>{item.last_restock_date ? item.last_restock_date.toISOString().split('T')[0] : 'N/A'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedItem(item);
+                          }}
+                        >
+                          <PenIcon className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setItemToDelete(item.id);
+                            setIsDeleteModalOpen(true);
+                          }}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Mobile View */}
       <div className="md:hidden">
-        {inventory?.map((item) => (
-          <Card key={item.id} className="mb-4">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-medium">{item.product.name}</h3>
-                  <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
+        {inventory.length === 0 ? (
+          <p className="text-center py-8">No inventory items found</p>
+        ) : (
+          inventory.map((item) => (
+            <Card key={item.id} className="mb-4">
+              <CardContent className="p-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium">{item.product.name}</h3>
+                    <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
+                  </div>
+                  <Badge variant={
+                    item.status === 'in_stock' ? 'default' :
+                    item.status === 'low_stock' ? 'secondary' : 'destructive'
+                  }>
+                    {item.status}
+                  </Badge>
                 </div>
-                <Badge variant={
-                  item.status === 'in_stock' ? 'default' :
-                  item.status === 'low_stock' ? 'secondary' : 'destructive'
-                }>
-                  {item.status}
-                </Badge>
-              </div>
-              
-              <div className="mt-4 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Quantity</span>
-                  <span className="text-sm">{item.quantity}</span>
+                
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-500">Quantity</span>
+                    <span className="text-sm">{item.quantity}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-500">Selling Price</span>
+                    <span className="text-sm">{item.selling_price}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-500">Total Value</span>
+                    <span className="text-sm">{item.total_value}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Selling Price</span>
-                  <span className="text-sm">{item.selling_price}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Total Value</span>
-                  <span className="text-sm">{item.total_value}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Supplier</span>
-                  <span className="text-sm">{item.supplier.name}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
-      {loading && <LoadingSpinner />}
-      {error && <ErrorAlert message={error} />}
+      {selectedItems.length > 0 && (
+        <div className="flex items-center justify-end space-x-2 py-4">
+          <Button
+            variant="destructive"
+            onClick={() => setIsDeleteModalOpen(true)}
+            disabled={loading}
+          >
+            Delete Selected ({selectedItems.length})
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

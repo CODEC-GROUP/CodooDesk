@@ -9,6 +9,8 @@ import PriceHistory from '../../../models/PriceHistory.js';
 import User from '../../../models/User.js';
 import { sequelize } from '../../database/index.js';
 import AuditLog from '../../../models/AuditLog.js';
+import InventoryItem from '../../../models/InventoryItem.js';
+import StockMovement from '../../../models/StockMovement.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -133,16 +135,107 @@ export function registerProductHandlers() {
         await product.setSuppliers(data.suppliers);
       }
 
-      // Log activity - fix userId reference
+      // Create inventory item if warehouse is specified
+      if (data.warehouseId) {
+        // Create inventory item
+        const inventoryItem = await InventoryItem.create({
+          product_id: product.id,
+          inventory_id: data.warehouseId,
+          quantity: Number(data.quantity) || 0,
+          unit_cost: Number(data.purchasePrice) || 0,
+          selling_price: Number(data.sellingPrice) || 0,
+          minimum_quantity: Number(data.reorderPoint) || 0,
+          reorder_point: Number(data.reorderPoint) || 0,
+          maximum_quantity: Number(data.quantity) * 2, // Set a reasonable maximum
+          status: 'in_stock',
+          stock_type: 'purchase',
+          unit_type: 'piece',
+          value: (Number(data.quantity) || 0) * (Number(data.purchasePrice) || 0)
+        }, { transaction: t });
+
+        // Create stock movement record
+        await StockMovement.create({
+          productId: product.id,
+          movementType: 'added',
+          quantity: Number(data.quantity) || 0,
+          supplier_id: null,
+          reason: 'Initial stock on product creation',
+          performedBy_id: data.businessId, // Using businessId as the performer
+          source_inventory_id: data.warehouseId,
+          destination_inventory_id: null,
+          direction: 'inbound',
+          transaction_reference: `INIT-${product.id}`,
+          cost_per_unit: Number(data.purchasePrice) || 0,
+          total_cost: (Number(data.quantity) || 0) * (Number(data.purchasePrice) || 0)
+        }, { transaction: t });
+      }
+
+      // Create initial stock movement
+      await StockMovement.create({
+        productId: product.id,
+        movementType: 'added',
+        quantity: Number(data.quantity) || 0,
+        supplier_id: null,
+        reason: 'Initial stock on product creation',
+        performedBy_id: data.businessId,
+        source_inventory_id: data.warehouseId,
+        destination_inventory_id: null,
+        direction: 'inbound',
+        transaction_reference: `INIT-${product.id}`,
+        cost_per_unit: Number(data.purchasePrice) || 0,
+        total_cost: (Number(data.quantity) || 0) * (Number(data.purchasePrice) || 0)
+      }, { transaction: t });
+
+      // Create price history entry
+      await PriceHistory.create({
+        product_id: product.id,
+        old_price: 0, // Initial price, no old price
+        new_price: Number(data.sellingPrice) || 0,
+        change_date: new Date(),
+        change_reason: 'Initial price on product creation',
+        changed_by: data.businessId,
+        price_type: 'selling'
+      }, { transaction: t });
+
+      // Create price history for purchase price
+      await PriceHistory.create({
+        product_id: product.id,
+        old_price: 0, // Initial price, no old price
+        new_price: Number(data.purchasePrice) || 0,
+        change_date: new Date(),
+        change_reason: 'Initial price on product creation',
+        changed_by: data.businessId,
+        price_type: 'purchase'
+      }, { transaction: t });
+
+      // Create audit log entry
       await AuditLog.create({
-        shopId: product.shop_id,
-        userId: data.userId,
+        shopId: data.shop_id,
+        userId: data.businessId, // Using businessId as userId for now
         action: 'create',
         entityType: 'product',
         entityId: product.id,
         newState: {
-          name: product.name,
-          sku: product.sku
+          name: data.name,
+          description: data.description,
+          sku: data.sku,
+          category_id: data.category_id,
+          shop_id: data.shop_id,
+          status: data.status,
+          quantity: data.quantity,
+          selling_price: data.sellingPrice,
+          purchase_price: data.purchasePrice
+        },
+        changes: {
+          name: { old: null, new: data.name },
+          description: { old: null, new: data.description },
+          sku: { old: null, new: data.sku },
+          category_id: { old: null, new: data.category_id },
+          shop_id: { old: null, new: data.shop_id },
+          status: { old: null, new: data.status },
+          quantity: { old: 0, new: Number(data.quantity) || 0 },
+          selling_price: { old: 0, new: Number(data.sellingPrice) || 0 },
+          purchase_price: { old: 0, new: Number(data.purchasePrice) || 0 }
         },
         status: 'success',
         performedAt: new Date()

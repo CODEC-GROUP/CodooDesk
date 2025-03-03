@@ -6,6 +6,7 @@ import Receipt from './Receipt.js';
 import Shop from './Shop.js';
 import Payment from './Payment.js';
 import Customer from './Customer.js';
+import Return from './Return.js';
 
 export interface SalesAttributes {
   id?: string;
@@ -32,6 +33,16 @@ export interface SalesAttributes {
     phone_number: string;
   } | null;
   orders?: Array<{
+    id: string;
+    quantity: number;
+    sellingPrice: number;
+    product?: {
+      id: string;
+      name: string;
+      sellingPrice: number;
+    };
+  }>;
+  returns?: Array<{
     id: string;
     quantity: number;
     sellingPrice: number;
@@ -68,6 +79,16 @@ class Sales extends Model<SalesAttributes> implements SalesAttributes {
     phone_number: string;
   } | null;
   public orders?: Array<{
+    id: string;
+    quantity: number;
+    sellingPrice: number;
+    product?: {
+      id: string;
+      name: string;
+      sellingPrice: number;
+    };
+  }>;
+  public returns?: Array<{
     id: string;
     quantity: number;
     sellingPrice: number;
@@ -173,6 +194,7 @@ class Sales extends Model<SalesAttributes> implements SalesAttributes {
     this.hasOne(models.Payment, { foreignKey: 'sale_id', as: 'payment' });
     this.belongsTo(models.User, { foreignKey: 'salesPersonId', as: 'salesPerson' });
     this.belongsTo(models.Customer, { foreignKey: 'customer_id', as: 'customer' });
+    this.hasMany(models.Return, { foreignKey: 'saleId', as: 'returns' });
   }
 
   static associateCustomer(models: any) {

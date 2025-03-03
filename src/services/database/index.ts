@@ -14,7 +14,7 @@ if (!fs.existsSync(dbPath)) {
 const sequelize = new Sequelize({
   dialect: 'sqlite',
   storage: path.join(dbPath, 'database.sqlite'),
-  logging: console.log  // Enable logging for debugging
+  // logging: console.log  // Enable logging for debugging
 });
 
 const models = initializeModels(sequelize);
@@ -28,21 +28,12 @@ export async function initDatabase(): Promise<boolean> {
     await sequelize.authenticate();
     console.log('Database connection established');
 
-    // Sync all models in correct order
     await sequelize.sync({ 
-      force: false, // Set to true in development to reset DB
-      alter: process.env.NODE_ENV === 'development' // Auto-update tables in dev
+      force: false,
+      alter: true
     });
 
-    // Verify core tables exist
-    await Promise.all([
-      sequelize.models.User.describe(),
-      sequelize.models.Shop.describe(),
-      sequelize.models.Product.describe(),
-      sequelize.models.OhadaCode.describe()
-    ]);
-
-    console.log('All tables created successfully');
+    console.log('Database tables synced successfully');
     return true;
   } catch (error) {
     console.error('Database initialization failed:', error);

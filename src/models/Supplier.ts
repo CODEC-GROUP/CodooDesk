@@ -87,6 +87,7 @@ class Supplier extends Model<SupplierAttributes> implements SupplierAttributes {
       },
       {
         sequelize,
+        tableName: 'Suppliers',
         modelName: 'Supplier',
         timestamps: true,
       }

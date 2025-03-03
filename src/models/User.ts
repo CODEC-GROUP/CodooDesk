@@ -72,6 +72,7 @@ class User extends Model<UserAttributes> implements UserAttributes {
       },
       {
         sequelize,
+        tableName: 'Users',
         modelName: 'User',
         timestamps: true,
       }

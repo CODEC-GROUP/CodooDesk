@@ -64,7 +64,7 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           type: DataTypes.UUID,
           allowNull: false,
           references: {
-            model: 'Product',
+            model: 'Products',
             key: 'id',
           },
         },
@@ -88,7 +88,7 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           type: DataTypes.UUID,
           allowNull: false,
           references: {
-            model: 'User',
+            model: 'Users',
             key: 'id',
           },
         },
@@ -96,7 +96,7 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           type: DataTypes.UUID,
           allowNull: false,
           references: {
-            model: 'Inventory',
+            model: 'Inventories',
             key: 'id',
           },
         },
@@ -104,7 +104,7 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           type: DataTypes.UUID,
           allowNull: true,
           references: {
-            model: 'Inventory',
+            model: 'Inventories',
             key: 'id',
           },
         },
@@ -146,7 +146,7 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           type: DataTypes.UUID,
           allowNull: true,
           references: {
-            model: 'User',
+            model: 'Users',
             key: 'id',
           },
         },

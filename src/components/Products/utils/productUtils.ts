@@ -39,9 +39,9 @@ export async function fetchCategories(businessId: string): Promise<Category[] | 
 }
 
 // Function to fetch suppliers for a business
-export async function fetchSuppliers(businessId: string): Promise<Supplier[] | undefined> {
+export async function fetchSuppliers(businessId: string, shopIds: string[]): Promise<Supplier[] | undefined> {
   try {
-    const response = await safeIpcInvoke('entities:supplier:get-all', { businessId }, { success: false, suppliers: [], message: '' });
+    const response = await safeIpcInvoke('entities:supplier:get-all', { shopIds }, { success: false, suppliers: [], message: '' });
     if (response?.success && response.suppliers && response.suppliers.length > 0) {
       return response.suppliers;
     }
@@ -54,11 +54,11 @@ export async function fetchSuppliers(businessId: string): Promise<Supplier[] | u
 }
 
 // Function to fetch both categories and suppliers at once
-export async function fetchProductDependencies(businessId: string): Promise<{ categories?: Category[]; suppliers?: Supplier[] } | undefined> {
+export async function fetchProductDependencies(businessId: string, shopIds: string[]): Promise<{ categories?: Category[]; suppliers?: Supplier[] } | undefined> {
   try {
     const [categories, suppliers] = await Promise.all([
       fetchCategories(businessId),
-      fetchSuppliers(businessId)
+      fetchSuppliers(businessId, shopIds)
     ]);
 
     return { categories, suppliers };

@@ -22,7 +22,7 @@ const IPC_CHANNELS = {
 
 export function registerReturnHandlers() {
   // Get sale suggestions as user types
-  ipcMain.handle(IPC_CHANNELS.GET_SALE_SUGGESTIONS, async (event, { searchTerm, shopId }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_SALE_SUGGESTIONS, async (event, { searchTerm, shopIds }) => {
     try {
       if (!searchTerm || searchTerm.length < 2) {
         return { success: true, suggestions: [] };
@@ -33,29 +33,33 @@ export function registerReturnHandlers() {
       // Search for sales with matching customer name or reference numbers
       const sales = await Sales.findAll({
         where: {
-          [Op.or]: [
-            { id: { [Op.like]: `%${searchTerm}%` } },
-            { receipt_id: { [Op.like]: `%${searchTerm}%` } },
-            { invoice_id: { [Op.like]: `%${searchTerm}%` } },
+          [Op.and]: [
             {
-              [Op.and]: searchWords.map((word: string) => ({
-                '$customer.first_name$': { [Op.like]: `%${word}%` }
-              }))
+              [Op.or]: [
+                { id: { [Op.like]: `%${searchTerm}%` } },
+                { receipt_id: { [Op.like]: `%${searchTerm}%` } },
+                { invoice_id: { [Op.like]: `%${searchTerm}%` } },
+                {
+                  [Op.and]: searchWords.map((word: string) => ({
+                    '$customer.first_name$': { [Op.like]: `%${word}%` }
+                  }))
+                },
+                {
+                  [Op.and]: searchWords.map((word: string) => ({
+                    '$customer.last_name$': { [Op.like]: `%${word}%` }
+                  }))
+                }
+              ]
             },
-            {
-              [Op.and]: searchWords.map((word: string) => ({
-                '$customer.last_name$': { [Op.like]: `%${word}%` }
-              }))
-            }
-          ],
-          shopId: shopId,
-          status: 'completed' // Only show completed sales
+            { shopId: { [Op.in]: shopIds } }
+          ]
         },
         include: [
           {
             model: Customer,
-            attributes: ['first_name', 'last_name'],
-            required: false
+            as: 'customer',
+            required: false,
+            attributes: ['first_name', 'last_name']
           }
         ],
         limit: 10
@@ -65,10 +69,10 @@ export function registerReturnHandlers() {
         id: sale.id,
         receipt_id: sale.receipt_id || '',
         invoice_id: sale.invoice_id || '',
-        customer_name: sale.customer ? `${sale.customer.first_name} ${sale.customer.last_name}` : 'Walk-in Customer',
+        customer_name: sale.customer ? `${sale.customer.first_name} ${sale.customer.last_name}` : 'Walking Customer',
         total_amount: sale.netAmount,
         created_at: sale.createdAt,
-        display: `${sale.receipt_id || sale.invoice_id} - ${sale.customer ? `${sale.customer.first_name} ${sale.customer.last_name}` : 'Walk-in Customer'}`
+        display: `${sale.receipt_id || sale.invoice_id || sale.id} - ${sale.customer ? `${sale.customer.first_name} ${sale.customer.last_name}` : 'Walking Customer'}`
       }));
 
       return { success: true, suggestions };
@@ -83,23 +87,32 @@ export function registerReturnHandlers() {
     const t = await sequelize.transaction();
   
     try {
-      const { saleId, items, total, customer, shopId } = returnData;
+      const { saleId, items, total, customer, paymentMethod } = returnData;
+      let createdReturn = null;
       
       // Create individual returns for each item
       for (const item of items) {
+        // Get the product to get its shop ID
+        const product = await Product.findByPk(item.productId);
+        if (!product) {
+          throw new Error(`Product not found: ${item.productId}`);
+        }
+
         // Create the return record
-        await Return.create({
+        createdReturn = await Return.create({
           orderId: item.orderId,
           productId: item.productId,
           customerFirstName: customer.name,
           customerLastName: '',
           quantity: item.quantity,
           amount: item.price * item.quantity,
-          reason: item.reason || 'Customer Return',
-          paymentMethod: 'refund',
+          reason: item.reason,
+          description: item.description,
+          paymentMethod: paymentMethod,
           status: 'pending',
           date: new Date(),
-          shopId
+          shopId: product.shop_id,
+          saleId: saleId
         }, { transaction: t });
 
         // Update the corresponding order's quantity and payment status
@@ -117,14 +130,9 @@ export function registerReturnHandlers() {
         }
 
         // Update product stock quantity
-        if (item.productId) {
-          const product = await Product.findByPk(item.productId, { transaction: t });
-          if (product) {
-            await product.update({
-              quantity: product.quantity + item.quantity
-            }, { transaction: t });
-          }
-        }
+        await product.update({
+          quantity: product.quantity + item.quantity
+        }, { transaction: t });
       }
 
       // Update the sale's net amount
@@ -139,7 +147,35 @@ export function registerReturnHandlers() {
 
       await t.commit();
 
-      return { success: true, message: 'Returns processed successfully' };
+      // Format the return data to match the frontend's expected structure
+      const formattedReturn = createdReturn ? {
+        id: createdReturn.id,
+        shopId: createdReturn.shopId,
+        orderId: createdReturn.orderId,
+        items: [{
+          id: createdReturn.id,
+          productId: createdReturn.productId,
+          productName: items[0].productName,
+          quantity: createdReturn.quantity,
+          price: createdReturn.amount / createdReturn.quantity,
+          reason: createdReturn.reason,
+          description: createdReturn.description
+        }],
+        total: createdReturn.amount,
+        status: createdReturn.status,
+        createdAt: createdReturn.date.toISOString(),
+        customer: {
+          id: customer.id,
+          name: customer.name
+        },
+        paymentMethod: createdReturn.paymentMethod
+      } : null;
+
+      return { 
+        success: true, 
+        message: 'Returns processed successfully',
+        return: formattedReturn
+      };
     } catch (error) {
       await t.rollback();
       console.error('Error creating return:', error);
@@ -189,37 +225,62 @@ export function registerReturnHandlers() {
   });
 
   // Get all returns handler
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_RETURNS, async (event, { userRole, shopId, shopIds }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_RETURNS, async (event, { shopIds }) => {
     try {
-      const whereClause = {
-        ...(userRole === 'admin' || userRole === 'shop_owner' 
-          ? { shopId: { [Op.in]: shopIds } }
-          : { shopId: shopId }
-        )
-      };
-
       const returns = await Return.findAll({
-        where: whereClause,
+        where: {
+          shopId: {
+            [Op.in]: shopIds
+          }
+        },
         include: [
           {
             model: Product,
             as: 'product',
-            attributes: ['name']
+            attributes: ['id', 'name']
+          },
+          {
+            model: Sales,
+            as: 'sale',
+            attributes: ['id', 'receipt_id', 'invoice_id']
           }
         ],
         order: [['createdAt', 'DESC']]
       });
 
-      return {
-        success: true,
-        returns
-      };
+      // Format returns for frontend
+      const formattedReturns = returns.map(returnItem => ({
+        id: returnItem.id,
+        shopId: returnItem.shopId,
+        orderId: returnItem.orderId,
+        saleId: returnItem.saleId,
+        items: [{
+          id: returnItem.id,
+          productId: returnItem.productId,
+          productName: returnItem.product?.name || '',
+          quantity: returnItem.quantity,
+          price: returnItem.amount / returnItem.quantity,
+          reason: returnItem.reason,
+          description: returnItem.description
+        }],
+        total: returnItem.amount,
+        status: returnItem.status,
+        createdAt: returnItem.date.toISOString(),
+        customer: {
+          id: '',
+          name: returnItem.customerFirstName + ' ' + returnItem.customerLastName
+        },
+        paymentMethod: returnItem.paymentMethod,
+        sale: returnItem.sale ? {
+          receipt_id: returnItem.sale.receipt_id,
+          invoice_id: returnItem.sale.invoice_id
+        } : null
+      }));
+
+      return { success: true, returns: formattedReturns };
     } catch (error) {
-      console.error('Error fetching returns:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to fetch returns'
-      };
+      console.error('Error getting returns:', error);
+      return { success: false, message: 'Failed to get returns' };
     }
   });
 

@@ -1,7 +1,12 @@
 import { ipcMain } from 'electron';
 import InventoryItem, { InventoryItemAttributes } from '../../../models/InventoryItem.js';
 import Inventory from '../../../models/Inventory.js';
-import { Op } from 'sequelize';
+import Product from '../../../models/Product.js';
+import Supplier from '../../../models/Supplier.js';
+import SupplierProducts from '../../../models/SupplierProducts.js';
+import { Op, Sequelize } from 'sequelize';
+import StockMovement from '../../../models/StockMovement.js';
+import { sequelize } from '../../database/index.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -10,17 +15,58 @@ const IPC_CHANNELS = {
   GET_ITEM: 'inventory:item:get',
   UPDATE_ITEM: 'inventory:item:update',
   DELETE_ITEM: 'inventory:item:delete',
+  SEARCH_PRODUCTS: 'inventory:product:search',
 };
 
 // Register IPC handlers
 export function registerInventoryItemHandlers() {
   // Create inventory item handler
   ipcMain.handle(IPC_CHANNELS.CREATE_ITEM, async (event, { itemData }) => {
+    const t = await sequelize.transaction();
     try {
-      const item = await InventoryItem.create(itemData);
+      console.log('Received itemData:', itemData);
+
+      // Validate required fields
+      if (!itemData.product_id) {
+        console.log('Missing product_id. Full itemData:', itemData);
+        throw new Error('Product ID is required');
+      }
+      if (!itemData.inventory_id) throw new Error('Inventory ID is required');
+      if (!itemData.quantity || itemData.quantity <= 0) throw new Error('Valid quantity is required');
+      if (!itemData.unit_cost || itemData.unit_cost <= 0) throw new Error('Valid unit cost is required');
+
+      const item = await InventoryItem.create(itemData, { transaction: t });
+      
+      // Update product stock
+      const product = await Product.findByPk(itemData.product_id, { transaction: t });
+      if (!product) throw new Error('Product not found');
+      
+      await product.update({
+        quantity: sequelize.literal(`quantity + ${itemData.quantity}`)
+      }, { transaction: t });
+
+      // Create stock movement record
+      await StockMovement.create({
+        productId: itemData.product_id,
+        movementType: 'added',
+        quantity: itemData.quantity,
+        source_inventory_id: itemData.inventory_id,
+        direction: 'inbound',
+        cost_per_unit: itemData.unit_cost,
+        total_cost: itemData.unit_cost * itemData.quantity,
+        performedBy_id: itemData.userId || null
+      }, { transaction: t });
+
+      await t.commit();
       return { success: true, message: 'Inventory item created successfully', item };
     } catch (error) {
-      return { success: false, message: 'Error creating inventory item', error };
+      await t.rollback();
+      console.error('Error creating inventory item:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error creating inventory item',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   });
 
@@ -28,15 +74,16 @@ export function registerInventoryItemHandlers() {
   ipcMain.handle(IPC_CHANNELS.GET_ALL_ITEMS_BY_INVENTORY_ID, async (event, { inventoryId }) => {
     try {
       const items = await InventoryItem.findAll({
-        include: [{
-          model: Inventory,
-          as: 'inventories',
-          where: { id: inventoryId },
-        }],
+        where: { inventory_id: inventoryId },
+        include: [
+          { model: Product, as: 'product' },
+          { model: Supplier, as: 'supplier' }
+        ]
       });
-      return { success: true, items };
+      return items.map(item => item.get({ plain: true }));
     } catch (error) {
-      return { success: false, message: 'Error fetching inventory items', error };
+      console.error('Error fetching inventory items:', error);
+      return [];
     }
   });
 
@@ -52,6 +99,7 @@ export function registerInventoryItemHandlers() {
       return { success: false, message: 'Error retrieving inventory item', error };
     }
   });
+
   // Update inventory item handler
   ipcMain.handle(IPC_CHANNELS.UPDATE_ITEM, async (event, { id, updates }) => {
     try {
@@ -77,6 +125,45 @@ export function registerInventoryItemHandlers() {
       return { success: true, message: 'Inventory item deleted successfully' };
     } catch (error) {
       return { success: false, message: 'Error deleting inventory item', error };
+    }
+  });
+
+  // Search products handler
+  ipcMain.handle(IPC_CHANNELS.SEARCH_PRODUCTS, async (event, { query }) => {
+    try {
+      const products = await Product.findAll({
+        where: {
+          [Op.or]: [
+            { name: { [Op.like]: `%${query}%` } },
+            { sku: { [Op.like]: `%${query}%` } }
+          ]
+        },
+        include: [{
+          model: Supplier,
+          through: { attributes: [] } as any,
+          as: 'suppliers',
+          attributes: ['id', 'name', 'email', 'phone']
+        }],
+        limit: 10,
+        raw: true,
+        nest: true
+      });
+
+      return { 
+        success: true, 
+        products: products.map(p => ({
+          ...p,
+          suppliers: (Array.isArray(p.suppliers) ? p.suppliers : []).map(s => ({...s}))
+        }))
+      };
+      
+    } catch (error) {
+      console.error('Search products error:', error);
+      return { 
+        success: false, 
+        message: 'Error searching products',
+        products: []
+      };
     }
   });
 }

@@ -28,6 +28,9 @@ export function registerSettingsHandlers() {
           currency: 'FCFA',
           timezone: 'Africa/Douala',
           language: 'fr',
+          weightUnit: 'kg',
+          volumeUnit: 'liter',
+          lengthUnit: 'meter',
           operatingHours: {
             monday: { open: '08:00', close: '18:00' },
             tuesday: { open: '08:00', close: '18:00' },

@@ -28,6 +28,9 @@ class ShopSettings extends Model<ShopSettingsAttributes> implements ShopSettings
   public orderPrefix!: string;
   declare dateFormat: string;
   declare timeFormat: string;
+  public weightUnit!: string;
+  public volumeUnit!: string;
+  public lengthUnit!: string;
 
   static initModel(sequelize: Sequelize): typeof ShopSettings {
     return this.init({
@@ -122,6 +125,18 @@ class ShopSettings extends Model<ShopSettingsAttributes> implements ShopSettings
       timeFormat: {
         type: DataTypes.STRING,
         defaultValue: '24h'
+      },
+      weightUnit: {
+        type: DataTypes.STRING,
+        defaultValue: 'kg'
+      },
+      volumeUnit: {
+        type: DataTypes.STRING,
+        defaultValue: 'l'
+      },
+      lengthUnit: {
+        type: DataTypes.STRING,
+        defaultValue: 'm'
       }
     }, {
       sequelize,

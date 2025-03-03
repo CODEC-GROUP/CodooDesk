@@ -54,8 +54,8 @@ interface ProductData {
 
 interface ProductResponse {
   success: boolean;
-  product?: ProductData;
-  message?: string;
+  product?: Product;
+  error?: string;
 }
 
 interface CategoryResponse {
@@ -68,6 +68,18 @@ interface ShopResponse {
   success: boolean;
   data?: Shop[];
   message?: string;
+}
+
+interface Warehouse {
+  id: string;
+  name: string;
+  businessId: string;
+}
+
+interface WarehouseResponse {
+  success: boolean;
+  warehouses: Warehouse[];
+  error?: string;
 }
 
 interface FormData {
@@ -87,6 +99,17 @@ interface FormData {
   businessId?: string;
   userId?: string;
   productType: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  description: string | null;
+  sku: string;
+  category_id: string;
+  shop_id: string;
+  status: string;
+  businessId: string;
 }
 
 export function AddProduct({ onBack, editMode = false, productToEdit, onEditComplete }: AddProductProps) {
@@ -138,26 +161,54 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
     };
   });
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [featuredImage, setFeaturedImage] = useState<File | null>(null);
   const [additionalImages, setAdditionalImages] = useState<File[]>([]);
   const [featuredImagePreview, setFeaturedImagePreview] = useState<string | null>(null);
   const [additionalImagePreviews, setAdditionalImagePreviews] = useState<string[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        setIsLoading(true);
+        setLoading(true);
         if (!business?.id) {
           throw new Error('Business ID is required');
         }
 
-        const result = await fetchProductDependencies(business.id);
+        const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+          ? business?.shops?.map(shop => shop.id) || []
+          : [business?.shops?.[0]?.id].filter(Boolean) as string[];
+
+        const result = await fetchProductDependencies(business.id, shopIds);
         setCategories(result?.categories ?? []);
         setSuppliers(result?.suppliers ?? []);
+
+        // Fetch warehouses
+        const warehousesResponse = await safeIpcInvoke<{
+          success: boolean;
+          data: {
+            items: Warehouse[];
+            pagination: any;
+          };
+          message?: string;
+        }>('inventory:get-by-shop', {
+          shopId: business.shops?.[0]?.id || '',
+          isAdmin: true,
+          pagination: {
+            page: 1,
+            limit: 100
+          }
+        });
+
+        if (warehousesResponse?.success) {
+          setWarehouses(warehousesResponse.data.items);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
         toast({
@@ -166,7 +217,7 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
           variant: "destructive",
         });
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
@@ -188,19 +239,19 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     // Add basic form validation
-    if (!formData.name || !formData.sellingPrice || !formData.purchasePrice) {
+    if (!formData.name || !formData.sellingPrice || !formData.purchasePrice || !selectedWarehouse) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in all required fields including warehouse selection",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      setIsLoading(true);
-      const endpoint = editMode ? 'inventory:product:update' : 'inventory:product:create';
+      setLoading(true);
       
       // Handle featured image upload
       let featuredImagePath = formData.featuredImage;
@@ -228,24 +279,24 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
         reorderPoint: Number(formData.reorderPoint),
         featuredImage: featuredImagePath,
         additionalImages: additionalImagePaths,
+        businessId: business?.id,
+        suppliers: selectedSuppliers,
+        warehouseId: selectedWarehouse, // Pass the selected warehouse ID
       };
 
-      const response = await safeIpcInvoke<ProductResponse>(endpoint, {
-        productId: editMode ? productToEdit?.id : undefined,
+      // Create the product (inventory item will be created in the backend)
+      const response = await safeIpcInvoke<ProductResponse>('inventory:product:create', {
         data: productData,
-        businessId: business?.id
-      }, { success: false });
+      });
 
       if (response?.success) {
         toast({
           title: "Success",
-          description: `Product ${editMode ? 'updated' : 'created'} successfully`,
+          description: "Product created successfully",
         });
-        if (editMode && onEditComplete) {
-          onEditComplete();
-        } else {
-          onBack();
-        }
+        onBack();
+      } else {
+        throw new Error(response?.error || 'Failed to create product');
       }
     } catch (error) {
       console.error('Error creating product:', error);
@@ -255,7 +306,7 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
@@ -328,7 +379,7 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
             <Button 
               type="submit"
               className="bg-[#1A7DC4] hover:bg-[#1565a0]" 
-              disabled={isLoading}
+              disabled={loading}
             >
               {editMode ? 'Save Changes' : 'Create Product'}
             </Button>
@@ -545,8 +596,10 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                       <div className="space-y-2">
                         <Label>Category</Label>
                         <Select 
-                          value={formData.category_id || ''} 
-                          onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: value }))}
+                          value={formData.category_id || ''}
+                          onValueChange={(value) =>
+                            setFormData({ ...formData, category_id: value })
+                          }
                           disabled={categories.length === 0}
                         >
                           <SelectTrigger>
@@ -561,6 +614,25 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Warehouse</Label>
+                      <Select
+                        value={selectedWarehouse}
+                        onValueChange={setSelectedWarehouse}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select warehouse" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {warehouses.map((warehouse) => (
+                            <SelectItem key={warehouse.id} value={warehouse.id}>
+                              {warehouse.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
 

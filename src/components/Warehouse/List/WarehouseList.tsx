@@ -51,7 +51,6 @@ interface PaginationState {
 }
 
 export function WarehouseList() {
-  const { t } = useAppTranslation()
   const { business, currentShopId, user } = useAuthLayout()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -70,10 +69,10 @@ export function WarehouseList() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [editWarehouse, setEditWarehouse] = useState<WarehouseItem | null>(null)
 
-  const statusTranslations = {
-    Low: t('warehouse.status.low'),
-    Medium: t('warehouse.status.medium'),
-    High: t('warehouse.status.high')
+  const statusLabels = {
+    Low: 'Low',
+    Medium: 'Medium',
+    High: 'High'
   }
 
   const fetchWarehouses = async () => {
@@ -101,10 +100,10 @@ export function WarehouseList() {
         setWarehouses(response.data.items)
         setPagination(response.data.pagination)
       } else {
-        throw new Error(response?.message || 'Failed to fetch inventories')
+        throw new Error(response?.message || 'Failed to fetch warehouses')
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch inventories'
+      const message = err instanceof Error ? err.message : 'Failed to fetch warehouses'
       setError(message)
       toast({
         variant: 'destructive',
@@ -146,7 +145,7 @@ export function WarehouseList() {
       if (response?.success) {
         setWarehouses(prev => prev.filter(w => w.id !== deleteId))
         setSelectedItems(prev => prev.filter(id => id !== deleteId))
-        toast({ title: 'Success', description: 'Inventory deleted' })
+        toast({ title: 'Success', description: 'Warehouse deleted' })
       }
     } finally {
       setIsDeleting(false)
@@ -172,16 +171,16 @@ export function WarehouseList() {
         setSelectedItems([])
         toast({
           title: 'Success',
-          description: 'Selected inventories deleted successfully'
+          description: 'Selected warehouses deleted successfully'
         })
       } else {
-        throw new Error(`Failed to delete ${failedDeletions.length} inventories`)
+        throw new Error(`Failed to delete ${failedDeletions.length} warehouses`)
       }
     } catch (err) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: err instanceof Error ? err.message : 'Failed to delete inventories'
+        description: err instanceof Error ? err.message : 'Failed to delete warehouses'
       })
     } finally {
       setIsDeleting(false)
@@ -200,6 +199,16 @@ export function WarehouseList() {
   const handleEditClick = (id: string) => {
     const warehouse = warehouses.find(w => w.id === id)
     if (warehouse) setEditWarehouse(warehouse)
+  }
+
+  if (selectedWarehouseId) {
+    const selectedWarehouse = warehouses.find(w => w.id === selectedWarehouseId);
+    return <InventoryList 
+      warehouseId={selectedWarehouseId} 
+      warehouseName={selectedWarehouse?.name || 'Warehouse'}
+      onBack={() => setSelectedWarehouseId(null)}
+      parentView="warehouse"
+    />
   }
 
   if (editWarehouse) {
@@ -222,7 +231,7 @@ export function WarehouseList() {
   return (
     <div className="container mx-auto py-10">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Inventory Management</h1>
+        <h1 className="text-3xl font-bold">Warehouse Management</h1>
         <div className="space-x-2">
           {selectedItems.length > 0 && (
             <Button
@@ -234,7 +243,7 @@ export function WarehouseList() {
             </Button>
           )}
           <Button onClick={handleAddItemClick}>
-            <Plus className="mr-2 h-4 w-4" /> Add New Inventory
+            <Plus className="mr-2 h-4 w-4" /> Add New Warehouse
           </Button>
         </div>
       </div>
@@ -276,20 +285,24 @@ export function WarehouseList() {
                 ) : warehouses.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-10">
-                      No inventories found
+                      No warehouses found
                     </TableCell>
                   </TableRow>
                 ) : (
                   warehouses.map((warehouse) => (
-                    <TableRow key={warehouse.id}>
-                      <TableCell>
+                    <TableRow 
+                      key={warehouse.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setSelectedWarehouseId(warehouse.id)}
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={selectedItems.includes(warehouse.id)}
                           onCheckedChange={() => toggleItemSelection(warehouse.id)}
                         />
                       </TableCell>
                       <TableCell>{warehouse.name}</TableCell>
-                      <TableCell>{statusTranslations[warehouse.status]}</TableCell>
+                      <TableCell>{statusLabels[warehouse.status]}</TableCell>
                       <TableCell>{warehouse.level}</TableCell>
                       <TableCell>{warehouse.value}</TableCell>
                       <TableCell className="text-right space-x-2">
@@ -332,9 +345,9 @@ export function WarehouseList() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="10">10 / page</SelectItem>
-                <SelectItem value="25">25 / page</SelectItem>
-                <SelectItem value="50">50 / page</SelectItem>
+                <SelectItem value="10">10 per page</SelectItem>
+                <SelectItem value="25">25 per page</SelectItem>
+                <SelectItem value="50">50 per page</SelectItem>
               </SelectContent>
             </Select>
             <span className="text-sm text-gray-600">
@@ -354,7 +367,7 @@ export function WarehouseList() {
             <Button
               variant="outline"
               onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-              disabled={pagination.page === pagination.totalPages}
+              disabled={pagination.page >= pagination.totalPages}
             >
               Next
             </Button>
@@ -366,10 +379,10 @@ export function WarehouseList() {
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={handleDeleteConfirm}
-        title={t('delete_inventory')}
-        description={t('delete_inventory_confirmation')}
-        variant="destructive"
-        confirmText="Delete"
+        title="Delete Warehouse"
+        description="Are you sure you want to delete this warehouse? This action cannot be undone."
+        confirmText={isDeleting ? "Deleting..." : "Delete"}
+        cancelText="Cancel"
         isLoading={isDeleting}
       />
     </div>

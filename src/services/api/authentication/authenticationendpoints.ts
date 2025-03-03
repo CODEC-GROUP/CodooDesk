@@ -6,6 +6,7 @@ import Employee from '../../../models/Employee.js';
 import Shop from '../../../models/Shop.js';
 import BusinessInformation from '../../../models/BusinessInformation.js';
 import { Op } from 'sequelize';
+import type { ShopAttributes } from '../../../models/Shop.js';
 import Location from '../../../models/Location.js';
 import SecurityLog from '../../../models/SecurityLog.js';
 import { DataTypes } from 'sequelize';
@@ -19,6 +20,18 @@ const IPC_CHANNELS = {
 
 // Add this near the top with other model imports
 type Business = ReturnType<BusinessInformation['toJSON']>;
+interface ShopWithLocation extends ShopAttributes {
+  location?: {
+    address: string | null;
+    city: string | null;
+    region: string | null;
+    postalCode: string | null;
+    country: {
+      name: string;
+      code?: string;
+    };
+  } | null;
+}
 
 // Register IPC handlers
 export function registerAuthHandlers() {
@@ -172,7 +185,6 @@ export function registerAuthHandlers() {
                 status: shop.status,
                 contactInfo: shop.contactInfo,
                 manager: shop.manager,
-                managerId: shop.managerId,
                 businessId: shop.businessId,
                 location: shop.location ? {
                   address: shop.location.address,
@@ -211,6 +223,7 @@ export function registerAuthHandlers() {
             include: [{
               model: Shop,
               as: 'shops',
+              where: { id: employee.shop.id }, // Only include the employee's shop
               include: [{
                 model: Location,
                 as: 'location',
@@ -219,11 +232,11 @@ export function registerAuthHandlers() {
             }]
           });
 
-          if (business) {
+          if (business && business.shops?.[0]) {
             const businessJSON = business.toJSON();
-            const employeeJSON = employee.toJSON();
-            
-            return {
+            const employeeShop = business.shops[0].toJSON() as ShopWithLocation;
+
+            const loginResponse = {
               success: true,
               message: 'User registered successfully',
               user: {
@@ -240,27 +253,51 @@ export function registerAuthHandlers() {
                 businessType: businessJSON.businessType,
                 numberOfEmployees: businessJSON.numberOfEmployees,
                 taxIdNumber: businessJSON.taxIdNumber,
-                shops: business?.shops?.map((shop: any) => ({
-                  id: shop.id,
-                  name: shop.name,
-                  type: shop.type,
-                  status: shop.status,
-                  contactInfo: shop.contactInfo,
-                  manager: shop.manager,
-                  managerId: shop.managerId,
-                  businessId: shop.businessId,
-                  location: shop.location ? {
-                    address: shop.location.address,
-                    city: shop.location.city,
-                    country: shop.location.country,
-                    region: shop.location.region,
-                    postalCode: shop.location.postalCode
+                shops: [{
+                  id: employeeShop.id,
+                  name: employeeShop.name,
+                  type: employeeShop.type,
+                  status: employeeShop.status,
+                  contactInfo: employeeShop.contactInfo,
+                  manager: employeeShop.manager,
+                  businessId: employeeShop.businessId,
+                  location: employeeShop.location ? {
+                    address: employeeShop.location.address,
+                    city: employeeShop.location.city,
+                    country: employeeShop.location.country,
+                    region: employeeShop.location.region,
+                    postalCode: employeeShop.location.postalCode
                   } : null,
-                  operatingHours: shop.operatingHours
-                })) ?? [],
+                  operatingHours: employeeShop.operatingHours
+                }]
               },
-              isSetupComplete: !!business.taxIdNumber
+              isSetupComplete: true,
+              shopId: employeeShop.id
             };
+
+            // Log detailed login response information
+            console.log('=== LOGIN RESPONSE DETAILS ===');
+            console.log('User:', {
+              id: loginResponse.user.id,
+              username: loginResponse.user.username,
+              email: loginResponse.user.email,
+              role: loginResponse.user.role
+            });
+            console.log('Business:', {
+              id: loginResponse.business.id,
+              name: loginResponse.business.fullBusinessName,
+              type: loginResponse.business.businessType
+            });
+            console.log('Available Shops:', loginResponse.business.shops.map(shop => ({
+              id: shop.id,
+              name: shop.name,
+              type: shop.type
+            })));
+            console.log('Employee Shop ID:', loginResponse.shopId);
+            console.log('Setup Complete:', loginResponse.isSetupComplete);
+            console.log('=== END LOGIN RESPONSE ===');
+
+            return loginResponse;
           }
         }
       }
@@ -467,6 +504,7 @@ export function registerAuthHandlers() {
             include: [{
               model: Shop,
               as: 'shops',
+              where: { id: employee.shop.id }, // Only include the employee's shop
               include: [{
                 model: Location,
                 as: 'location',
@@ -475,11 +513,11 @@ export function registerAuthHandlers() {
             }]
           });
 
-          if (business) {
+          if (business && business.shops?.[0]) {
             const businessJSON = business.toJSON();
-            const employeeJSON = employee.toJSON();
+            const employeeShop = business.shops[0].toJSON() as ShopWithLocation;
 
-            return {
+            const loginResponse = {
               success: true,
               message: 'Login successful',
               user: safeUser,
@@ -491,30 +529,59 @@ export function registerAuthHandlers() {
                 businessType: businessJSON.businessType,
                 numberOfEmployees: businessJSON.numberOfEmployees,
                 taxIdNumber: businessJSON.taxIdNumber,
-                shops: business?.shops?.map((shop: any) => ({
-                  id: shop.id,
-                  name: shop.name,
-                  type: shop.type,
-                  status: shop.status,
-                  contactInfo: shop.contactInfo,
-                  manager: shop.manager,
-                  managerId: shop.managerId,
-                  businessId: shop.businessId,
-                  location: shop.location ? {
-                    address: shop.location.address,
-                    city: shop.location.city,
-                    country: shop.location.country,
-                    region: shop.location.region,
-                    postalCode: shop.location.postalCode
+                shops: [{
+                  id: employeeShop.id,
+                  name: employeeShop.name,
+                  type: employeeShop.type,
+                  status: employeeShop.status,
+                  contactInfo: employeeShop.contactInfo,
+                  manager: employeeShop.manager,
+                  businessId: employeeShop.businessId,
+                  location: employeeShop.location ? {
+                    address: employeeShop.location.address,
+                    city: employeeShop.location.city,
+                    country: employeeShop.location.country,
+                    region: employeeShop.location.region,
+                    postalCode: employeeShop.location.postalCode
                   } : null,
-                  operatingHours: shop.operatingHours
-                })) ?? [],
+                  operatingHours: employeeShop.operatingHours
+                }]
               },
               isSetupComplete: true,
-              shopId: employee?.shop?.id
+              shopId: employeeShop.id
             };
+
+            // Log detailed login response information
+            console.log('=== LOGIN RESPONSE DETAILS ===');
+            console.log('User:', {
+              id: loginResponse.user.id,
+              username: loginResponse.user.username,
+              email: loginResponse.user.email,
+              role: loginResponse.user.role
+            });
+            console.log('Business:', {
+              id: loginResponse.business.id,
+              name: loginResponse.business.fullBusinessName,
+              type: loginResponse.business.businessType
+            });
+            console.log('Available Shops:', loginResponse.business.shops.map(shop => ({
+              id: shop.id,
+              name: shop.name,
+              type: shop.type
+            })));
+            console.log('Employee Shop ID:', loginResponse.shopId);
+            console.log('Setup Complete:', loginResponse.isSetupComplete);
+            console.log('=== END LOGIN RESPONSE ===');
+
+            return loginResponse;
           }
         }
+
+        // If no shop found for employee or business not found
+        return {
+          success: false,
+          message: 'No shop assigned to this employee account or business not found'
+        };
       }
 
       // Log successful login

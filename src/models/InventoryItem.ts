@@ -8,7 +8,7 @@ export interface InventoryItemAttributes {
   id?: string;
   product_id: string;
   inventory_id: string;
-  supplier_id: string;
+  supplier_id?: string;
   quantity: number;
   minimum_quantity: number;
   maximum_quantity: number;
@@ -19,6 +19,11 @@ export interface InventoryItemAttributes {
   last_restock_date?: Date;
   last_stocktake_date?: Date;
   value: number;
+  batch_number?: string;
+  expiry_date?: Date;
+  location?: string;
+  stock_type: 'purchase' | 'production' | 'return' | 'transfer';
+  unit_type: 'piece' | 'kg' | 'liter' | 'meter';
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -27,7 +32,7 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
   public id!: string;
   public product_id!: string;
   public inventory_id!: string;
-  public supplier_id!: string;
+  public supplier_id?: string;
   public quantity!: number;
   public minimum_quantity!: number;
   public maximum_quantity!: number;
@@ -38,6 +43,11 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
   public last_restock_date?: Date;
   public last_stocktake_date?: Date;
   public value!: number;
+  public batch_number!: string;
+  public expiry_date!: Date;
+  public location!: string;
+  public stock_type!: 'purchase' | 'production' | 'return' | 'transfer';
+  public unit_type!: 'piece' | 'kg' | 'liter' | 'meter';
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
   public product?: Product;
@@ -54,7 +64,7 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
           type: DataTypes.UUID,
           allowNull: false,
           references: {
-            model: 'Product',
+            model: 'Products',
             key: 'id',
           },
         },
@@ -68,9 +78,9 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
         },
         supplier_id: {
           type: DataTypes.UUID,
-          allowNull: false,
+          allowNull: true,
           references: {
-            model: 'Supplier',
+            model: 'Suppliers',
             key: 'id',
           },
         },
@@ -122,6 +132,28 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
           allowNull: false,
           defaultValue: 0
         },
+        batch_number: {
+          type: DataTypes.STRING,
+          allowNull: true
+        },
+        expiry_date: {
+          type: DataTypes.DATE,
+          allowNull: true
+        },
+        location: {
+          type: DataTypes.STRING,
+          allowNull: true
+        },
+        stock_type: {
+          type: DataTypes.ENUM('purchase', 'production', 'return', 'transfer'),
+          allowNull: false,
+          defaultValue: 'purchase'
+        },
+        unit_type: {
+          type: DataTypes.ENUM('piece', 'kg', 'liter', 'meter'),
+          allowNull: false,
+          defaultValue: 'piece'
+        }
       },
       {
         sequelize,

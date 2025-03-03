@@ -3,9 +3,11 @@ import { sequelize } from '../services/database/index.js';
 import Order from './Order.js';
 import Product from './Product.js';
 import Shop from './Shop.js';
+import Sales from './Sales.js';
 
 export interface ReturnAttributes {
   id?: string;
+  saleId?: string;
   orderId: string;
   productId: string;
   shopId?: string;
@@ -16,17 +18,19 @@ export interface ReturnAttributes {
   reason: string;
   description?: string | null;
   paymentMethod: string;
-  status: 'pending' | 'completed';
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
   date: Date;
   product?: Product;
   order?: Order;
   shop?: Shop;
+  sale?: Sales;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
 class Return extends Model<ReturnAttributes> implements ReturnAttributes {
   public id!: string;
+  public saleId?: string;
   public orderId!: string;
   public productId!: string;
   public shopId?: string;
@@ -37,11 +41,12 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
   public reason!: string;
   public description!: string | null;
   public paymentMethod!: string;
-  public status!: 'pending' | 'completed';
+  public status!: 'pending' | 'approved' | 'rejected' | 'completed';
   public date!: Date;
   public product?: Product;
   public order?: Order;
   public shop?: Shop;
+  public sale?: Sales;
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -53,6 +58,14 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
           type: DataTypes.UUID,
           defaultValue: DataTypes.UUIDV4,
           primaryKey: true,
+        },
+        saleId: {
+          type: DataTypes.UUID,
+          allowNull: true,
+          references: {
+            model: 'sales',
+            key: 'id'
+          }
         },
         orderId: {
           type: DataTypes.UUID,
@@ -103,7 +116,7 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
           allowNull: false,
         },
         status: {
-          type: DataTypes.ENUM('pending', 'completed'),
+          type: DataTypes.ENUM('pending', 'approved', 'rejected', 'completed'),
           allowNull: false,
           defaultValue: 'pending',
         },
@@ -116,7 +129,7 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
       {
         sequelize,
         modelName: 'Return',
-        tableName: 'Returns',
+        tableName: 'returns',
         timestamps: true,
       }
     );
@@ -134,6 +147,10 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
     this.belongsTo(models.Shop, {
       foreignKey: 'shopId',
       as: 'shop'
+    });
+    this.belongsTo(models.Sales, {
+      foreignKey: 'saleId',
+      as: 'sale'
     });
   }
 }

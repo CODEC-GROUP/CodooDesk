@@ -101,9 +101,13 @@ export function initializeModels(sequelize: any): Models {
     // Call associate methods for all models
     Object.values(models).forEach((model: any) => {
         if (model.associate) {
+            console.log(`Setting up associations for model: ${model.name}`);
             model.associate(models);
         }
     });
+
+    // Log initialized models
+    console.log('Initialized models:', Object.keys(models));
 
     return models;
 }

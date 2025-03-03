@@ -165,8 +165,8 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
       },
       {
         sequelize,
-        modelName: 'Product',
         tableName: 'Products',
+        modelName: 'Product',
         timestamps: true,
         createdAt: 'createdAt',
         updatedAt: 'updatedAt',

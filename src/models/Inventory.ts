@@ -71,6 +71,7 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
       },
       {
         sequelize,
+        tableName: 'Inventories',
         modelName: 'Inventory',
         timestamps: true,
       }

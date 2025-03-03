@@ -13,14 +13,12 @@ import { safeIpcInvoke } from "@/lib/ipc"
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { InventoryAttributes } from "@/models/Inventory"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
-import { useAppTranslation } from '@/hooks/useAppTranslation'
 
 interface AddWarehouseProps {
   onBack: () => void;
 }
 
 const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
-  const { t } = useAppTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
@@ -45,8 +43,8 @@ const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
       if (!formData.name.trim()) {
         toast({
           variant: 'destructive',
-          title: t('error'),
-          description: t('warehouse.name_required')
+          title: 'Error',
+          description: 'Warehouse name is required'
         });
         return;
       }
@@ -66,18 +64,18 @@ const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
 
       if (response?.success) {
         toast({ 
-          title: t('success'), 
-          description: t('warehouse.created_successfully')
+          title: 'Success', 
+          description: 'Warehouse created successfully'
         });
         onBack();
       } else {
-        throw new Error(response?.message || t('warehouse.create_failed'));
+        throw new Error(response?.message || 'Failed to create warehouse');
       }
     } catch (err) {
       toast({
         variant: 'destructive',
-        title: t('error'),
-        description: err instanceof Error ? err.message : t('warehouse.create_failed')
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to create warehouse'
       });
     } finally {
       setIsLoading(false)
@@ -92,80 +90,70 @@ const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
         className="mb-4"
         disabled={isLoading}
       >
-        <ArrowLeft className="mr-2 h-4 w-4" /> {t('back')}
+        <ArrowLeft className="mr-2 h-4 w-4" /> Back
       </Button>
       
       <Card>
         <CardHeader>
-          <CardTitle>{t('warehouse.add_new')}</CardTitle>
-          <CardDescription>{t('warehouse.add_description')}</CardDescription>
+          <CardTitle>Add New Warehouse</CardTitle>
+          <CardDescription>Create a new warehouse to track your inventory</CardDescription>
         </CardHeader>
         
         <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="warehouse-name">{t('warehouse.name')}</Label>
+            <Label htmlFor="warehouse-name">Warehouse Name</Label>
             <Input
               id="warehouse-name"
               value={formData.name}
               onChange={(e) => handleInputChange('name', e.target.value)}
-              placeholder={t('warehouse.name_placeholder')}
+              placeholder="Enter warehouse name"
               disabled={isLoading}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="status">{t('warehouse.status')}</Label>
-            <Select 
-              value={formData.status} 
-              onValueChange={(value: 'Low' | 'Medium' | 'High') => 
-                handleInputChange('status', value)
-              }
-              disabled={isLoading}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={t('warehouse.select_status')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Low">{t('warehouse.status.low')}</SelectItem>
-                <SelectItem value="Medium">{t('warehouse.status.medium')}</SelectItem>
-                <SelectItem value="High">{t('warehouse.status.high')}</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label htmlFor="status">Status</Label>
+            <Input
+              id="status"
+              value="Medium"
+              disabled={true}
+              className="bg-gray-100"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="level">{t('warehouse.level')}</Label>
+              <Label htmlFor="level">Level</Label>
               <Input
                 id="level"
                 type="number"
                 min="0"
-                value={formData.level}
-                onChange={(e) => handleInputChange('level', parseInt(e.target.value) || 0)}
-                disabled={isLoading}
+                value={0}
+                disabled={true}
+                className="bg-gray-100"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="value">{t('warehouse.value')}</Label>
+              <Label htmlFor="value">Value</Label>
               <Input
                 id="value"
                 type="number"
                 min="0"
-                value={formData.value}
-                onChange={(e) => handleInputChange('value', parseFloat(e.target.value) || 0)}
-                disabled={isLoading}
+                value={0}
+                disabled={true}
+                className="bg-gray-100"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">{t('warehouse.description')}</Label>
+            <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
               value={formData.description}
               onChange={(e) => handleInputChange('description', e.target.value)}
-              placeholder={t('warehouse.description_placeholder')}
+              placeholder="Enter warehouse description"
               disabled={isLoading}
             />
           </div>
@@ -177,12 +165,12 @@ const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
             className="w-full"
             disabled={isLoading}
           >
-            {isLoading ? t('warehouse.creating') : t('warehouse.create')}
+            {isLoading ? 'Creating Warehouse...' : 'Create Warehouse'}
           </Button>
         </CardFooter>
       </Card>
     </div>
-  )
-}
+  );
+};
 
 export default AddWarehouse

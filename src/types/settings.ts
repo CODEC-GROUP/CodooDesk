@@ -33,4 +33,7 @@ export interface ShopSettingsAttributes {
   invoicePrefix: string;
   receiptPrefix: string;
   orderPrefix: string;
+  weightUnit: string;
+  volumeUnit: string;
+  lengthUnit: string;
 } 
