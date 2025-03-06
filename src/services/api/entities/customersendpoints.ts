@@ -87,7 +87,7 @@ export function registerCustomerHandlers() {
           [sequelize.fn('COUNT', sequelize.col('sales.id')), 'orders'],
           [sequelize.fn('SUM', sequelize.col('sales.netAmount')), 'spent']
         ] as FindAttributeOptions,
-        group: ['Customer.id', 'shops.id'],
+        group: ['Customer.id', 'shops.id', 'shops.name'],
         raw: true,
         nest: true
       };
@@ -108,16 +108,36 @@ export function registerCustomerHandlers() {
       }
 
       // Format the response
-      const formattedCustomers = customers.map((customer) => ({
-        id: customer.id,
-        name: `${customer.first_name} ${customer.last_name}`,
-        phone: customer.phone_number,
-        orders: parseInt(customer.orders) || 0,
-        spent: new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'XAF'
-        }).format(parseFloat(customer.spent) || 0)
-      }));
+      const formattedCustomers = customers.reduce((acc: any[], customer: any) => {
+        const existingCustomer = acc.find(c => c.id === customer.id);
+        
+        if (existingCustomer) {
+          // Add shop to existing customer if not already present
+          if (customer.shops && !existingCustomer.shops.some((s: any) => s.id === customer.shops.id)) {
+            existingCustomer.shops.push({
+              id: customer.shops.id,
+              name: customer.shops.name
+            });
+          }
+        } else {
+          // Create new customer entry
+          acc.push({
+            id: customer.id,
+            name: `${customer.first_name} ${customer.last_name}`,
+            phone: customer.phone_number,
+            orders: parseInt(customer.orders) || 0,
+            spent: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'XAF'
+            }).format(parseFloat(customer.spent) || 0),
+            shops: customer.shops ? [{
+              id: customer.shops.id,
+              name: customer.shops.name
+            }] : []
+          });
+        }
+        return acc;
+      }, []);
 
       return { success: true, customers: formattedCustomers };
     } catch (error) {

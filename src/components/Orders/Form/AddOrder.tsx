@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
-import { ChevronLeft, Plus, Trash2, Store } from "lucide-react"
+import { ChevronLeft, Plus, Trash2, Store, ChevronDown } from "lucide-react"
 import { PrinterService, PrinterBusinessInfo, PrinterReceiptData } from "@/services/printerService";
 import {
   Select,
@@ -119,6 +119,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<string>("")
+  const [customerSearchTerm, setCustomerSearchTerm] = useState("")
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -136,6 +137,8 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const [lastOrderResponse, setLastOrderResponse] = useState<OrderResponse | null>(null);
   const [tempQuantity, setTempQuantity] = useState<number>(1);
   const [selectedShopId, setSelectedShopId] = useState<string>("");
+  const [isProductSearchFocused, setIsProductSearchFocused] = useState(false)
+  const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1)
 
   // Add default walk-in customer
   const defaultCustomer: Customer = {
@@ -152,26 +155,34 @@ export function AddOrder({ onBack }: AddOrderProps) {
       : [availableShops?.[0]?.id].filter(Boolean) as string[];
   }, [user, business, availableShops]);
 
+  // Initialize shopId with the first available shop
   useEffect(() => {
-    fetchCustomers();
-    fetchProducts();
-    checkPrinter();
-  }, []);
+    if (shopIds.length > 0 && !shopId) {
+      setShopId(shopIds[0]);
+      setSelectedShopId(shopIds[0]);
+    }
+  }, [shopIds, shopId]);
+
+  useEffect(() => {
+    if (shopId) {
+      fetchCustomers();
+      fetchProducts();
+      checkPrinter();
+    }
+  }, [shopId]);
 
   const fetchCustomers = async () => {
-    if (!shopId) {
-      toast({
-        title: "Error",
-        description: "No shop selected",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
       setIsLoading(true);
+      
+      // Get shop IDs based on user role
+      const shopIds = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? business?.shops?.map(shop => shop.id) || []
+        : [availableShops?.[0]?.id].filter(Boolean) as string[];
+      
       const response = await safeIpcInvoke<CustomerResponse>('entities:customer:get-all', {
-        shopId: shopId
+        shopIds,
+        userRole: user?.role
       });
 
       if (response?.success && response?.customers) {
@@ -394,10 +405,19 @@ export function AddOrder({ onBack }: AddOrderProps) {
 
   const filteredProducts = searchTerm
     ? products.filter(p =>
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase())) &&
       p.status !== 'out_of_stock'
-    )
+    ).slice(0, 6) // Limit to 6 suggestions like Google
     : [];
+
+  const filteredCustomers = customerSearchTerm
+    ? customers.filter(c => 
+        c.name.toLowerCase().includes(customerSearchTerm.toLowerCase()) ||
+        (c.phone && c.phone.includes(customerSearchTerm)) ||
+        (c.email && c.email.toLowerCase().includes(customerSearchTerm.toLowerCase()))
+      )
+    : customers;
 
   const addManualProduct = () => {
     if (!manualProductName || manualProductPrice <= 0 || quantity <= 0) {
@@ -423,6 +443,89 @@ export function AddOrder({ onBack }: AddOrderProps) {
     setQuantity(1)
   }
 
+  // Function to highlight matching text in search results
+  const highlightMatchingText = (text: string, query: string) => {
+    if (!query) return text;
+    
+    try {
+      const regex = new RegExp(`(${query})`, 'gi');
+      const parts = text.split(regex);
+      
+      return (
+        <>
+          {parts.map((part, i) => 
+            regex.test(part) ? 
+              <span key={i} className="bg-yellow-100">{part}</span> : 
+              <span key={i}>{part}</span>
+          )}
+        </>
+      );
+    } catch (e) {
+      // If regex fails (e.g., with special characters), return the original text
+      return text;
+    }
+  };
+
+  const handleProductKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!searchTerm) return;
+    
+    // Down arrow
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedProductIndex(prev => 
+        prev < filteredProducts.length - 1 ? prev + 1 : prev
+      );
+    }
+    
+    // Up arrow
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedProductIndex(prev => prev > 0 ? prev - 1 : 0);
+    }
+    
+    // Enter key
+    if (e.key === 'Enter' && highlightedProductIndex >= 0) {
+      e.preventDefault();
+      const product = filteredProducts[highlightedProductIndex];
+      if (product) {
+        addProductToOrder(product);
+      }
+    }
+    
+    // Escape key
+    if (e.key === 'Escape') {
+      setSearchTerm('');
+      setIsProductSearchFocused(false);
+      setHighlightedProductIndex(-1);
+    }
+  };
+  
+  const addProductToOrder = (product: Product) => {
+    if (tempQuantity > product.quantity) {
+      toast({
+        title: "Error",
+        description: "Quantity exceeds available stock",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const newItem: OrderItem = {
+      id: Date.now().toString(),
+      productId: product.id,
+      productName: product.name,
+      unitPrice: product.sellingPrice,
+      quantity: tempQuantity,
+      total: product.sellingPrice * tempQuantity
+    };
+    
+    setOrderItems([...orderItems, newItem]);
+    setSearchTerm("");
+    setSelectedProduct(null);
+    setTempQuantity(1);
+    setHighlightedProductIndex(-1);
+  };
+
   return (
     <>
       <Button variant="ghost" onClick={onBack} className="mb-4">
@@ -435,88 +538,178 @@ export function AddOrder({ onBack }: AddOrderProps) {
           <CardTitle>New Order</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Shop Selection - Only for admin or shop owner */}
+          {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Shop</label>
+              <Select 
+                value={shopId || ''} 
+                onValueChange={(value) => {
+                  setShopId(value);
+                  setSelectedShopId(value);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select Shop" />
+                </SelectTrigger>
+                <SelectContent>
+                  {business?.shops?.map((shop: any) => (
+                    <SelectItem key={shop.id} value={shop.id}>
+                      <div className="flex items-center">
+                        <Store className="h-4 w-4 mr-2" />
+                        {shop.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          
           {/* Customer Selection */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Customer</label>
-            <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select customer" />
-              </SelectTrigger>
-              <SelectContent>
-                {customers.map(customer => (
-                  <SelectItem key={customer.id} value={customer.id}>
-                    {customer.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-between">
+                  {selectedCustomer 
+                    ? customers.find(c => c.id === selectedCustomer)?.name || "Select customer" 
+                    : "Select customer"}
+                  <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full p-0" align="start">
+                <Command>
+                  <CommandInput 
+                    placeholder="Search customers..." 
+                    value={customerSearchTerm}
+                    onValueChange={setCustomerSearchTerm}
+                  />
+                  <CommandList>
+                    <CommandGroup>
+                      {filteredCustomers.map(customer => (
+                        <CommandItem
+                          key={customer.id}
+                          value={customer.id}
+                          onSelect={() => {
+                            setSelectedCustomer(customer.id);
+                            setCustomerSearchTerm("");
+                          }}
+                        >
+                          <div className="flex flex-col">
+                            <span>{customer.name}</span>
+                            {customer.phone && (
+                              <span className="text-xs text-muted-foreground">{customer.phone}</span>
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                      {filteredCustomers.length === 0 && (
+                        <div className="py-6 text-center text-sm">No customers found</div>
+                      )}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Product Search and Add */}
           <div className="grid gap-4 py-4">
             <div className="flex flex-col space-y-4">
-              <div className="flex items-center space-x-4">
+              <div className="relative">
                 <Input
-                  placeholder="Search products..."
+                  placeholder="Search products by name or SKU..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1"
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setHighlightedProductIndex(-1);
+                  }}
+                  onFocus={() => setIsProductSearchFocused(true)}
+                  onBlur={() => {
+                    // Delay hiding the dropdown to allow clicking on items
+                    setTimeout(() => setIsProductSearchFocused(false), 200);
+                  }}
+                  onKeyDown={handleProductKeyDown}
+                  className="w-full"
                 />
-                {searchTerm && filteredProducts.length > 0 && (
-                  <div className="absolute mt-1 w-full max-h-60 overflow-auto bg-white border rounded-md shadow-lg z-10">
-                    {filteredProducts.map(product => (
-                      <div
-                        key={product.id}
-                        className="p-2 hover:bg-gray-100 cursor-pointer"
-                        onClick={() => {
-                          if (tempQuantity > product.quantity) {
-                            toast({
-                              title: "Error",
-                              description: "Quantity exceeds available stock",
-                              variant: "destructive",
-                            });
-                            return;
-                          }
-                          const newItem: OrderItem = {
-                            id: Date.now().toString(),
-                            productId: product.id,
-                            productName: product.name,
-                            unitPrice: product.sellingPrice,
-                            quantity: tempQuantity,
-                            total: product.sellingPrice * tempQuantity
-                          };
-                          setOrderItems([...orderItems, newItem]);
-                          setSearchTerm("");
-                          setSelectedProduct(null);
-                          setTempQuantity(1);
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <div className="font-medium">{product.name}</div>
-                            <div className="text-sm text-gray-600">
-                              Price: {product.sellingPrice} XAF | Stock: {product.quantity}
+                
+                {searchTerm && (isProductSearchFocused || highlightedProductIndex >= 0) && (
+                  <div className="absolute mt-1 w-full max-h-80 overflow-auto bg-white border rounded-md shadow-lg z-20">
+                    {filteredProducts.length > 0 ? (
+                      <>
+                        {filteredProducts.map((product, index) => (
+                          <div
+                            key={product.id}
+                            className={`p-3 cursor-pointer border-b last:border-b-0 ${
+                              index === highlightedProductIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
+                            }`}
+                            onClick={() => addProductToOrder(product)}
+                            onMouseEnter={() => setHighlightedProductIndex(index)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="font-medium">
+                                  {/* Highlight matching text */}
+                                  {highlightMatchingText(product.name, searchTerm)}
+                                </div>
+                                <div className="flex items-center text-sm text-gray-500 mt-1">
+                                  <span className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-xs mr-2">
+                                    SKU: {product.sku}
+                                  </span>
+                                  <span className="text-green-600 font-medium">
+                                    {product.sellingPrice} XAF
+                                  </span>
+                                  <span className="mx-2">•</span>
+                                  <span className={`${product.quantity < 5 ? 'text-orange-500' : 'text-gray-600'}`}>
+                                    Stock: {product.quantity}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 ml-4">
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  max={product.quantity}
+                                  value={tempQuantity}
+                                  onChange={(e) => {
+                                    const value = parseInt(e.target.value);
+                                    if (value > 0 && value <= product.quantity) {
+                                      setTempQuantity(value);
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-20"
+                                />
+                                <Button 
+                                  size="sm" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    addProductToOrder(product);
+                                  }}
+                                >
+                                  Add
+                                </Button>
+                              </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              type="number"
-                              min="1"
-                              max={product.quantity}
-                              value={tempQuantity}
-                              onChange={(e) => {
-                                const value = parseInt(e.target.value);
-                                if (value > 0 && value <= product.quantity) {
-                                  setTempQuantity(value);
-                                }
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-20"
-                            />
-                          </div>
-                        </div>
+                        ))}
+                      </>
+                    ) : (
+                      <div className="p-4 text-center text-gray-500">
+                        No products found. Try a different search term or 
+                        <Button 
+                          variant="link" 
+                          className="px-1 text-blue-600"
+                          onClick={() => {
+                            setManualProductName(searchTerm);
+                            setSearchTerm('');
+                          }}
+                        >
+                          add a manual product
+                        </Button>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
@@ -660,48 +853,6 @@ export function AddOrder({ onBack }: AddOrderProps) {
               </Select>
             </div>
           </div>
-
-          {/* Shop Selection */}
-          {(user?.role === 'admin' || user?.role === 'shop_owner') && (
-            <div className="space-y-2">
-              <Label>Shop</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start">
-                    <Store className="mr-2 h-4 w-4" />
-                    {shopId 
-                      ? business?.shops?.find(s => s.id === shopId)?.name
-                      : "Select Shop"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[240px] p-0">
-                  <Command>
-                    <CommandInput placeholder="Search shops..." />
-                    <CommandList>
-                      <CommandGroup>
-                        {shopIds.map((id) => {
-                          const shop = business?.shops?.find(s => s.id === id)
-                          return (
-                            <CommandItem
-                              key={id}
-                              value={id}
-                              onSelect={() => setShopId(id === shopId ? null : id)}
-                            >
-                              <Checkbox
-                                checked={shopId === id}
-                                className="mr-2"
-                              />
-                              {shop?.name || 'Unnamed Shop'}
-                            </CommandItem>
-                          )
-                        })}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-          )}
 
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={onBack}>Close</Button>

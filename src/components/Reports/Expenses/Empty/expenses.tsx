@@ -24,8 +24,15 @@ import {
   CommandItem
 } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-
 import { ConfirmationDialog } from '@/components/Shared/ui/Modal/confirmation-dialog'
+import jsPDF from 'jspdf';
+import autoTable, { RowInput } from 'jspdf-autotable';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/Shared/ui/dropdown-menu"
 
 // Expense types based on OHADA accounting system
 export const expenseTypes = {
@@ -127,7 +134,14 @@ const Expenses = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [newItem, setNewItem] = useState<NewExpenseItem>({})
+  const [newItem, setNewItem] = useState<NewExpenseItem>({
+    date: new Date().toISOString().split('T')[0],
+    description: '',
+    amount: '',
+    paymentMethod: 'cash',
+    ohadaCodeId: '',
+    isCustom: false
+  });
   const [selectedOhadaCode, setSelectedOhadaCode] = useState<string>("");
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
@@ -263,6 +277,26 @@ const Expenses = () => {
     try {
       let ohadaCodeId = newItem.ohadaCodeId;
 
+      // Basic validation first
+      if (!newItem.date || !newItem.description || !newItem.amount || !newItem.paymentMethod) {
+        toast({
+          title: "Error",
+          description: "Please fill in all required fields",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // If not custom category, validate OHADA code
+      if (!newItem.isCustom && !ohadaCodeId) {
+        toast({
+          title: "Error",
+          description: "Please select a category",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // If custom category is enabled and filled out, create it first
       if (newItem.isCustom && selectedOhadaCode && customCategoryName) {
         // Find the selected OHADA code details
@@ -276,7 +310,7 @@ const Expenses = () => {
           return;
         }
 
-        const createOhadaCodeRequest: CreateOhadaCodeRequest = {
+        const createOhadaCodeRequest = {
           data: {
             code: selectedCode.code,
             name: customCategoryName,
@@ -301,23 +335,12 @@ const Expenses = () => {
           return;
         }
 
-        // Use the newly created OHADA code's ID
         ohadaCodeId = response.code.id;
       }
 
-      // Proceed with creating the expense
-      if (!ohadaCodeId || !newItem.date || !newItem.description || !newItem.amount || !newItem.paymentMethod) {
-        toast({
-          title: "Error",
-          description: "Please fill in all required fields",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const createExpenseRequest: CreateExpenseRequest = {
+      const createExpenseRequest = {
         data: {
-          date: new Date(newItem.date || Date.now()),
+          date: new Date(newItem.date),
           description: newItem.description,
           amount: parseFloat(newItem.amount),
           paymentMethod: newItem.paymentMethod,
@@ -335,15 +358,25 @@ const Expenses = () => {
       );
 
       if (response?.success && response.expense) {
-        // Format the new expense data before adding to state
-        const formattedExpense = {
-          ...response.expense,
-          date: new Date(response.expense.date), // Ensure date is properly formatted
-        };
-        setExpenses(prevExpenses => [...prevExpenses, formattedExpense]);
+        // Reset form state first
         setIsAddDialogOpen(false);
-        setNewItem({});
+        setNewItem({
+          date: new Date().toISOString().split('T')[0],
+          description: '',
+          amount: '',
+          paymentMethod: 'cash',
+          ohadaCodeId: '',
+          isCustom: false
+        });
         setSelectedOhadaCode("");
+        setCustomCategoryName("");
+        setIsCustomCategory(false);
+
+        // Update expenses list with the new expense at the beginning
+        const newExpense = response.expense as unknown as ExpenseAttributes;
+        setExpenses(prevExpenses => [newExpense, ...prevExpenses]);
+        setFilteredExpenses(prevFiltered => [newExpense, ...prevFiltered]);
+
         toast({
           title: "Success",
           description: "Expense added successfully",
@@ -432,14 +465,27 @@ const Expenses = () => {
         { success: false }
       );
 
-      if (response?.success) {
+      console.log('Update Expense Response:', JSON.stringify(response, null, 2));
+
+      if (response?.success && response.expense) {
+        // Format the updated expense data
+        const formattedExpense = {
+          ...response.expense,
+          date: new Date(response.expense.date),
+          ohadaCode: response.expense.ohadaCode
+        };
+        
+        // Update expenses state with the formatted expense
         setExpenses(prevExpenses =>
           prevExpenses.map(exp => 
-            exp.id === editingExpense.id ? { ...exp, ...editingExpense } : exp
+            exp.id === editingExpense.id ? formattedExpense : exp
           )
         );
+        
+        // Reset edit state
         setIsEditDialogOpen(false);
         setEditingExpense(null);
+        
         toast({
           title: "Success",
           description: "Expense updated successfully",
@@ -470,11 +516,180 @@ const Expenses = () => {
     }).format(amount);
   };
 
+  // Non-hook version of formatCurrency for export functionality
+  const formatCurrencyForExport = (amount: number): string => {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'XAF',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
+
+  const handleExport = async (format: 'csv' | 'excel' | 'pdf') => {
+    try {
+      // Check if expenses data exists
+      if (!currentItems || currentItems.length === 0) {
+        toast({
+          title: "Export Failed",
+          description: "No data available to export",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const shopName = business?.fullBusinessName?.replace(/[^a-z0-9]/gi, '_') || 'Business';
+      const dateString = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' });
+
+      // Common data preparation
+      const headers = ['Date', 'Description', 'Amount', 'Payment Method', 'Category'];
+      const data = currentItems.map((item: ExpenseAttributes) => ([
+        item.date ? new Date(item.date).toLocaleDateString() : 'N/A',
+        item.description || 'N/A',
+        formatCurrencyForExport(Number(item.amount)),
+        item.paymentMethod?.replace('_', ' ') || 'N/A',
+        item.ohadaCode?.name || 'Unknown'
+      ])) as unknown as RowInput[];
+
+      if (format === 'csv' || format === 'excel') {
+        const mimeType = format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        const fileExtension = format === 'csv' ? 'csv' : 'xlsx';
+        
+        // Create CSV content with proper escaping
+        const csvContent = [headers, ...data]
+          .map(row => {
+            if (Array.isArray(row)) {
+              return row.map(cell => {
+                // Escape quotes and wrap in quotes if contains comma
+                const cellStr = String(cell);
+                if (cellStr.includes(',') || cellStr.includes('"')) {
+                  return `"${cellStr.replace(/"/g, '""')}"`;
+                }
+                return cellStr;
+              }).join(',');
+            }
+            return '';
+          })
+          .join('\n');
+        
+        // Create and download the file
+        const blob = new Blob([csvContent], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${shopName}_Expenses_${dateString}.${fileExtension}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        toast({
+          title: "Export Successful",
+          description: `${format.toUpperCase()} file has been generated`,
+          variant: "default",
+        });
+      }
+
+      if (format === 'pdf') {
+        try {
+          // Create PDF document
+          const doc = new jsPDF('l', 'mm', 'a4');
+          doc.setFont('helvetica', 'normal');
+          
+          // Title Section
+          doc.setFontSize(18);
+          doc.text(`${shopName} - Expenses Report`, 14, 20);
+          doc.setFontSize(10);
+          doc.setTextColor(100);
+          
+          // Business Info
+          if (business) {
+            doc.text(`Business: ${business.fullBusinessName || 'N/A'}`, 14, 28);
+            business.address && doc.text(`Address: ${business.address}`, 14, 33);
+          }
+          
+          // Table
+          autoTable(doc, {
+            head: [headers.map(h => h.toUpperCase())],
+            body: data,
+            startY: business ? 40 : 25,
+            theme: 'grid',
+            styles: { fontSize: 9, cellPadding: 2 },
+            headStyles: { fillColor: [55, 65, 81], textColor: 255 },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            margin: { horizontal: 14 },
+          });
+
+          // Footer
+          const pageCount = (doc as any).getNumberOfPages();
+          for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(100);
+            doc.text(
+              `Generated on ${new Date().toLocaleString()}`,
+              14,
+              doc.internal.pageSize.height - 10
+            );
+            doc.text(
+              `Page ${i} of ${pageCount}`,
+              doc.internal.pageSize.width - 25,
+              doc.internal.pageSize.height - 10
+            );
+          }
+
+          // Save the PDF
+          doc.save(`${shopName}_Expenses_${dateString}.pdf`);
+          
+          toast({
+            title: "Export Successful",
+            description: "PDF report generated with expense details",
+            variant: "default",
+          });
+        } catch (pdfError) {
+          console.error('PDF Generation Error:', pdfError);
+          toast({
+            title: "PDF Error",
+            description: "Failed to generate PDF document",
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Export Failed:', error);
+      toast({
+        title: "Export Failed",
+        description: "Could not generate export file. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="flex-1 space-y-4">
       <div className="flex items-center justify-between space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">Expenses</h2>
         <div className="flex items-center space-x-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <FileDown className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleExport('csv')}>
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport('excel')}>
+                Export as Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport('pdf')}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button>

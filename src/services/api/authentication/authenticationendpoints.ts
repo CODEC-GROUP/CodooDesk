@@ -423,14 +423,17 @@ export function registerAuthHandlers() {
       let shopId = null;
       let isSetupComplete = true;  // Default to true for employees
 
-      // Common response structure for both admin and shop_owner
-      const baseResponse = {
-        success: true,
-        user: safeUser,
-        isSetupComplete: true,
-        shops: [] as any[],
-        business: null as Business | null
-      };
+      // Move the SecurityLog creation before any return statements
+      await SecurityLog.create({
+        user_id: user.id,
+        event_type: 'login',
+        ip_address: event.sender.getURL().split(':')[2] || 'unknown',
+        user_agent: event.sender.getUserAgent(),
+        status: 'success',
+        event_description: 'User logged in successfully',
+        severity: 'low',
+        shop_id: user.shopId || null,
+      });
 
       if (user.role === 'admin') {
         const allShops = await Shop.findAll({
@@ -449,7 +452,9 @@ export function registerAuthHandlers() {
         });
 
         return {
-          ...baseResponse,
+          success: true,
+          user: safeUser,
+          isSetupComplete: true,
           shops: allShops.map(shop => shop.toJSON())
         };
       }
@@ -475,7 +480,8 @@ export function registerAuthHandlers() {
         });
 
         return {
-          ...baseResponse,
+          success: true,
+          user: safeUser,
           isSetupComplete: !!business,
           shops: business?.shops?.map(shop => shop.toJSON()) ?? [],
           business: business?.toJSON() || null
@@ -583,18 +589,6 @@ export function registerAuthHandlers() {
           message: 'No shop assigned to this employee account or business not found'
         };
       }
-
-      // Log successful login
-      await SecurityLog.create({
-        user_id: user.id,
-        event_type: 'login',
-        ip_address: event.sender.getURL().split(':')[2] || 'unknown',
-        user_agent: event.sender.getUserAgent(),
-        status: 'success',
-        event_description: 'User logged in successfully',
-        severity: 'low',
-        shop_id: user.shopId || null,
-      });
 
       return {
         success: true,

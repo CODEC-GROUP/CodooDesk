@@ -4,10 +4,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import type {  RowInput } from 'jspdf-autotable';
-import UserConfig from 'jspdf-autotable';
+import autoTable, { RowInput } from 'jspdf-autotable';
 import { MoreHorizontal, ListFilter, PlusCircle, Store } from "lucide-react"
+import { formatCurrency } from '@/lib/utils'
 
 import {
   Select,
@@ -33,7 +32,6 @@ import {
 import { Card, CardContent } from "@/components/Shared/ui/card"
 import { Search } from 'lucide-react'
 import Pagination from "@/components/Shared/ui/pagination"
-import { formatCurrency } from '@/lib/utils'
 import { safeIpcInvoke } from '@/lib/ipc'
 import { SalesAttributes } from "@/models/Sales"
 import { EmptyState } from '../Empty/EmptyState'
@@ -79,6 +77,16 @@ interface SaleResponse {
   sale?: SalesAttributes;
   message?: string;
 }
+
+// Non-hook version of formatCurrency for export functionality
+const formatCurrencyForExport = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'XAF',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount);
+};
 
 export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   const { user, business, availableShops } = useAuthLayout();
@@ -240,9 +248,19 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
 
   const handleExport = async (format: 'csv' | 'excel' | 'pdf') => {
     try {
+      // Check if sales data exists
+      if (!sales || sales.length === 0) {
+        toast({
+          title: "Export Failed",
+          description: "No data available to export",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const currentShopId = shopId || business?.shops?.[0]?.id;
       const currentShop = business?.shops?.find(shop => shop.id === currentShopId);
-      const shopName = currentShop?.name.replace(/[^a-z0-9]/gi, '_') || 'Shop'; // Sanitize filename
+      const shopName = currentShop?.name?.replace(/[^a-z0-9]/gi, '_') || 'Shop'; // Sanitize filename
       const dateString = new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' });
 
       // Common data preparation
@@ -252,7 +270,7 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
         sale.customer?.name ?? 'Walking Customer',
         sale.createdAt ? new Date(sale.createdAt).toLocaleDateString() : 'N/A',
         sale.deliveryStatus ?? 'N/A',
-        formatCurrency(sale.netAmount),
+        formatCurrencyForExport(sale.netAmount),
         sale.paymentStatus ?? 'N/A'
       ])) as RowInput[];
 
@@ -260,9 +278,24 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
         const mimeType = format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         const fileExtension = format === 'csv' ? 'csv' : 'xlsx';
         
+        // Create CSV content with proper escaping
         const csvContent = [headers, ...data]
-          .map(row => Array.isArray(row) ? row.join(',') : '')
+          .map(row => {
+            if (Array.isArray(row)) {
+              return row.map(cell => {
+                // Escape quotes and wrap in quotes if contains comma
+                const cellStr = String(cell);
+                if (cellStr.includes(',') || cellStr.includes('"')) {
+                  return `"${cellStr.replace(/"/g, '""')}"`;
+                }
+                return cellStr;
+              }).join(',');
+            }
+            return '';
+          })
           .join('\n');
+        
+        // Create and download the file
         const blob = new Blob([csvContent], { type: mimeType });
         const url = URL.createObjectURL(blob);
         
@@ -283,6 +316,7 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
 
       if (format === 'pdf') {
         try {
+          // Create PDF document
           const doc = new jsPDF('l', 'mm', 'a4');
           doc.setFont('helvetica', 'normal');
           
@@ -328,6 +362,7 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
             );
           }
 
+          // Save the PDF
           doc.save(`${shopName}_Orders_${dateString}.pdf`);
           
           toast({

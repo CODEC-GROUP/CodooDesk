@@ -42,7 +42,7 @@ interface Customer {
   phone: string;
   orders: number;
   spent: string;
-  shopId: string;
+  shops: Array<{ id: string; name: string }>;
 }
 
 interface CustomerListProps {
@@ -175,7 +175,7 @@ export function CustomerList({ onCustomerClick, onAddCustomer }: CustomerListPro
   const filteredCustomers = customers.filter(customer => {
     const matchesSearch = customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          customer.phone.includes(searchQuery)
-    const matchesShop = selectedShopId === 'all' || customer.shopId === selectedShopId;
+    const matchesShop = selectedShopId === 'all' || customer.shops?.some(shop => shop.id === selectedShopId);
     return matchesSearch && matchesShop;
   })
 

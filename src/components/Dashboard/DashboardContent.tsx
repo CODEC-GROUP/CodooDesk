@@ -124,6 +124,8 @@ const CategoryChart = ({ data, isLoading, error }: {
   );
   if (!data?.length) return <EmptyChart message="No category data available" />;
 
+  const totalCategoryValue = data.reduce((sum: number, cat: CategoryData) => sum + cat.totalValue, 0) || 1;
+
   return (
     <div className="flex justify-between items-center flex-1">
       <div className="w-full h-[400px]">
@@ -173,7 +175,7 @@ const CategoryChart = ({ data, isLoading, error }: {
               {category.name}:
             </span>
             <span className="font-medium">
-              {((category.totalValue / (data.reduce((sum: number, cat: CategoryData) => sum + cat.totalValue, 0) || 1)) * 100).toFixed(1)}%
+              {((category.totalValue / totalCategoryValue) * 100).toFixed(1)}%
             </span>
           </div>
         ))}
@@ -515,6 +517,11 @@ export function Dashboard() {
     fetchDashboardData();
   }, [currentShopId, date?.from, date?.to, currentView]);
 
+  const handleDateChange = (newDate: DateRange | undefined) => {
+    setDate(newDate);
+    fetchDashboardData();
+  };
+
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorAlert message={error} />;
   if (!dashboardData) return null;
@@ -592,7 +599,7 @@ export function Dashboard() {
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t('Dashboard')}</h1>
           <FilterControls 
             date={date} 
-            setDate={setDate}
+            setDate={handleDateChange}
             currentView={currentView}
             setCurrentView={setCurrentView}
             currentShopId={currentShopId}

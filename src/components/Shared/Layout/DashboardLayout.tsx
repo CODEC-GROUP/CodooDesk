@@ -1,12 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/Shared/ui/button"
-import { Input } from "@/components/Shared/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/Shared/ui/avatar"
 import {
   LayoutDashboard,
   ListOrdered,
@@ -15,21 +12,33 @@ import {
   Users,
   Home,
   Package,
-  CreditCard,
   UserCheck,
   BarChart2,
   Settings,
   HelpCircle,
-  ChevronRight,
-  ChevronLeft,
-  Search,
-  Bell,
-  Menu,
   ChevronDown,
   HandCoins,
   LogOut,
+  Menu,
 } from 'lucide-react'
 import { useAuthLayout } from './AuthLayout'
+import { Header } from './Header'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar"
+import { Button } from "@/components/Shared/ui/button"
 
 const navigationItems = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -90,10 +99,39 @@ const settingsItems = [
   },
 ]
 
+// Logo component that handles collapsed state
+function SidebarLogo() {
+  const { state } = useSidebar();
+  const { business } = useAuthLayout();
+  const logoPath = business?.shopLogo || "/assets/images/logo.svg";
+  const businessName = business?.fullBusinessName || "SalesBox";
+  
+  return (
+    <div className="flex items-center h-16 px-4">
+      <SidebarTrigger />
+      <div className={cn(
+        "flex items-center ml-2",
+        state === "expanded" ? "space-x-2" : "justify-center"
+      )}>
+        <Image 
+          src={logoPath} 
+          alt={`${businessName} Logo`} 
+          width={state === "expanded" ? 40 : 30} 
+          height={state === "expanded" ? 40 : 30}
+          className="object-contain"
+        />
+        {state === "expanded" && (
+          <span className="text-lg font-bold">{businessName}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, business, logout } = useAuthLayout()
   const pathname = usePathname()
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const router = useRouter()
   const [openDropdowns, setOpenDropdowns] = useState<{ [key: string]: boolean }>(() => {
     const initialDropdowns: { [key: string]: boolean } = {};
     navigationItems.forEach(item => {
@@ -106,282 +144,181 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     });
     return initialDropdowns;
   })
-  const [isMobile, setIsMobile] = useState(false)
   const [activeItem, setActiveItem] = useState<string>(pathname)
+  const [sidebarState, setSidebarState] = useState<boolean>(true)
+
+  // Find which dropdown contains the current path
+  const findParentDropdown = useCallback((path: string) => {
+    for (const item of navigationItems) {
+      if (item.subItems && item.subItems.some(subItem => subItem.href === path)) {
+        return item.name;
+      }
+    }
+    return null;
+  }, []);
 
   useEffect(() => {
-    setActiveItem(pathname)
-  }, [pathname])
+    setActiveItem(pathname);
+    
+    // Keep dropdowns open when navigating to a page within that dropdown
+    const parentDropdown = findParentDropdown(pathname);
+    if (parentDropdown) {
+      setOpenDropdowns(prev => ({ ...prev, [parentDropdown]: true }));
+    }
+  }, [pathname, findParentDropdown]);
 
   const filteredNavigationItems = navigationItems.filter(item => {
-    console.log('Current user role:', user?.role)
     if (item.requiredRoles) {
       return item.requiredRoles.some(role => role === user?.role)
     }
     return true
   })
 
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024)
-      if (window.innerWidth < 1024) {
-        setSidebarOpen(false)
-      } else {
-        setSidebarOpen(true)
-      }
+  const toggleDropdown = (name: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
     }
-
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
-  }, [])
-
-  const toggleSidebar = () => {
-    setSidebarOpen((prev) => !prev)
-  }
-
-  const toggleDropdown = (name: string) => {
+    
     setOpenDropdowns((prev) => {
       const newState = { ...prev };
-      // If we're opening this dropdown, close others
-      if (!prev[name]) {
-        Object.keys(newState).forEach(key => {
-          if (key !== name) {
-            newState[key] = false;
-          }
-        });
-      }
       // Toggle the clicked dropdown
       newState[name] = !prev[name];
       return newState;
     });
   }
 
-  const handleNavigation = (href: string, parentDropdown?: string) => {
-    setActiveItem(href)
-    window.location.href = href;
+  const handleNavigation = (href: string, parentDropdown?: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
+    setActiveItem(href);
+    
+    // If this is a sub-item, ensure its parent dropdown stays open
+    if (parentDropdown) {
+      setOpenDropdowns((prev) => {
+        return { ...prev, [parentDropdown]: true };
+      });
+    }
+    
+    // Use client-side navigation
+    router.push(href);
   }
 
-  const logoPath = business?.shopLogo || "/assets/images/logo.svg"
-  
-  const businessName = business?.fullBusinessName || "SalesBox"
-
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          "bg-white text-gray-700 flex flex-col transition-all duration-300 ease-in-out",
-          sidebarOpen ? "w-64" : "w-0 lg:w-20"
-        )}
-      >
-        <div className="flex items-center h-16 px-4 border-b">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleSidebar}
-            className="mr-2"
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
-          {sidebarOpen ? (
-            <a href="/" onClick={(e) => { e.preventDefault(); handleNavigation('/dashboard'); }} className="flex items-center space-x-2">
-              <div className="flex items-center space-x-2">
-                <Image 
-                  src={logoPath} 
-                  alt={`${businessName} Logo`} 
-                  width={60} 
-                  height={60}
-                  className="object-contain"
-                />
-                <span className="text-lg font-bold">{businessName}</span>
-              </div>
-            </a>
-          ) : (
-            <Image 
-              src={logoPath} 
-              alt={`${businessName} Logo`} 
-              width={30} 
-              height={30} 
-              className="mx-auto object-contain"
-            />
-          )}
-        </div>
-        <nav className="flex-1 overflow-y-auto py-4">
-          <ul className="space-y-1 px-3">
-            {filteredNavigationItems.map((item) => (
-              <li key={item.name}>
-                {item.subItems ? (
-                  <div>
-                    <button
-                      onClick={() => toggleDropdown(item.name)}
-                      className={cn(
-                        "flex items-center justify-between w-full rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                        openDropdowns[item.name] || item.subItems.some(subItem => subItem.href === activeItem)
-                          ? "bg-blue-600 text-white"
-                          : "hover:bg-gray-100"
+    <div className="flex h-screen w-full overflow-hidden">
+      <SidebarProvider defaultOpen={true} open={sidebarState} onOpenChange={setSidebarState}>
+        <div className="flex h-full w-full">
+          <Sidebar collapsible="icon" className="border-r">
+            <SidebarHeader className="border-b">
+              <SidebarLogo />
+            </SidebarHeader>
+            
+            <SidebarContent>
+              <SidebarGroup>
+                <SidebarMenu>
+                  {filteredNavigationItems.map((item) => (
+                    <SidebarMenuItem key={item.name}>
+                      {item.subItems ? (
+                        <div>
+                          <SidebarMenuButton 
+                            onClick={(e) => toggleDropdown(item.name, e)}
+                            isActive={openDropdowns[item.name] || item.subItems.some(subItem => subItem.href === activeItem)}
+                            tooltip={item.name}
+                          >
+                            <item.icon className="h-5 w-5" />
+                            <span>{item.name}</span>
+                            <ChevronDown className={cn(
+                              "ml-auto h-4 w-4 transition-transform",
+                              openDropdowns[item.name] && "transform rotate-180"
+                            )} />
+                          </SidebarMenuButton>
+                          
+                          {openDropdowns[item.name] && (
+                            <div className="mt-1 ml-6 space-y-1">
+                              {item.subItems.map((subItem) => (
+                                <SidebarMenuButton
+                                  key={subItem.name}
+                                  isActive={activeItem === subItem.href}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNavigation(subItem.href, item.name, e);
+                                  }}
+                                  tooltip={subItem.name}
+                                >
+                                  <span>{subItem.name}</span>
+                                </SidebarMenuButton>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <SidebarMenuButton
+                          isActive={activeItem === item.href}
+                          onClick={(e) => handleNavigation(item.href, undefined, e)}
+                          tooltip={item.name}
+                        >
+                          <item.icon className="h-5 w-5" />
+                          <span>{item.name}</span>
+                        </SidebarMenuButton>
                       )}
-                    >
-                      <div className="flex items-center">
-                        <item.icon className={cn(
-                          "h-5 w-5 flex-shrink-0",
-                          sidebarOpen ? "mr-3" : "mx-auto",
-                          (openDropdowns[item.name] || item.subItems.some(subItem => subItem.href === activeItem)) && "text-white"
-                        )} />
-                        {sidebarOpen && <span>{item.name}</span>}
-                      </div>
-                      {sidebarOpen && (
-                        <ChevronDown className={cn(
-                          "h-4 w-4 transition-transform",
-                          openDropdowns[item.name] && "transform rotate-180",
-                          (openDropdowns[item.name] || item.subItems.some(subItem => subItem.href === activeItem)) && "text-white"
-                        )} />
-                      )}
-                    </button>
-                    {sidebarOpen && (
-                      <ul className={cn(
-                        "mt-2 space-y-1 px-3",
-                        openDropdowns[item.name] ? "block" : "hidden"
-                      )}>
-                        {item.subItems.map((subItem) => (
-                          <li key={subItem.name}>
-                            <a
-                              href={subItem.href}
-                              className={cn(
-                                "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                                activeItem === subItem.href
-                                  ? "bg-blue-600 text-white"
-                                  : "text-gray-700 hover:bg-gray-100"
-                              )}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                handleNavigation(subItem.href, item.name);
-                              }}
-                            >
-                              {subItem.name}
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ) : (
-                  <a
-                    href={item.href}
-                    className={cn(
-                      "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      activeItem === item.href
-                        ? "bg-blue-600 text-white"
-                        : "text-gray-700 hover:bg-gray-100"
-                    )}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleNavigation(item.href);
-                    }}
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroup>
+              
+              <SidebarGroup>
+                <SidebarGroupLabel>Settings</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {settingsItems.map((item) => (
+                      <SidebarMenuItem key={item.name}>
+                        <SidebarMenuButton
+                          onClick={(e) => {
+                            if (item.external) {
+                              window.open(item.href, '_blank');
+                            } else {
+                              handleNavigation(item.href, undefined, e);
+                            }
+                          }}
+                          tooltip={item.name}
+                        >
+                          <item.icon className="h-5 w-5" />
+                          <span>{item.name}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </SidebarContent>
+            
+            <SidebarFooter className="border-t">
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={logout}
+                    tooltip="Logout"
                   >
-                    <item.icon className={cn(
-                      "h-5 w-5 flex-shrink-0",
-                      sidebarOpen ? "mr-3" : "mx-auto",
-                      activeItem === item.href && "text-white"
-                    )} />
-                    {sidebarOpen && <span>{item.name}</span>}
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-6">
-            <h3 className={cn("px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider", !sidebarOpen && "text-center")}>
-              {sidebarOpen ? "Settings" : "..."}
-            </h3>
-            <div className="space-y-1">
-              {settingsItems.map((item) => (
-                <Button
-                  key={item.name}
-                  variant={pathname === item.href ? 'secondary' : 'ghost'}
-                  className={cn(
-                    'w-full justify-start',
-                    !sidebarOpen && 'justify-center px-2'
-                  )}
-                  onClick={() => {
-                    if (item.external) {
-                      window.open(item.href, '_blank');
-                    } else {
-                      window.location.href = item.href;
-                    }
-                  }}
-                >
-                  <item.icon className={cn('h-5 w-5', !sidebarOpen && 'mr-0')} />
-                  {sidebarOpen && <span className="ml-2">{item.name}</span>}
-                </Button>
-              ))}
-            </div>
+                    <LogOut className="h-5 w-5" />
+                    <span>Logout</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarFooter>
+          </Sidebar>
+
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Header user={user} />
+            
+            <main className="flex-1 overflow-y-auto bg-gray-100 p-6">
+              {children}
+            </main>
           </div>
-        </nav>
-        <div className="border-t p-4">
-          <Button
-            variant="ghost"
-            className={cn(
-              'w-full justify-start text-gray-700 mb-2',
-              !sidebarOpen && 'justify-center px-2'
-            )}
-            onClick={logout}
-          >
-            <LogOut className="h-4 w-4 stroke-[1.5px]" />
-            {sidebarOpen && <span className="ml-2">Logout</span>}
-          </Button>
-          {!isMobile && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleSidebar}
-              className="mx-auto"
-            >
-              {sidebarOpen ? (
-                <ChevronLeft className="h-5 w-5" />
-              ) : (
-                <ChevronRight className="h-5 w-5" />
-              )}
-            </Button>
-          )}
         </div>
-      </aside>
-
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-white border-b h-16 flex items-center justify-between px-4">
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-5 w-5 text-gray-500" />
-              <Input
-                type="search"
-                placeholder="Search..."
-                className="pl-10 w-full md:w-[300px] bg-gray-100 border-none"
-              />
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-0 right-0 h-2 w-2 bg-blue-600 rounded-full"></span>
-            </Button>
-            <div className="flex items-center space-x-2">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src="/assets/images/male.png" alt={user?.username || 'User'} />
-                <AvatarFallback>{user?.username?.slice(0, 2).toUpperCase() || 'U'}</AvatarFallback>
-              </Avatar>
-              <span className="text-sm font-medium">{user?.username || 'User'}</span>
-              <ChevronRight className="h-4 w-4 text-gray-500" />
-            </div>
-          </div>
-        </header>
-
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto bg-gray-100 p-6">
-          {children}
-        </main>
-      </div>
+      </SidebarProvider>
     </div>
   )
 }

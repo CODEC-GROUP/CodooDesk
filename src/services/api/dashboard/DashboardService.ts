@@ -10,6 +10,7 @@ import Sales from '../../../models/Sales.js';
 import { Op, fn, col, literal } from 'sequelize';
 import Category from '../../../models/Category.js';
 import { fn as sequelizeFn, col as sequelizeCol, literal as sequelizeLiteral } from 'sequelize';
+import Order from '../../../models/Order.js';
 
 interface SalesAggregateResult {
   total_sales: number;
@@ -111,9 +112,15 @@ export function registerDashboardHandlers() {
         raw: true
       });
 
-      // Get top products
+      // Get Top Products
       const topProducts = await Product.findAll({
         include: [{
+          model: Order,
+          attributes: [],
+          where: {
+            paymentStatus: 'paid'
+          }
+        }, {
           model: Shop,
           where: whereClause
         }],
@@ -121,14 +128,15 @@ export function registerDashboardHandlers() {
           'name',
           'sku',
           'featuredImage',
-          [sequelize.fn('SUM', sequelize.col('InventoryItems.quantity')), 'inStock'],
-          [sequelize.literal('SUM(InventoryItems.quantity * InventoryItems.selling_price)'), 'value']
+          [sequelize.fn('COUNT', sequelize.col('Orders.id')), 'orderCount']
         ],
         group: ['Product.id'],
-        order: [[sequelize.literal('value'), 'DESC']],
+        order: [[sequelize.literal('orderCount'), 'DESC']],
         limit: 4,
         raw: true
       });
+
+      console.log('Top Products Data:', topProducts);
 
       // Add low stock calculation
       const lowStockItems = await InventoryItem.count({
@@ -197,7 +205,7 @@ export function registerDashboardHandlers() {
       // Add daily trends
       const dailyTrends = await Sales.findAll({
         attributes: [
-          [fn('date_trunc', 'day', col('createdAt')), 'date'],
+          [fn('strftime', '%Y-%m-%d', col('createdAt')), 'date'],
           [fn('sum', col('netAmount')), 'total_sales'],
           [fn('count', col('id')), 'transaction_count']
         ],
@@ -254,6 +262,56 @@ export function registerDashboardHandlers() {
       };
     }
   });
+
+  // Get Top Products
+  ipcMain.handle('dashboard:products:get', async (event: IpcMainInvokeEvent, { businessId, shopId, shopIds }) => {
+    try {
+      const whereClause = shopIds?.length 
+        ? { '$shop.id$': { [Op.in]: shopIds } }
+        : shopId 
+          ? { shopId }
+          : { '$shop.businessId$': businessId };
+      
+      // Get top products
+      const topProducts = await Product.findAll({
+        include: [{
+          model: Order,
+          attributes: [],
+          where: {
+            paymentStatus: 'paid'
+          }
+        }, {
+          model: Shop,
+          where: whereClause
+        }],
+        attributes: [
+          'name',
+          'sku',
+          'featuredImage',
+          [sequelize.fn('COUNT', sequelize.col('Orders.id')), 'orderCount']
+        ],
+        group: ['Product.id'],
+        order: [[sequelize.literal('orderCount'), 'DESC']],
+        limit: 4,
+        raw: true
+      });
+
+      console.log('Top Products Data:', topProducts);
+
+      return {
+        success: true,
+        data: {
+          topProducts: topProducts
+        }
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch top products'
+      };
+    }
+  });
 }
 
 async function getTopCategories(
@@ -305,6 +363,8 @@ async function getTopCategories(
     replacements,
     type: 'SELECT',
   });
+
+  console.log('Top Categories Data:', results);
 
   return (results as unknown as CategoryAggregateResult[]).map((category) => ({
     id: category.id,

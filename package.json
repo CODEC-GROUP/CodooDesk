@@ -1,6 +1,6 @@
 {
   "name": "salesbox",
-  "version": "0.1.0",
+  "version": "0.1.1-dev.0",
   "description": "A point of sale application built with Electron and Next.js",
   "author": {
     "name": "CODEC",
@@ -27,7 +27,17 @@
     "electron-rebuild": "electron-rebuild",
     "format-html": "node scripts/format-html.js",
     "postinstall": "electron-builder install-app-deps && electron-rebuild",
-    "copy-styles": "copyfiles -u 1 out/_next/static/css/**/* out/styles/css"
+    "copy-styles": "copyfiles -u 1 out/_next/static/css/**/* out/styles/css",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version",
+    "version:dev": "npm version prerelease --preid=dev --no-git-tag-version",
+    "version:beta": "npm version prerelease --preid=beta --no-git-tag-version",
+    "release": "npm run version:patch && npm run dist",
+    "release:beta": "npm run version:beta && npm run dist",
+    "version:prod": "npm version patch --no-git-tag-version",
+    "version:prod:minor": "npm version minor --no-git-tag-version",
+    "version:prod:major": "npm version major --no-git-tag-version"
   },
   "dependencies": {
     "@electron/remote": "^2.1.2",

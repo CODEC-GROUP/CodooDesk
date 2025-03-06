@@ -11,11 +11,12 @@ import { Calendar } from "@/components/Shared/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/Shared/ui/popover"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
-import { Calendar as CalendarIcon, Search, Upload, ArrowLeft } from "lucide-react"
+import { Calendar as CalendarIcon, Search, Upload, ArrowLeft, ChevronDown, Tag, Package, DollarSign } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { safeIpcInvoke } from "@/lib/ipc"
 import { toast } from "@/hooks/use-toast"
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
+import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command"
 
 // Define the Product type
 interface Product {
@@ -77,6 +78,8 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
   const [ohadaCodes, setOhadaCodes] = useState<OhadaCodeAttributes[]>([])
   const [, forceUpdate] = useReducer(x => x + 1, 0)
+  const [isProductSearchFocused, setIsProductSearchFocused] = useState(false)
+  const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1)
 
   const filteredSuppliers = selectedProduct?.suppliers?.filter(supplier =>
     supplier.name.toLowerCase().includes(supplierSearchTerm.toLowerCase())
@@ -135,6 +138,86 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
   useEffect(() => {
     console.log('Current quantity state:', quantity);
   }, [quantity]);
+
+  // Function to highlight matching text in search results
+  const highlightMatchingText = (text: string, query: string) => {
+    if (!query) return text;
+    
+    try {
+      const regex = new RegExp(`(${query})`, 'gi');
+      const parts = text.split(regex);
+      
+      return (
+        <>
+          {parts.map((part, i) => 
+            regex.test(part) ? 
+              <span key={i} className="bg-yellow-100">{part}</span> : 
+              <span key={i}>{part}</span>
+          )}
+        </>
+      );
+    } catch (e) {
+      // If regex fails (e.g., with special characters), return the original text
+      return text;
+    }
+  };
+
+  const handleProductKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!searchTerm) return;
+    
+    // Down arrow
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedProductIndex(prev => 
+        prev < filteredProducts.length - 1 ? prev + 1 : prev
+      );
+    }
+    
+    // Up arrow
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedProductIndex(prev => prev > 0 ? prev - 1 : 0);
+    }
+    
+    // Enter key
+    if (e.key === 'Enter' && highlightedProductIndex >= 0) {
+      e.preventDefault();
+      const product = filteredProducts[highlightedProductIndex];
+      if (product) {
+        selectProduct(product);
+      }
+    }
+    
+    // Escape key
+    if (e.key === 'Escape') {
+      setSearchTerm('');
+      setIsProductSearchFocused(false);
+      setHighlightedProductIndex(-1);
+    }
+  };
+
+  const selectProduct = (product: Product) => {
+    setSearchTerm('');
+    setSelectedProduct(product);
+    
+    // Convert "digital" unit type to "piece"
+    const resolvedUnitType = product.unitType === 'digital' ? 'piece' : product.unitType || 'piece';
+    setUnitType(resolvedUnitType);
+    
+    // Convert numeric price to string without formatting
+    setSellingPrice(product.sellingPrice?.toString() || '');
+    
+    // Convert quantity to string explicitly
+    const qty = product.quantity?.toString() || '';
+    setQuantity(qty);
+    
+    // Clear supplier if none available
+    setSelectedSupplier(null);
+    
+    // Reset search state
+    setHighlightedProductIndex(-1);
+    setIsProductSearchFocused(false);
+  };
 
   const handleAddInventory = async () => {
     // Validate required fields
@@ -237,40 +320,60 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
                 id="product-search"
                 placeholder="Search by name, SKU, or category"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setHighlightedProductIndex(-1);
+                }}
+                onFocus={() => setIsProductSearchFocused(true)}
+                onBlur={() => {
+                  // Delay hiding the dropdown to allow clicking on items
+                  setTimeout(() => setIsProductSearchFocused(false), 200);
+                }}
+                onKeyDown={handleProductKeyDown}
+                className="w-full"
               />
-              {filteredProducts.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg">
-                  {filteredProducts.length === 0 && searchTerm ? (
-                    <div className="p-2 text-muted-foreground">No products found</div>
+              
+              {searchTerm && (isProductSearchFocused || highlightedProductIndex >= 0) && (
+                <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-80 overflow-auto">
+                  {filteredProducts.length > 0 ? (
+                    <div className="py-1">
+                      {filteredProducts.slice(0, 6).map((product, index) => (
+                        <div
+                          key={product.id}
+                          className={`p-3 cursor-pointer border-b last:border-b-0 ${
+                            index === highlightedProductIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
+                          }`}
+                          onClick={() => selectProduct(product)}
+                          onMouseEnter={() => setHighlightedProductIndex(index)}
+                        >
+                          <div className="flex flex-col">
+                            <div className="font-medium">
+                              {highlightMatchingText(product.name, searchTerm)}
+                            </div>
+                            <div className="flex items-center text-sm text-gray-500 mt-1 space-x-3">
+                              <div className="flex items-center">
+                                <Tag className="h-3 w-3 mr-1" />
+                                <span className="text-xs">{product.sku}</span>
+                              </div>
+                              {product.category && (
+                                <div className="flex items-center">
+                                  <Package className="h-3 w-3 mr-1" />
+                                  <span className="text-xs">{product.category}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center text-green-600">
+                                <DollarSign className="h-3 w-3 mr-1" />
+                                <span className="text-xs font-medium">{product.sellingPrice}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    filteredProducts.map((product) => (
-                      <div
-                        key={product.id}
-                        className="p-2 hover:bg-gray-100 cursor-pointer"
-                        onClick={() => {
-                          setSearchTerm('');
-                          setSelectedProduct(product);
-                          
-                          // Convert "digital" unit type to "piece"
-                          const resolvedUnitType = product.unitType === 'digital' ? 'piece' : product.unitType || 'piece';
-                          setUnitType(resolvedUnitType);
-                          
-                          // Convert numeric price to string without formatting
-                          setSellingPrice(product.sellingPrice?.toString() || '');
-                          
-                          // Convert quantity to string explicitly
-                          const qty = product.quantity?.toString() || '';
-                          console.log('Setting quantity:', qty);
-                          setQuantity(qty);
-                          
-                          // Clear supplier if none available
-                          setSelectedSupplier(null);
-                        }}
-                      >
-                        {product.name} - {product.sku}
-                      </div>
-                    ))
+                    <div className="p-4 text-center text-gray-500">
+                      No products found. Try a different search term.
+                    </div>
                   )}
                 </div>
               )}
