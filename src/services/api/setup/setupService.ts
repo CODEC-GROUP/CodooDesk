@@ -87,11 +87,27 @@ export function registerSetupHandlers() {
         throw new Error(`Shop not found after creation. ID: ${shop.id}`);
       }
 
+      // Fetch complete business data with shops
+      const completeBusiness = await BusinessInformation.findByPk(business.id, {
+        include: [{
+          model: Shop,
+          as: 'shops',
+          include: [
+            { model: Location, as: 'location' },
+            { model: Employee, as: 'employees', attributes: ['id', 'firstName', 'lastName', 'role'] }
+          ]
+        }]
+      });
+
+      if (!completeBusiness) {
+        throw new Error('Failed to fetch complete business data');
+      }
+
       // Send all data directly in the response root
       return {
         success: true,
         message: 'Account setup completed successfully',
-        business: business.toJSON(),
+        business: completeBusiness.toJSON(),
         shop: completeShop.toJSON(),
         location: location.toJSON(),
         isSetupComplete: true

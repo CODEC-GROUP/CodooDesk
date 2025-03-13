@@ -93,6 +93,17 @@ export function registerProductHandlers() {
     const t = await sequelize.transaction();
     
     try {
+      // Validate that we have a userId
+      if (!data.userId) {
+        throw new Error('User ID is required for creating a product');
+      }
+
+      // Verify the user exists
+      const user = await User.findByPk(data.userId, { transaction: t });
+      if (!user) {
+        throw new Error('Invalid user ID provided');
+      }
+
       // Sanitize and prepare data according to ProductAttributes
       const sanitizedData = {
         name: data.name,
@@ -155,36 +166,19 @@ export function registerProductHandlers() {
 
         // Create stock movement record
         await StockMovement.create({
-          productId: product.id,
+          inventoryItem_id: inventoryItem.id,
           movementType: 'added',
           quantity: Number(data.quantity) || 0,
-          supplier_id: null,
           reason: 'Initial stock on product creation',
-          performedBy_id: data.businessId, // Using businessId as the performer
+          performedBy: data.userId, // Using userId as the performer
           source_inventory_id: data.warehouseId,
           destination_inventory_id: null,
           direction: 'inbound',
-          transaction_reference: `INIT-${product.id}`,
           cost_per_unit: Number(data.purchasePrice) || 0,
-          total_cost: (Number(data.quantity) || 0) * (Number(data.purchasePrice) || 0)
+          total_cost: (Number(data.quantity) || 0) * (Number(data.purchasePrice) || 0),
+          status: 'completed'
         }, { transaction: t });
       }
-
-      // Create initial stock movement
-      await StockMovement.create({
-        productId: product.id,
-        movementType: 'added',
-        quantity: Number(data.quantity) || 0,
-        supplier_id: null,
-        reason: 'Initial stock on product creation',
-        performedBy_id: data.businessId,
-        source_inventory_id: data.warehouseId,
-        destination_inventory_id: null,
-        direction: 'inbound',
-        transaction_reference: `INIT-${product.id}`,
-        cost_per_unit: Number(data.purchasePrice) || 0,
-        total_cost: (Number(data.quantity) || 0) * (Number(data.purchasePrice) || 0)
-      }, { transaction: t });
 
       // Create price history entry
       await PriceHistory.create({
@@ -193,7 +187,7 @@ export function registerProductHandlers() {
         new_price: Number(data.sellingPrice) || 0,
         change_date: new Date(),
         change_reason: 'Initial price on product creation',
-        changed_by: data.businessId,
+        changed_by: data.userId, // Use userId instead of businessId
         price_type: 'selling'
       }, { transaction: t });
 
@@ -204,14 +198,14 @@ export function registerProductHandlers() {
         new_price: Number(data.purchasePrice) || 0,
         change_date: new Date(),
         change_reason: 'Initial price on product creation',
-        changed_by: data.businessId,
+        changed_by: data.userId, // Use userId instead of businessId
         price_type: 'purchase'
       }, { transaction: t });
 
       // Create audit log entry
       await AuditLog.create({
         shopId: data.shop_id,
-        userId: data.businessId, // Using businessId as userId for now
+        userId: data.userId, // Use userId here as well for consistency
         action: 'create',
         entityType: 'product',
         entityId: product.id,

@@ -156,6 +156,55 @@ const Expenses = () => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
+
+        // Add business check first
+        if (!business?.id) {
+          console.error('No business configured');
+          toast({
+            title: "Error",
+            description: "Business configuration not loaded",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Improved user check
+        if (!user?.id) {
+          console.error('No user found');
+          toast({
+            title: "Error",
+            description: "User not authenticated",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Determine shop IDs based on selection and role
+        let requestShopId = null;
+        let requestShopIds = null;
+
+        if (selectedShopId) {
+          // If specific shop is selected, use that
+          requestShopId = selectedShopId;
+        } else if (user.role === 'admin' || user.role === 'shop_owner') {
+          // For admin/owner without specific shop selected, use all available shop IDs
+          requestShopIds = business.shops?.map(shop => shop.id);
+        } else {
+          // For regular employees, use their assigned shop
+          requestShopId = availableShops?.[0]?.id;
+        }
+
+        // Validate shop ID requirement
+        if (!requestShopId && (!requestShopIds || requestShopIds.length === 0)) {
+          console.error('No shop IDs available');
+          toast({
+            title: "Error",
+            description: "No shops available - configure shops first",
+            variant: "destructive",
+          });
+          return;
+        }
+
         // Fetch OHADA codes for expense
         const codesResponse = await safeIpcInvoke<OhadaCodeResponse>(
           'finance:ohada-codes:get-by-type',
@@ -174,19 +223,21 @@ const Expenses = () => {
         }
 
         // Fetch expenses with associated OHADA codes
-        const shopFilter = (user?.role !== 'admin' && user?.role !== 'shop_owner')
-          ? { shopId: selectedShopId }
-          : {};
-
         const expensesResponse = await safeIpcInvoke<ExpenseResponse>(
           'finance:expense:get-all',
-          shopFilter,
+          {
+            userId: user.id,
+            userRole: user.role,
+            shopId: requestShopId,
+            shopIds: requestShopIds
+          },
           { success: false }
         );
 
         if (expensesResponse?.success && expensesResponse.expenses) {
           setExpenses(expensesResponse.expenses);
         } else {
+          setExpenses([]);
           toast({
             title: "Error",
             description: expensesResponse?.message || 'Failed to load expenses',
@@ -195,6 +246,7 @@ const Expenses = () => {
         }
       } catch (error) {
         console.error('Error fetching data:', error);
+        setExpenses([]);
         toast({
           title: "Error",
           description: 'Failed to load data',
@@ -206,7 +258,7 @@ const Expenses = () => {
     };
 
     fetchData();
-  }, [user?.role, selectedShopId]);
+  }, [user, business, selectedShopId, availableShops]);
 
   useEffect(() => {
     let result = [...expenses];

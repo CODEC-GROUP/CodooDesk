@@ -4,6 +4,7 @@ import Payment from '../../../models/Payment.js';
 import Receipt from '../../../models/Receipt.js';
 import StockMovement from '../../../models/StockMovement.js';
 import Inventory from '../../../models/Inventory.js';
+import InventoryItem from '../../../models/InventoryItem.js';
 import { createErrorResponse } from '../../../utils/errorHandling.js';
 import { sequelize } from '../../database/index.js';
 
@@ -44,26 +45,33 @@ export function registerSalesHandlers() {
 
       // Update inventory
       for (const item of salesData.items) {
-        await StockMovement.create({
-          productId: item.productId,
-          quantity: item.quantity,
-          movementType: 'sold',
-          source_inventory_id: salesData.shopId,
-          performedBy_id: salesData.salesPersonId,
-          reference: sale.id,
-          direction: 'outbound',
-          cost_per_unit: item.costPrice || 0,
-          total_cost: (item.costPrice || 0) * item.quantity
-        }, { transaction });
-
-        // Update product inventory
-        await Inventory.decrement('level', {
-          where: { 
-            id: item.inventoryId
+        // Find the inventory item for this product in this shop
+        const inventoryItem = await InventoryItem.findOne({
+          where: {
+            product_id: item.productId,
           },
-          by: item.quantity,
           transaction
         });
+
+        if (inventoryItem) {
+          await StockMovement.create({
+            inventoryItem_id: inventoryItem.id,
+            quantity: item.quantity,
+            movementType: 'sold',
+            source_inventory_id: salesData.shopId,
+            performedBy: salesData.salesPersonId,
+            direction: 'outbound',
+            cost_per_unit: inventoryItem.unit_cost,
+            total_cost: inventoryItem.unit_cost * item.quantity,
+            status: 'completed'
+          }, { transaction });
+
+          // Update inventory item quantity
+          await inventoryItem.decrement('quantity', {
+            by: item.quantity,
+            transaction
+          });
+        }
       }
 
       await transaction.commit();

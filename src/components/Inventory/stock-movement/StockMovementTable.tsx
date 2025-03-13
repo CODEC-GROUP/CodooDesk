@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import {
@@ -29,6 +29,7 @@ import { StockMovement, StockMovementResponse } from "@/types/inventory"
 import { useToast } from "@/components/Shared/ui/use-toast"
 import { safeIpcInvoke } from "@/lib/ipc"
 import { useAppTranslation } from '@/hooks/use-translation'
+import { LoadingSpinner } from "@/components/Shared/ui/LoadingSpinner"
 
 // Create a type for new movements without ID
 type NewStockMovement = Omit<StockMovement, 'id'>;
@@ -38,6 +39,7 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
   const [dateRange, setDateRange] = useState<[Date, Date]>([new Date(), new Date()])
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [showPhysicalCount, setShowPhysicalCount] = useState(false)
@@ -45,22 +47,63 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
   const { toast } = useToast()
   const { t } = useAppTranslation()
 
-  const loadMovements = async () => {
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedMovements, setSelectedMovements] = useState<string[]>([])
+  const [selectedMovement, setSelectedMovement] = useState<StockMovement | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [movementType, setMovementType] = useState<"inbound" | "outbound" | "transfer">("inbound")
+  const [selectedFilter, setSelectedFilter] = useState<string>("all")
+  const itemsPerPage = 10
+
+  const loadMovements = useCallback(async () => {
+    if (!inventoryId) return;
+    
+    setLoading(true);
     try {
-      const data = await safeIpcInvoke<StockMovement[]>(
+      const result = await safeIpcInvoke<StockMovementResponse>(
         'stock-movement:get-by-inventory',
-        { inventoryId },
-        []
+        {
+          inventoryId,
+          page: currentPage,
+          limit: itemsPerPage,
+          movementType: selectedFilter !== 'all' ? selectedFilter : undefined,
+          searchTerm: searchTerm || undefined
+        },
+        { success: false, movements: [], total: 0, pages: 0 }
       );
-      setMovements(data || []);
+
+      if (result?.success) {
+        setMovements(result.movements || []);
+        setTotalPages(result.pages || 1);
+        setTotalItems(result.total || 0);
+      } else {
+        throw new Error(result?.message || 'Failed to load movements');
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err instanceof Error ? err.message : 'Failed to load movements'
+      });
+      setMovements([]);
+      setTotalPages(1);
+      setTotalItems(0);
     } finally {
       setLoading(false);
     }
-  };
+  }, [inventoryId, currentPage, selectedFilter, searchTerm]);
 
   useEffect(() => {
     loadMovements();
   }, [inventoryId]);
+
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      loadMovements();
+    }, 300);
+
+    return () => clearTimeout(debounceTimer);
+  }, [currentPage, selectedFilter, searchTerm]);
 
   const handlePhysicalCount = async (productId: string, count: number) => {
     try {
@@ -103,13 +146,6 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
     }
   };
 
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedMovements, setSelectedMovements] = useState<string[]>([])
-  const [selectedMovement, setSelectedMovement] = useState<StockMovement | null>(null)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [movementType, setMovementType] = useState<"Inbound" | "Outbound">("Inbound")
-  const itemsPerPage = 10
-
   const filteredMovements = movements.filter(movement =>
     Object.values(movement).some(value => 
       value.toString().toLowerCase().includes(searchTerm.toLowerCase())
@@ -147,57 +183,74 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
   }
 
   const handleAddMovement = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const costPerUnit = Number(formData.get('cost_per_unit')) || 0;
-    const quantity = Number(formData.get('quantity'));
-
-    const newMovement: NewStockMovement = {
-      movementType: formData.get('type') as StockMovement['movementType'],
-      quantity,
-      date: formData.get('date') as string,
-      reason: formData.get('reason') as string,
-      destination: movementType === 'Outbound' ? formData.get('destination') as string : undefined,
-      performedBy_id: formData.get('performedBy') as string,
-      productId: 'default-product-id',
-      direction: movementType === 'Outbound' ? 'outbound' : 'inbound',
-      source_inventory_id: inventoryId,
-      cost_per_unit: costPerUnit,
-      total_cost: quantity * costPerUnit,
-      createdAt: new Date(),
-    }
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    
     try {
-      const response = await safeIpcInvoke<StockMovement>(
+      const quantity = Number(formData.get('quantity'));
+      const costPerUnit = Number(formData.get('cost_per_unit')) || 0;
+      const type = formData.get('type') as StockMovement['movementType'];
+      const direction = formData.get('movementType') as 'inbound' | 'outbound' | 'transfer';
+      const productId = formData.get('productId') as string;
+
+      if (!quantity || !type || !direction || !productId) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      const newMovement = {
+        productId,
+        movementType: type,
+        quantity,
+        direction,
+        source_inventory_id: inventoryId,
+        destination_inventory_id: direction === 'outbound' ? formData.get('destination') as string : null,
+        reason: formData.get('reason') as string,
+        cost_per_unit: costPerUnit,
+        total_cost: quantity * costPerUnit,
+        performedBy_id: 'current-user-id', // This should come from auth context
+      };
+
+      const result = await safeIpcInvoke<{ success: boolean; movement?: StockMovement; message?: string }>(
         'stock-movement:create',
-        {
-          ...newMovement,
-          inventoryId
-        },
-        null
+        newMovement,
+        { success: false }
       );
 
-      if (response) {
-        setMovements(prev => [...prev, response]);
+      if (result?.success && result.movement) {
+        toast({
+          title: "Success",
+          description: "Stock movement created successfully"
+        });
         setShowAddForm(false);
+        loadMovements();
       } else {
-        throw new Error("Failed to create movement");
+        throw new Error(result?.message || 'Failed to create movement');
       }
-    } catch (err: unknown) {
-      const error = err instanceof Error ? err : new Error('Unknown error occurred');
+    } catch (err) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message
+        description: err instanceof Error ? err.message : 'Failed to create movement'
       });
     }
-  }
+  };
 
-  const handleMovementTypeChange = (value: "Inbound" | "Outbound") => {
+  const handleMovementTypeChange = (value: "inbound" | "outbound" | "transfer") => {
     setMovementType(value);
   };
 
   const exportToPDF = async () => {
     // Implementation using a PDF library like jsPDF
+  };
+
+  const handleFilterChange = (value: string) => {
+    setSelectedFilter(value);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
   };
 
   if (showAddForm) {
@@ -235,17 +288,17 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
                 <Label htmlFor="movementType">Inbound/Outbound</Label>
                 <Select 
                   name="movementType" 
-                  onValueChange={(value: string) => handleMovementTypeChange(value as "Inbound" | "Outbound")}>
+                  onValueChange={(value: string) => handleMovementTypeChange(value as "inbound" | "outbound" | "transfer")}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select movement type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Inbound">Inbound</SelectItem>
-                    <SelectItem value="Outbound">Outbound</SelectItem>
+                    <SelectItem value="inbound">Inbound</SelectItem>
+                    <SelectItem value="outbound">Outbound</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {movementType === 'Outbound' && (
+              {movementType === 'outbound' && (
                 <div>
                   <Label htmlFor="destination">Destination</Label>
                   <Select name="destination">
@@ -287,13 +340,16 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
             </Button>
             <Button onClick={() => setShowAddForm(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Add Movemant
+              Add Movement
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           <div className="flex items-center py-4">
-            <Select>
+            <Select
+              value={selectedFilter}
+              onValueChange={handleFilterChange}
+            >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filter" />
               </SelectTrigger>
@@ -303,25 +359,24 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
                 <SelectItem value="sold">Sold</SelectItem>
                 <SelectItem value="returned">Returned</SelectItem>
                 <SelectItem value="adjustment">Adjustment</SelectItem>
+                <SelectItem value="transfer">Transfer</SelectItem>
               </SelectContent>
             </Select>
             <Input
               placeholder="Search..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
               className="ml-2"
             />
-            <Button variant="ghost" className="ml-2">
-              <Search className="h-4 w-4" />
-            </Button>
           </div>
+
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]">
                     <Checkbox
-                      checked={selectedMovements.length === paginatedMovements.length}
+                      checked={selectedMovements.length === movements.length && movements.length > 0}
                       onCheckedChange={toggleAllMovements}
                     />
                   </TableHead>
@@ -334,39 +389,64 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedMovements.map((movement) => (
-                  <TableRow key={movement.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedMovements.includes(movement.id)}
-                        onCheckedChange={() => toggleMovementSelection(movement.id)}
-                      />
-                    </TableCell>
-                    <TableCell>{movement.date}</TableCell>
-                    <TableCell>{movement.movementType}</TableCell>
-                    <TableCell>{movement.quantity}</TableCell>
-                    <TableCell>{movement.reason}</TableCell>
-                    <TableCell>{movement.performedBy_id}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openOverlay(movement)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-24 text-center">
+                      <LoadingSpinner />
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : movements.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                      No movements found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  movements.map((movement) => (
+                    <TableRow key={movement.id}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedMovements.includes(movement.id)}
+                          onCheckedChange={() => toggleMovementSelection(movement.id)}
+                        />
+                      </TableCell>
+                      <TableCell>{new Date(movement.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          movement.direction === 'inbound' ? 'bg-green-100 text-green-800' :
+                          movement.direction === 'outbound' ? 'bg-red-100 text-red-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {movement.movementType}
+                        </span>
+                      </TableCell>
+                      <TableCell>{movement.quantity}</TableCell>
+                      <TableCell>{movement.reason || '-'}</TableCell>
+                      <TableCell>{movement.performer?.username || '-'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" onClick={() => openOverlay(movement)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
-          <div className="mt-4">
-            <Pagination 
-              currentPage={currentPage} 
-              totalPages={pageCount} 
-              onPageChange={setCurrentPage} 
-            />
-          </div>
+
+          {!loading && movements.length > 0 && (
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-sm text-gray-500">
+                Showing {movements.length} of {totalItems} movements
+              </div>
+              <Pagination 
+                currentPage={currentPage} 
+                totalPages={totalPages} 
+                onPageChange={setCurrentPage} 
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -377,7 +457,7 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
             <CardContent className="flex flex-col p-4">
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Type: {movement.movementType}</span>
-                <span className="text-sm text-gray-500">Date: {movement.date}</span>
+                <span className="text-sm text-gray-500">Date: {new Date(movement.createdAt).toLocaleDateString()}</span>
               </div>
               <div className="flex justify-between mt-2">
                 <p className="text-sm text-gray-500">Quantity: {movement.quantity}</p>
@@ -397,10 +477,10 @@ export function StockMovementTable({ inventoryId }: { inventoryId: string }) {
             </DialogHeader>
             <p><strong>Type:</strong> {selectedMovement.movementType}</p>
             <p><strong>Quantity:</strong> {selectedMovement.quantity}</p>
-            <p><strong>Date:</strong> {selectedMovement.date}</p>
+            <p><strong>Date:</strong> {new Date(selectedMovement.createdAt).toLocaleDateString()}</p>
             <p><strong>Inbound/Outbound:</strong> {selectedMovement.movementType}</p>
             <p><strong>Reason:</strong> {selectedMovement.reason}</p>
-            <p><strong>Performed By:</strong> {selectedMovement.performedBy_id}</p>
+            <p><strong>Performed By:</strong> {selectedMovement.performer?.username || '-'}</p>
             <Button onClick={closeOverlay}>Close</Button>
           </DialogContent>
         </Dialog>

@@ -33,6 +33,7 @@ import { registerInventoryItemHandlers } from '../dist/src/services/api/inventor
 import { registerCategoryHandlers } from '../dist/src/services/api/inventory/categoryendpoints.js';
 import { registerProductHandlers } from '../dist/src/services/api/inventory/productendpoints.js';
 import { registerVariantHandlers } from '../dist/src/services/api/inventory/variantEndpoints.js';
+import { registerStockMovementHandlers } from '../dist/src/services/api/inventory/StockMovementService.js';
 import { registerSalesHandlers } from '../dist/src/services/api/sales/SalesService.js';
 import { registerExpenseHandlers } from '../dist/src/services/api/finance/expenseendpoints.js';
 import { registerIncomeHandlers } from '../dist/src/services/api/finance/incomeendpoints.js';
@@ -199,6 +200,7 @@ async function createWindow() {
       registerCategoryHandlers();
       registerProductHandlers();
       registerVariantHandlers();
+      registerStockMovementHandlers();
       registerSalesHandlers();
       registerExpenseHandlers();
       registerIncomeHandlers();

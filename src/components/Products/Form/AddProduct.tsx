@@ -240,11 +240,11 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Add basic form validation
-    if (!formData.name || !formData.sellingPrice || !formData.purchasePrice || !selectedWarehouse) {
+    // Updated validation - removed selectedWarehouse check
+    if (!formData.name || !formData.sellingPrice || !formData.purchasePrice) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields including warehouse selection",
+        description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
@@ -393,7 +393,9 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                 <h2 className="text-lg font-semibold mb-4 text-gray-800">Information</h2>
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="productName" className="text-sm font-medium text-gray-700">Product Name</Label>
+                    <Label htmlFor="productName" className="text-sm font-medium text-gray-700">
+                      Product Name <span className="text-red-500">*</span>
+                    </Label>
                     <Input 
                       id="productName" 
                       placeholder="Enter a short name for your product" 
@@ -489,7 +491,9 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                 <h2 className="text-lg font-semibold mb-4 text-gray-800">Price/Type</h2>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <Label htmlFor="purchasePrice" className="text-sm font-medium text-gray-700">Purchase Price (FCFA)</Label>
+                    <Label htmlFor="purchasePrice" className="text-sm font-medium text-gray-700">
+                      Purchase Price <span className="text-red-500">*</span> (FCFA)
+                    </Label>
                     <Input 
                       id="purchasePrice" 
                       type="number"
@@ -501,7 +505,9 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                     />
                   </div>
                   <div>
-                    <Label htmlFor="sellingPrice" className="text-sm font-medium text-gray-700">Selling Price (FCFA)</Label>
+                    <Label htmlFor="sellingPrice" className="text-sm font-medium text-gray-700">
+                      Selling Price <span className="text-red-500">*</span> (FCFA)
+                    </Label>
                     <Input 
                       id="sellingPrice" 
                       type="number"
@@ -513,7 +519,9 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                     />
                   </div>
                   <div>
-                    <Label htmlFor="productType" className="text-sm font-medium text-gray-700">Product Type</Label>
+                    <Label htmlFor="productType" className="text-sm font-medium text-gray-700">
+                      Product Type <span className="text-red-500">*</span>
+                    </Label>
                     <Select value={formData.productType} onValueChange={(value) => setFormData(prev => ({ ...prev, productType: value }))}>
                       <SelectTrigger className="mt-1">
                         <SelectValue placeholder="Product Type" />
@@ -539,7 +547,9 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                 <h2 className="text-lg font-semibold mb-4 text-gray-800">Stock Information</h2>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="quantity" className="text-sm font-medium text-gray-700">Initial Quantity</Label>
+                    <Label htmlFor="quantity" className="text-sm font-medium text-gray-700">
+                      Initial Quantity <span className="text-red-500">*</span>
+                    </Label>
                     <Input 
                       id="quantity" 
                       type="number"
@@ -575,7 +585,9 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                     <div className="space-y-2">
                       {(user?.role === 'admin' || user?.role === 'shop_owner') && (
                         <div className="space-y-2">
-                          <Label>Shop</Label>
+                          <Label>
+                            Shop <span className="text-red-500">*</span>
+                          </Label>
                           <Select 
                             value={formData.shop_id} 
                             onValueChange={(value) => setFormData(prev => ({ ...prev, shop_id: value }))}
@@ -677,6 +689,11 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
             </Card>
           </div>
         </div>
+
+        {/* Add required fields guidance */}
+        <p className="text-sm text-gray-500 mt-4">
+          <span className="text-red-500">*</span> Fields marked with this asterisk are required
+        </p>
       </form>
     </>
   )

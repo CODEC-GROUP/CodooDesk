@@ -70,15 +70,67 @@ const processPieData = (data: { name: string; value: number; color: string }[] |
   })) || [];
 };
 
+interface DashboardStats {
+  total_products: number;
+  total_value: number;
+  low_stock_items: number;
+  out_of_stock_items: number;
+  itemsSold: number;
+  inventoryValue: number;
+  inventoryValueChange: number;
+  shop_stats: {
+    [key: string]: {
+      total_products: number;
+      total_value: number;
+      low_stock_items: number;
+    }
+  };
+  category_composition: Array<{
+    name: string;
+    percentage: number;
+    value: number;
+    color: string;
+  }>;
+}
+
+interface DashboardTrends {
+  data: Array<{
+    day: string;
+    count: number;
+  }>;
+  topProducts: Array<{
+    id: string;
+    quantity: number;
+    reorder_point: number;
+    value: number;
+    total_value: number;
+    product: {
+      name: string;
+      featuredImage: string;
+    };
+  }>;
+  topSuppliers: Array<{
+    name: string;
+    value: number;
+    items: number;
+    color: string;
+  }>;
+}
+
+interface DashboardData {
+  stats: DashboardStats;
+  trends: DashboardTrends;
+}
+
 export function InventoryDashboard() {
   const { business, user, availableShops } = useAuthLayout();
   const { fetchInventoryDashboard } = useDashboard();
 
   const [selectedShopIds, setSelectedShopIds] = useState<string[]>(() => {
     if (user?.role !== 'admin' && user?.role !== 'shop_owner') {
-      return business?.shops?.[0]?.id ? [business.shops[0].id] : []
+      return availableShops?.[0]?.id ? [availableShops[0].id] : [];
     }
-    return availableShops?.[0]?.id ? [availableShops[0].id] : []
+    return [];
   });
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -88,14 +140,14 @@ export function InventoryDashboard() {
 
   const [currentView, setCurrentView] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
-  const { data: dashboardData, isLoading, error } = useQuery<InventoryDashboardData>({
+  const { data: dashboardData, isLoading, error } = useQuery<DashboardData>({
     queryKey: ['inventory-dashboard', business?.id, selectedShopIds, dateRange, currentView],
     queryFn: async () => {
       if (!business?.id) {
         throw new Error('No business ID available');
       }
-      
-      const data = await safeIpcInvoke<InventoryDashboardData>(
+
+      const response = await safeIpcInvoke<{ success: boolean; data: DashboardData }>(
         'dashboard:inventory:get',
         {
           businessId: business.id,
@@ -109,10 +161,11 @@ export function InventoryDashboard() {
         null
       );
 
-      if (!data) {
+      if (!response?.success || !response.data) {
         throw new Error('Failed to load dashboard data');
       }
-      return data;
+
+      return response.data;
     },
     enabled: !!business?.id,
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -131,16 +184,7 @@ export function InventoryDashboard() {
     </div>
   );
 
-  const {
-    stats,
-    weeklyInventory,
-    inventoryValueOverTime,
-    last7DaysInventory,
-    topSuppliers = [],
-    topProducts = [],
-    categoryDistribution = [],
-    trends
-  } = dashboardData || {};
+  const { stats, trends } = dashboardData || { stats: {}, trends: {} };
 
   const processChartData = (data: { day: string; count: number }[] | undefined) => {
     return data?.map(item => ({
@@ -229,7 +273,7 @@ export function InventoryDashboard() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Total Products</p>
               <h3 className="text-2xl font-bold text-gray-700">
-                {dashboardData?.stats?.total_products ?? '--'}
+                {stats?.total_products ?? '--'}
               </h3>
             </div>
           </CardContent>
@@ -241,7 +285,9 @@ export function InventoryDashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Items Sold</p>
-              <h3 className="text-2xl font-bold text-gray-700">{formatNumber(stats?.itemsSold ?? 0)}</h3>
+              <h3 className="text-2xl font-bold text-gray-700">
+                {formatNumber(stats?.itemsSold ?? 0)}
+              </h3>
             </div>
           </CardContent>
         </Card>
@@ -252,7 +298,9 @@ export function InventoryDashboard() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Low Stock Items</p>
-              <h3 className="text-2xl font-bold text-gray-700">{stats?.lowStockItems ?? 0}</h3>
+              <h3 className="text-2xl font-bold text-gray-700">
+                {stats?.low_stock_items ?? 0}
+              </h3>
             </div>
           </CardContent>
         </Card>
@@ -264,9 +312,11 @@ export function InventoryDashboard() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Inventory Value</p>
               <h3 className="text-2xl font-bold text-gray-700">
-                {inventoryValue}
+                {formatNumber(stats?.inventoryValue ?? 0)} FCFA
               </h3>
-              <p className="text-sm text-green-500">↑ {stats?.inventoryValueChange ?? 0}%</p>
+              <p className="text-sm text-green-500">
+                ↑ {stats?.inventoryValueChange ?? 0}%
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -275,131 +325,109 @@ export function InventoryDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <Card className="col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Weekly Inventory Trend</CardTitle>
-            <div className="flex items-center text-sm text-gray-500">
-              Last Week <ChevronDown className="ml-1 h-4 w-4" />
-            </div>
+            <CardTitle>Inventory Trends</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={processChartData(dashboardData?.weeklyInventory)}>
+              <BarChart data={trends?.data || []}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
                 <Tooltip />
-                {processChartData(dashboardData?.weeklyInventory).length === 0 ? (
-                  <Bar dataKey="count" fill="#e5e7eb" radius={[4, 4, 0, 0]}>
-                    {Array(7).fill(0).map((_, index) => (
-                      <Cell key={index} fill="#f3f4f6" />
-                    ))}
-                  </Bar>
-                ) : (
-                  <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} />
-                )}
-                {processChartData(dashboardData?.weeklyInventory).length === 0 && (
-                  <text
-                    x="50%"
-                    y="50%"
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="#6b7280"
-                  >
-                    No data available
-                  </text>
-                )}
+                <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
-        <div className="grid grid-rows-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Stock Status</CardTitle>
-            </CardHeader>
-            <CardContent className="flex justify-between items-center">
-              <CircularProgressBar percentage={75} color="text-green-400" />
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>In Stock:</span>
-                  <span className="font-medium">75%</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Low Stock:</span>
-                  <span className="font-medium">20%</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Out of Stock:</span>
-                  <span className="font-medium">5%</span>
-                </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Category Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex justify-center">
+              <div className="w-32 h-32">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={stats?.category_composition || []}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={60}
+                    >
+                      {(stats?.category_composition || []).map((entry, index) => (
+                        <Cell key={index} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Category Distribution</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex justify-center">
-                <div className="w-32 h-32">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={processPieData(categoryDistribution)}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={60}
-                      >
-                        {processPieData(categoryDistribution).length === 0 ? (
-                          <Cell key="empty" fill="#e5e7eb" />
-                        ) : (
-                          processPieData(categoryDistribution).map((entry, index) => (
-                            <Cell key={index} fill={entry.color} />
-                          ))
-                        )}
-                      </Pie>
-                      {processPieData(categoryDistribution).length === 0 && (
-                        <text
-                          x="50%"
-                          y="50%"
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          fill="#6b7280"
-                        >
-                          No data
-                        </text>
-                      )}
-                    </PieChart>
-                  </ResponsiveContainer>
+            </div>
+            <div className="flex justify-center mt-4 space-x-4">
+              {(stats?.category_composition || []).map((entry, index) => (
+                <div key={index} className="flex items-center">
+                  <div
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: entry.color }}
+                  ></div>
+                  <span className="text-sm">{entry.name}</span>
                 </div>
-              </div>
-              <div className="flex justify-center mt-4 space-x-4">
-                {processPieData(categoryDistribution).map((entry, index) => (
-                  <div key={index} className="flex items-center">
-                    <div
-                      className="w-3 h-3 rounded-full mr-2"
-                      style={{ backgroundColor: entry.color }}
-                    ></div>
-                    <span className="text-sm">{entry.name}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <Card className="col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Products</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {(trends?.topProducts || []).map((product) => (
+                <div key={product.id} className="flex items-center">
+                  {product.product.featuredImage ? (
+                    <Image
+                      src={product.product.featuredImage}
+                      alt={product.product.name}
+                      width={40}
+                      height={40}
+                      className="rounded mr-4"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-4">
+                      <Package className="h-6 w-6 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <h3 className="font-medium">{product.product.name}</h3>
+                    <p className="text-sm text-gray-500">{formatNumber(product.total_value)} FCFA</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-medium">{product.quantity} in stock</p>
+                    {product.quantity <= product.reorder_point && (
+                      <p className="text-sm text-red-500">Low Stock</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Top Suppliers</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {(topSuppliers || []).map((supplier, index) => (
+              {(trends?.topSuppliers || []).map((supplier, index) => (
                 <div key={index} className="flex items-center">
-                  <div className={`w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold mr-4`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold mr-4`} style={{ backgroundColor: supplier.color }}>
                     {supplier.name.charAt(0)}
                   </div>
                   <div className="flex-1">
@@ -407,95 +435,13 @@ export function InventoryDashboard() {
                     <p className="text-sm text-gray-500">{supplier.items} items</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-medium">{supplier.value}</p>
+                    <p className="font-medium">{formatNumber(supplier.value)} FCFA</p>
                   </div>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Products</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {topProducts.map((product, index) => (
-                <div key={index} className="flex items-center">
-                  <Image src={product.image} alt={product.name} width={40} height={40} className="rounded mr-4" />
-                  <div className="flex-1">
-                    <h3 className="font-medium">{product.name}</h3>
-                    <p className="text-sm text-gray-500">{product.amount}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">{product.inStock} in stock</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Inventory Value Over Time</CardTitle>
-            <div className="flex items-center text-sm text-gray-500">
-              Last 12 Hours <ChevronDown className="ml-1 h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 flex justify-between">
-              <div>
-                <h4 className="text-2xl font-bold">
-                  {formatNumber(stats?.valueOnLatest ?? 0)} XAF
-                </h4>
-                <p className="text-sm text-gray-500">Value on {stats?.latestDate ?? 'N/A'}</p>
-              </div>
-              <div>
-                <h4 className="text-2xl font-bold">
-                  {formatNumber(stats?.valueOnPrevious ?? 0)} XAF
-                </h4>
-                <p className="text-sm text-gray-500">Value on {stats?.previousDate ?? 'N/A'}</p>
-              </div>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={inventoryValueOverTime}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="valueOnPrevious" stroke="#8884d8" />
-                <Line type="monotone" dataKey="valueOnLatest" stroke="#82ca9d" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Last 7 Days Inventory</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4">
-              <h4 className="text-2xl font-bold">{formatNumber(stats?.itemsAdded ?? 0)}</h4>
-              <p className="text-sm text-gray-500">Items Added</p>
-              <h4 className="text-2xl font-bold mt-2">
-                {formatNumber(stats?.valueAdded ?? 0)} XAF
-              </h4>
-              <p className="text-sm text-gray-500">Value Added</p>
-            </div>
-            <ResponsiveContainer width="100%" height={150}>
-              <BarChart data={last7DaysInventory}>
-                <Bar dataKey="count" fill="#10B981" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="mt-8">
-        <InventoryTrends data={trends} />
       </div>
     </div>
   )

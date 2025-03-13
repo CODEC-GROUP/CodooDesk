@@ -45,17 +45,25 @@ export function registerIncomeHandlers() {
   });
 
   // Get all incomes handler with OHADA code info
-  ipcMain.handle(IPC_CHANNELS.GET_ALL_INCOMES, async (event, { userId, userRole, shopIds }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_INCOMES, async (event, { userId, userRole, shopId, shopIds }) => {
     try {
-      let whereClause = {};
+      // Validate shop ID requirement
+      if (!shopId && (!shopIds || !shopIds.length)) {
+        return {
+          success: false,
+          message: 'Shop ID or shop IDs are required',
+          incomes: [],
+        };
+      }
+
+      const whereClause: any = {};
       
-      // If shopIds are provided, filter by those shops
-      if (shopIds && shopIds.length > 0) {
-        whereClause = {
-          ...whereClause,
-          shopId: {
-            [Op.in]: shopIds
-          }
+      // Handle shop IDs based on input
+      if (shopId) {
+        whereClause.shopId = shopId;
+      } else if (shopIds && shopIds.length > 0) {
+        whereClause.shopId = {
+          [Op.in]: shopIds
         };
       }
 
@@ -81,7 +89,12 @@ export function registerIncomeHandlers() {
 
       return { success: true, incomes: serializableIncomes };
     } catch (error) {
-      return { success: false, message: 'Error fetching incomes', error };
+      console.error('Error fetching incomes:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error fetching incomes',
+        incomes: []
+      };
     }
   });
 

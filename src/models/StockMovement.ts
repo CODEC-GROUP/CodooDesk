@@ -1,56 +1,42 @@
 import { Model, DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../services/database/index.js';
-import Product from './Product.js';
+import InventoryItem from './InventoryItem.js';
 import User from './User.js';
-import Inventory from './Inventory.js';
 
 export interface StockMovementAttributes {
   id?: string;
-  productId: string;
+  inventoryItem_id: string;
   movementType: 'added' | 'sold' | 'returned' | 'adjustment' | 'transfer';
   quantity: number;
-  supplier_id: string | null;
-  reason: string | null;
-  performedBy_id: string;
+  direction: 'inbound' | 'outbound';
   source_inventory_id: string;
-  destination_inventory_id: string | null;
-  direction: 'inbound' | 'outbound' | 'transfer';
-  transaction_reference: string | null;
+  destination_inventory_id?: string | null;
+  reason?: string;
   cost_per_unit: number;
   total_cost: number;
-  adjustment_reason?: string | null;
-  physical_count?: number | null;
-  system_count?: number | null;
-  discrepancy?: number | null;
-  adjusted_by_user_id?: string | null;
+  performedBy: string;
+  status: 'pending' | 'completed' | 'cancelled';
+  reference_number?: string;
   createdAt?: Date;
   updatedAt?: Date;
-  reference?: string | number;
 }
 
 class StockMovement extends Model<StockMovementAttributes> implements StockMovementAttributes {
   public id!: string;
-  public productId!: string;
+  public inventoryItem_id!: string;
   public movementType!: 'added' | 'sold' | 'returned' | 'adjustment' | 'transfer';
   public quantity!: number;
-  public supplier_id!: string | null;
-  public reason!: string | null;
-  public performedBy_id!: string;
+  public direction!: 'inbound' | 'outbound';
   public source_inventory_id!: string;
-  public destination_inventory_id!: string | null;
-  public direction!: 'inbound' | 'outbound' | 'transfer';
-  public transaction_reference!: string | null;
+  public destination_inventory_id?: string;
+  public reason?: string;
   public cost_per_unit!: number;
   public total_cost!: number;
-  public createdAt?: Date;
-  public updatedAt?: Date;
-
-  // Add new fields for tracking adjustments
-  public adjustment_reason!: string | null;
-  public physical_count!: number | null;
-  public system_count!: number | null;
-  public discrepancy!: number | null;
-  public adjusted_by_user_id!: string | null;
+  public performedBy!: string;
+  public status!: 'pending' | 'completed' | 'cancelled';
+  public reference_number?: string;
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
 
   static initModel(sequelize: Sequelize): typeof StockMovement {
     return this.init(
@@ -60,11 +46,11 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           defaultValue: DataTypes.UUIDV4,
           primaryKey: true,
         },
-        productId: {
+        inventoryItem_id: {
           type: DataTypes.UUID,
           allowNull: false,
           references: {
-            model: 'Products',
+            model: 'InventoryItems',
             key: 'id',
           },
         },
@@ -76,43 +62,19 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           type: DataTypes.INTEGER,
           allowNull: false,
         },
-        supplier_id: {
-          type: DataTypes.UUID,
-          allowNull: true,
-        },
-        reason: {
-          type: DataTypes.STRING,
-          allowNull: true,
-        },
-        performedBy_id: {
-          type: DataTypes.UUID,
+        direction: {
+          type: DataTypes.ENUM('inbound', 'outbound'),
           allowNull: false,
-          references: {
-            model: 'Users',
-            key: 'id',
-          },
         },
         source_inventory_id: {
           type: DataTypes.UUID,
           allowNull: false,
-          references: {
-            model: 'Inventories',
-            key: 'id',
-          },
         },
         destination_inventory_id: {
           type: DataTypes.UUID,
           allowNull: true,
-          references: {
-            model: 'Inventories',
-            key: 'id',
-          },
         },
-        direction: {
-          type: DataTypes.ENUM('inbound', 'outbound', 'transfer'),
-          allowNull: false,
-        },
-        transaction_reference: {
+        reason: {
           type: DataTypes.STRING,
           allowNull: true,
         },
@@ -126,55 +88,55 @@ class StockMovement extends Model<StockMovementAttributes> implements StockMovem
           allowNull: false,
           defaultValue: 0,
         },
-        adjustment_reason: {
+        performedBy: {
+          type: DataTypes.UUID,
+          allowNull: false,
+        },
+        status: {
+          type: DataTypes.ENUM('pending', 'completed', 'cancelled'),
+          allowNull: false,
+          defaultValue: 'pending',
+        },
+        reference_number: {
           type: DataTypes.STRING,
           allowNull: true,
-        },
-        physical_count: {
-          type: DataTypes.INTEGER,
-          allowNull: true,
-        },
-        system_count: {
-          type: DataTypes.INTEGER,
-          allowNull: true,
-        },
-        discrepancy: {
-          type: DataTypes.INTEGER,
-          allowNull: true,
-        },
-        adjusted_by_user_id: {
-          type: DataTypes.UUID,
-          allowNull: true,
-          references: {
-            model: 'Users',
-            key: 'id',
-          },
-        },
+        }
       },
       {
         sequelize,
         modelName: 'StockMovement',
+        tableName: 'StockMovements',
         timestamps: true,
+        hooks: {
+          afterCreate: async (movement: StockMovement) => {
+            // Update InventoryItem quantity
+            const inventoryItem = await InventoryItem.findByPk(movement.inventoryItem_id);
+            if (inventoryItem) {
+              const quantityChange = movement.direction === 'inbound' ? movement.quantity : -movement.quantity;
+              await inventoryItem.increment('quantity', { by: quantityChange });
+              
+              // Update last_restock_date if it's an inbound movement
+              if (movement.direction === 'inbound') {
+                await inventoryItem.update({ last_restock_date: new Date() });
+              }
+            }
+          }
+        }
       }
     );
   }
 
-  static associate() {
-    StockMovement.belongsTo(Product, {
-      foreignKey: 'productId',
-      as: 'product',
+  static associate(models: any) {
+    // StockMovement belongs to an InventoryItem
+    StockMovement.belongsTo(models.InventoryItem, {
+      foreignKey: 'inventoryItem_id',
+      as: 'inventoryItem'
     });
-    StockMovement.belongsTo(User, {
-      foreignKey: 'performedBy_id',
-      as: 'performer',
-    });
-    StockMovement.belongsTo(Inventory, {
-      foreignKey: 'source_inventory_id',
-      as: 'sourceInventory',
-    });
-    StockMovement.belongsTo(Inventory, {
-      foreignKey: 'destination_inventory_id',
-      as: 'destinationInventory',
+
+    // StockMovement belongs to a User (performer)
+    StockMovement.belongsTo(models.User, {
+      foreignKey: 'performedBy',
+      as: 'performer'
     });
   }
 }

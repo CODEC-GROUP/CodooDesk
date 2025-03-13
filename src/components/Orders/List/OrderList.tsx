@@ -50,6 +50,7 @@ import {
   CommandItem
 } from "@/components/ui/command"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
+import { Label } from "@/components/Shared/ui/label"
 
 type Sale = SalesAttributes & {
   customer?: {
@@ -98,6 +99,8 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [shopId, setShopId] = useState<string | null>(null);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   
   const ITEMS_PER_PAGE = 10;
 
@@ -133,8 +136,23 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
       return;
     }
 
-    // Handle empty shop IDs
-    if (shopIds.length === 0) {
+    // Determine shop IDs based on selection and role
+    let requestShopId = null;
+    let requestShopIds = null;
+
+    if (shopId) {
+      // If specific shop is selected, use that
+      requestShopId = shopId;
+    } else if (user.role === 'admin' || user.role === 'shop_owner') {
+      // For admin/owner without specific shop selected, use all available shop IDs
+      requestShopIds = business.shops?.map(shop => shop.id);
+    } else {
+      // For regular employees, use their assigned shop
+      requestShopId = availableShops?.[0]?.id;
+    }
+
+    // Validate shop ID requirement
+    if (!requestShopId && (!requestShopIds || requestShopIds.length === 0)) {
       console.error('No shop IDs available');
       toast({
         title: "Error",
@@ -143,34 +161,49 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
       });
       return;
     }
-
-    const currentShopId = shopId || shopIds[0];
     
     try {
-      console.log('Making IPC call with:', {
+      const params = {
         user,
-        shopId: currentShopId,
-        page: 1,
-        limit: 10,
+        shopId: requestShopId,
+        shopIds: requestShopIds,
+        page: currentPage,
+        limit: itemsPerPage,
         status: filterValue !== 'all' ? filterValue : undefined,
-        search: searchTerm.trim() || undefined
-      });
+        search: searchTerm.trim() || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined
+      };
 
-      const result = await safeIpcInvoke('order-management:get-sales', {
-        user,
-        shopId: currentShopId,
-        page: 1,
-        limit: 10,
-        status: filterValue !== 'all' ? filterValue : undefined,
-        search: searchTerm.trim() || undefined
-      }, { success: false, sales: [], pages: 0 });
+      console.log('Making IPC call with:', params);
+
+      const result = await safeIpcInvoke<{
+        success: boolean;
+        sales: Sale[];
+        total: number;
+        currentPage: number;
+        pages: number;
+        message?: string;
+      }>('order-management:get-sales', params);
 
       console.log('IPC call result:', result);
 
-      setSales(result?.success ? result.sales : []);
+      if (result?.success) {
+        setSales(result.sales);
+        setFilteredSales(result.sales);
+      } else {
+        setSales([]);
+        setFilteredSales([]);
+        toast({
+          title: "Error",
+          description: result?.message || "Failed to fetch orders",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       console.error('Error fetching sales:', error);
       setSales([]);
+      setFilteredSales([]);
       toast({
         title: "Error",
         description: "Failed to fetch orders",
@@ -182,10 +215,10 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
   };
 
   useEffect(() => {
-    if (business?.id && user?.id && shopIds.length > 0) {
+    if (business?.id && user?.id) {
       fetchSales();
     }
-  }, [business, user, shopIds]); // Added shopIds to dependencies
+  }, [business, user, shopId, currentPage, itemsPerPage, filterValue, searchTerm, startDate, endDate]);
 
   useEffect(() => {
     let result = [...sales];
@@ -472,6 +505,28 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
               </Select>
             </div>
 
+            {/* Date Range Filters */}
+            <div className="flex items-center gap-2">
+              <div className="flex flex-col">
+                <Label>Start Date</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-[160px]"
+                />
+              </div>
+              <div className="flex flex-col">
+                <Label>End Date</Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-[160px]"
+                />
+              </div>
+            </div>
+
             {(user?.role === 'admin' || user?.role === 'shop_owner') && (
               <Popover>
                 <PopoverTrigger asChild>
@@ -485,22 +540,19 @@ export function OrderList({ onOrderClick, onAddOrder }: OrderListProps) {
                     <CommandInput placeholder="Filter shops..." />
                     <CommandList>
                       <CommandGroup>
-                        {shopIds.map((id) => {
-                          const shop = business?.shops?.find(s => s.id === id)
-                          return (
-                            <CommandItem
-                              key={id}
-                              value={id}
-                              onSelect={() => setShopId(id === shopId ? null : id)}
-                            >
-                              <Checkbox
-                                checked={shopId === id}
-                                className="mr-2"
-                              />
-                              {shop?.name || 'Unnamed Shop'}
-                            </CommandItem>
-                          )
-                        })}
+                        {business?.shops?.map((shop: any) => (
+                          <CommandItem
+                            key={shop.id}
+                            value={shop.id}
+                            onSelect={() => setShopId(shop.id === shopId ? null : shop.id)}
+                          >
+                            <Checkbox
+                              checked={shopId === shop.id}
+                              className="mr-2"
+                            />
+                            {shop.name}
+                          </CommandItem>
+                        ))}
                       </CommandGroup>
                     </CommandList>
                   </Command>

@@ -11,6 +11,7 @@ interface User {
   email: string;
   role: string;
   isActive: boolean;
+  shopId?: string;
 }
 
 interface Business {
@@ -166,10 +167,16 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       });
       
       if (response?.success && response.user) {
-        // Unified shop handling for admin/shop_owner
-        if (response.shops) {
-          setAvailableShops(response.shops);
-          localStorage.setItem('availableShops', JSON.stringify(response.shops));
+        // Handle shops from business data
+        if (response.business?.shops) {
+          setAvailableShops(response.business.shops);
+          localStorage.setItem('availableShops', JSON.stringify(response.business.shops));
+          
+          // For regular employees, automatically set their shop
+          if (response.user.role !== 'admin' && response.user.role !== 'shop_owner' && response.business.shops.length > 0) {
+            setCurrentShopId(response.business.shops[0].id);
+            localStorage.setItem('currentShopId', response.business.shops[0].id);
+          }
         }
 
         // Common data storage
@@ -193,13 +200,14 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         // Navigation logic
         setTimeout(() => {
           if (response.user?.role === 'admin') {
-            router.push('/admin/dashboard');
+            router.push('/dashboard');
           }
           else if (response.user?.role === 'shop_owner') {
             response.isSetupComplete ? router.push('/dashboard') : router.push('/account-setup');
           }
           else {
-            response.shop ? router.push('/dashboard') : router.push('/shop-selection');
+            // Always redirect employees to dashboard, their data will be filtered there
+            router.push('/dashboard');
           }
         }, 1000);
 
@@ -287,24 +295,29 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       const response = await safeIpcInvoke<AuthResponse>('auth:register', userData, { success: false });
 
       if (response?.success && response.user) {
-        // Save data to localStorage first
+        // Save basic user data to localStorage
         localStorage.setItem('user', JSON.stringify(response.user));
         localStorage.setItem('isAuthenticated', 'true');
-        
-        // Then update state
+
+        // Update state with basic user info
         setIsAuthenticated(true);
         setUser(response.user);
-        setBusiness(null); // New user won't have business yet
+        setBusiness(null); // No business yet until setup
+        setAvailableShops(null); // No shops yet until setup
+        setCurrentShopId(null); // No current shop until setup
 
         toast({
           title: "Success", 
           description: "Registration successful",
         });
 
-        console.log('Registration successful, navigating to account setup...');
-        
+        console.log('Registration successful, redirecting to account setup...');
         router.push('/account-setup');
-        return { success: true, user: response.user };
+
+        return { 
+          success: true, 
+          user: response.user
+        };
       }
 
       toast({
@@ -333,20 +346,43 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       const response = await safeIpcInvoke<SetupResponse>('setup:create-account', 
         {
           ...setupData,
-          userId: user.id  // Ensure userId is included in the request
+          userId: user.id
         }, 
         { success: false }
       );
       
       if (response?.success && response.business) {
+        // Update business data
         setBusiness(response.business);
-        localStorage.setItem('setupComplete', 'true');
-        localStorage.setItem('businessData', JSON.stringify(response.business));
+        
+        // Update shops data if available
+        if (response.business.shops && response.business.shops.length > 0) {
+          const shops = response.business.shops;
+          setAvailableShops(shops);
+          
+          // Set the first shop as current shop since this is initial setup
+          const firstShop = shops[0];
+          setCurrentShopId(firstShop.id);
+          
+          // Update localStorage with all the new data
+          localStorage.setItem('availableShops', JSON.stringify(shops));
+          localStorage.setItem('currentShopId', firstShop.id);
+          localStorage.setItem('business', JSON.stringify(response.business));
+          localStorage.setItem('setupComplete', 'true');
+          
+          // Update user data with shop assignment if needed
+          if (user && !user.shopId) {
+            const updatedUser = { ...user, shopId: firstShop.id };
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+          }
+        }
         
         toast({
           title: "Success",
           description: "Account setup completed successfully",
         });
+
         router.push('/dashboard');
         return { success: true };
       }

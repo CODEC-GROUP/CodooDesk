@@ -20,6 +20,7 @@ import Image from 'next/image'
 import { useQuery } from '@tanstack/react-query'
 import { EmptyPlaceholder } from "@/components/Shared/ui/empty-placeholder"
 import { Alert, AlertDescription } from "@/components/Shared/ui/alert"
+import { IPC_CHANNELS } from '@/constants/ipcChannels'
 
 interface ShopResponse {
   success: boolean;
@@ -287,310 +288,188 @@ const CARD_CLASSES = "rounded-xl shadow-sm hover:shadow-md transition-shadow";
 const CHART_CONTAINER = "h-[300px] mt-4";
 const GRID_LAYOUT = "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6";
 
+interface DashboardParams {
+  businessId: string;
+  shopId?: string;
+  shopIds?: string[];
+  dateRange?: {
+    from: Date | undefined;
+    to: Date | undefined;
+  };
+}
+
+interface DashboardApiParams {
+  businessId: string;
+  shopId?: string;
+  shopIds?: string[];
+  dateRange?: {
+    start: string;
+    end: string;
+  };
+}
+
+interface CategoryBreakdownItem {
+  id: string;
+  name: string;
+  total_value: number;
+  percentage: number;
+  color: string;
+}
+
+// Add type declarations for the API responses
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+}
+
+interface InventoryStats {
+  total_products_sold: number;
+  total_value: number;
+}
+
+interface SalesStats {
+  total_sales: number;
+  total_orders: number;
+  total_expenses: number;
+}
+
+interface SalesTrend {
+  date: string;
+  total_sales: number;
+}
+
+interface Supplier {
+  id: string;
+  name: string;
+  items: number;
+  value: number;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  featuredImage: string | null;
+  sellingPrice: number;
+  unitsSold: number;
+  currentStock: number;
+}
+
 export function Dashboard() {
   const { business, user, availableShops } = useAuthLayout();
   const [currentShopId, setCurrentShopId] = useState<string | null>(() => {
-    // Default to first available shop for non-admin users
     if (user?.role !== 'admin' && user?.role !== 'shop_owner') {
       return availableShops?.[0]?.id || null;
     }
-    return null; // Admins see all shops by default
+    return null;
   });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [date, setDate] = useState<DateRange | undefined>({
     from: addDays(new Date(), -30),
     to: new Date(),
   });
-  const { t } = useTranslation();
   const [currentView, setCurrentView] = useState<TimeView>('daily');
+  const { t } = useTranslation();
 
   // Update shop objects handling
   const shopObjects = (user?.role === 'admin' || user?.role === 'shop_owner')
     ? business?.shops || []
     : availableShops?.filter(Boolean) || [];
 
-  const { data: categoriesData, isLoading: isCategoriesLoading, error: categoriesError } = useQuery({
-    queryKey: ['topCategories', business?.id, currentShopId, date?.from, date?.to, currentView],
-    queryFn: async () => {
-      const response = await safeIpcInvoke<{ success: boolean; data: CategoryData[] }>(
-        'dashboard:categories:top',
-        { 
-          businessId: business?.id,
-          shopId: currentShopId,
-          dateRange: date ? {
-            start: date.from?.toISOString(),
-            end: date.to?.toISOString()
-          } : undefined,
-          view: currentView
-        },
-        { success: false, data: [] }
-      );
-      return response?.data ?? [];
-    },
+  // Get the employee's assigned shop ID
+  const employeeShopId = user?.role !== 'admin' && user?.role !== 'shop_owner' 
+    ? availableShops?.[0]?.id || currentShopId 
+    : currentShopId;
+
+  const params: DashboardApiParams = {
+    businessId: business?.id!,
+    ...(employeeShopId ? { shopId: employeeShopId } : {}),
+    ...(date?.from && date?.to ? {
+      dateRange: {
+        start: date.from.toISOString(),
+        end: date.to.toISOString()
+      }
+    } : {})
+  };
+
+  const safeInvoke = async <T,>(channel: string, params: DashboardApiParams): Promise<ApiResponse<T>> => {
+    if (!window?.electron?.invoke) {
+      throw new Error('Electron invoke not available');
+    }
+    return window.electron.invoke(channel, params);
+  };
+
+  // Fetch inventory stats
+  const { data: inventoryStats, isLoading: isLoadingInventory } = useQuery<ApiResponse<InventoryStats>>({
+    queryKey: ['inventoryStats', params],
+    queryFn: () => safeInvoke('dashboard:inventory:stats', params),
     enabled: !!business?.id
   });
 
-  // Fetch dashboard data with shop filtering
-  const fetchDashboardData = async () => {
-    if (!business?.id) return;
-    
-    try {
-      setLoading(true);
-      
-      // Update shop filter based on role and selection
-      const shopFilter = currentShopId 
-        ? { shopId: currentShopId }
-        : (user?.role === 'admin' || user?.role === 'shop_owner')
-          ? { shopIds: shopObjects.map(shop => shop.id) }
-          : {};
+  // Fetch inventory movements
+  const { data: inventoryMovements } = useQuery({
+    queryKey: ['inventoryMovements', params],
+    queryFn: () => safeInvoke('dashboard:inventory:movements', params),
+    enabled: !!business?.id
+  });
 
-      const dateFilter = date ? {
-        dateRange: {
-          start: date.from?.toISOString(),
-          end: date.to?.toISOString()
-        }
-      } : {};
+  // Fetch top suppliers
+  const { data: topSuppliers } = useQuery<ApiResponse<Supplier[]>>({
+    queryKey: ['topSuppliers', params],
+    queryFn: () => safeInvoke('dashboard:inventory:suppliers', params),
+    enabled: !!business?.id
+  });
 
-      const viewFilter = {
-        view: currentView
-      };
+  // Fetch top products
+  const { data: topProducts } = useQuery<ApiResponse<Product[]>>({
+    queryKey: ['topProducts', params],
+    queryFn: () => safeInvoke('dashboard:inventory:products', params),
+    enabled: !!business?.id
+  });
 
-      // Update other dashboard data fetching with filters
-      const [financeRes, inventoryRes, salesRes, customersRes] = await Promise.all([
-        safeIpcInvoke<{ success: boolean; data: FinanceDashboardData }>(
-          'dashboard:finance:get',
-          {
-            businessId: business.id,
-            ...shopFilter,
-            ...dateFilter,
-            ...viewFilter
-          },
-          {
-            success: true,
-            data: {
-              overview: {
-                total_income: 0,
-                total_expenses: 0,
-                revenue_growth: 0,
-                expense_growth: 0,
-                totalOrders: 0
-              },
-              expenseCategories: [],
-              topIncomeSources: [],
-              recentTransactions: [],
-              monthlyData: []
-            }
-          }
-        ),
-        
-        safeIpcInvoke<{ success: boolean; data: RawInventoryDashboardData }>(
-          'dashboard:inventory:get',
-          {
-            businessId: business.id,
-            ...shopFilter,
-            ...dateFilter,
-            ...viewFilter
-          },
-          {
-            success: true,
-            data: {
-              stats: {
-                total_value: 0,
-                low_stock_items: 0,
-                out_of_stock_items: 0,
-                total_products: 0,
-                shop_stats: {}
-              },
-              trends: {
-                weekly: [],
-                daily: [],
-                value: [],
-                topProducts: [],
-                topSuppliers: []
-              }
-            }
-          }
-        ),
-        
-        safeIpcInvoke<{ success: boolean; data: SalesDashboardData }>(
-          'dashboard:sales:get',
-          {
-            businessId: business.id,
-            ...shopFilter,
-            ...dateFilter,
-            ...viewFilter
-          },
-          {
-            success: true,
-            data: {
-              weeklyTrends: [],
-              dailyTrends: [],
-              weeklyStats: {
-                totalItems: 0,
-                totalRevenue: 0
-              }
-            }
-          }
-        ),
-        
-        safeIpcInvoke<{ success: boolean; data: CustomerDashboardData }>(
-          'dashboard:customer:get',
-          {
-            businessId: business.id,
-            ...shopFilter,
-            ...dateFilter,
-            ...viewFilter
-          },
-          {
-            success: true,
-            data: {
-              stats: {
-                total_customers: 0,
-                active_customers: 0
-              },
-              topCustomers: []
-            }
-          }
-        )
-      ]);
+  // Fetch sales stats
+  const { data: salesStats, isLoading: isLoadingSales } = useQuery<ApiResponse<SalesStats[]>>({
+    queryKey: ['salesStats', params],
+    queryFn: () => safeInvoke('dashboard:sales:stats', params),
+    enabled: !!business?.id
+  });
 
-      // Set data even if some requests failed
-      setDashboardData({
-        finance: financeRes?.data ?? {
-          overview: {
-            total_income: 0,
-            total_expenses: 0,
-            revenue_growth: 0,
-            expense_growth: 0,
-            totalOrders: 0
-          },
-          expenseCategories: [],
-          topIncomeSources: [],
-          recentTransactions: [],
-          monthlyData: []
-        },
-        inventory: inventoryRes?.data ?? {
-          stats: {
-            total_value: 0,
-            low_stock_items: 0,
-            out_of_stock_items: 0,
-            total_products: 0,
-            shop_stats: {}
-          },
-          trends: {
-            weekly: [],
-            daily: [],
-            value: [],
-            topProducts: [],
-            topSuppliers: []
-          }
-        },
-        sales: salesRes?.data ?? {
-          weeklyTrends: [],
-          dailyTrends: [],
-          weeklyStats: {
-            totalItems: 0,
-            totalRevenue: 0
-          }
-        },
-        customers: customersRes?.data ?? {
-          stats: {
-            total_customers: 0,
-            active_customers: 0
-          },
-          topCustomers: []
-        }
-      });
+  // Fetch sales trends
+  const { data: salesTrends } = useQuery<ApiResponse<SalesTrend[]>>({
+    queryKey: ['salesTrends', params],
+    queryFn: () => safeInvoke('dashboard:sales:trends', params),
+    enabled: !!business?.id
+  });
 
-    } catch (err) {
-      console.error('Error fetching dashboard data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch dashboard data');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Fetch category breakdown
+  const { data: categoryBreakdown, isLoading: isLoadingCategories } = useQuery<ApiResponse<CategoryBreakdownItem[]>>({
+    queryKey: ['categoryBreakdown', params],
+    queryFn: () => safeInvoke('dashboard:categories:breakdown', params),
+    enabled: !!business?.id
+  });
 
-  // Update effect to refetch when filters change
-  useEffect(() => {
-    fetchDashboardData();
-  }, [currentShopId, date?.from, date?.to, currentView]);
+  if (isLoadingInventory || isLoadingSales || isLoadingCategories) {
+    return <LoadingSpinner />;
+  }
 
-  const handleDateChange = (newDate: DateRange | undefined) => {
-    setDate(newDate);
-    fetchDashboardData();
-  };
-
-  if (loading) return <LoadingSpinner />;
-  if (error) return <ErrorAlert message={error} />;
-  if (!dashboardData) return null;
-
-  const { finance, inventory, sales, customers } = dashboardData;
-
-  // Update inventory data usage
-  const renderInventoryCard = () => (
-    <Card>
-      <CardContent className="flex items-center p-6">
-        <div className="bg-purple-100 p-3 rounded-full">
-          <Package className="h-8 w-8 text-purple-600" />
-        </div>
-        <div className="ml-4">
-          <p className="text-sm font-medium text-gray-500">Total Items</p>
-          <h3 className="text-2xl font-bold text-gray-700">
-            {formatNumber(inventory?.stats?.total_products ?? 0)}
-          </h3>
-          <p className="text-sm text-red-500">
-            {inventory?.stats?.low_stock_items ?? 0} low stock
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
-  // Update top products section
-  const renderTopProducts = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle>Top Products</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {!inventory?.trends?.topProducts?.length ? (
-          <EmptyData message="No product data available" />
-        ) : (
-          <div className="space-y-4">
-            {inventory?.trends?.topProducts?.map((product, index) => (
-              <div key={index} className="flex items-center">
-                {product.featuredImage ? (
-                  <Image
-                    src={product.featuredImage}
-                    alt={product.name}
-                    width={40}
-                    height={40}
-                    className="rounded-lg object-cover mr-4"
-                  />
-                ) : (
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-4">
-                    <Package className="h-6 w-6 text-gray-600" />
-                  </div>
-                )}
-                <div className="flex-1">
-                  <h3 className="font-medium">{product.name}</h3>
-                  <p className="text-sm text-gray-500">{formatNumber(product.value)} FCFA</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-medium">{product.quantity} units in stock</p>
-                  {product.quantity <= (product.reorderPoint ?? 10) && (
-                    <p className="text-sm text-red-500">Low Stock</p>
-                  )}
-                </div>
-              </div>
-            ))}
+  // Update inventory card to show products sold
+  const renderInventoryCard = () => {
+    const stats = inventoryStats?.data || { total_products_sold: 0, total_value: 0 };
+    return (
+      <Card className={CARD_CLASSES}>
+        <CardContent className="p-4 md:p-6 flex items-center gap-4">
+          <div className="bg-purple-100/80 p-2 rounded-lg">
+            <Package className="h-6 w-6 text-purple-600" />
           </div>
-        )}
-      </CardContent>
-    </Card>
-  );
+          <div>
+            <p className="text-sm text-muted-foreground">Products Sold</p>
+            <h3 className="text-2xl font-semibold">
+              {formatNumber(stats.total_products_sold)}
+            </h3>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="p-4 md:p-8 bg-muted/40 min-h-screen">
@@ -599,7 +478,7 @@ export function Dashboard() {
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t('Dashboard')}</h1>
           <FilterControls 
             date={date} 
-            setDate={handleDateChange}
+            setDate={setDate}
             currentView={currentView}
             setCurrentView={setCurrentView}
             currentShopId={currentShopId}
@@ -619,7 +498,33 @@ export function Dashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">Total Revenue</p>
                 <h3 className="text-2xl font-semibold">
-                  {formatNumber(sales?.weeklyStats?.totalRevenue || 0)} FCFA
+                  {formatNumber((salesStats?.data?.[0]?.total_sales || 0))} FCFA
+                </h3>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className={CARD_CLASSES}>
+            <CardContent className="p-4 md:p-6 flex items-center gap-4">
+              <div className="bg-red-100/80 p-2 rounded-lg">
+                <CreditCard className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Expenses</p>
+                <h3 className="text-2xl font-semibold">
+                  {formatNumber((salesStats?.data?.[0]?.total_expenses || 0))} FCFA
+                </h3>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className={CARD_CLASSES}>
+            <CardContent className="p-4 md:p-6 flex items-center gap-4">
+              <div className="bg-purple-100/80 p-2 rounded-lg">
+                <Package className="h-6 w-6 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Orders</p>
+                <h3 className="text-2xl font-semibold">
+                  {formatNumber((salesStats?.data?.[0]?.total_orders || 0))}
                 </h3>
               </div>
             </CardContent>
@@ -632,24 +537,7 @@ export function Dashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">Net Profit</p>
                 <h3 className="text-2xl font-semibold">
-                  {formatNumber(
-                    (finance.overview.total_income || 0) - 
-                    (finance.overview.total_expenses || 0)
-                  )} FCFA
-                </h3>
-              </div>
-            </CardContent>
-          </Card>
-          {renderInventoryCard()}
-          <Card className={CARD_CLASSES}>
-            <CardContent className="p-4 md:p-6 flex items-center gap-4">
-              <div className="bg-red-100/80 p-2 rounded-lg">
-                <CreditCard className="h-6 w-6 text-red-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Expenses</p>
-                <h3 className="text-2xl font-semibold">
-                  {formatNumber(finance.overview.total_expenses)} FCFA
+                  {formatNumber((salesStats?.data?.[0]?.total_sales || 0) - (salesStats?.data?.[0]?.total_expenses || 0))} FCFA
                 </h3>
               </div>
             </CardContent>
@@ -663,14 +551,15 @@ export function Dashboard() {
               <CardTitle className="text-lg">Sales Trend</CardTitle>
             </CardHeader>
             <CardContent>
-              {!sales?.weeklyTrends?.length ? (
+              {!(salesTrends?.data || []).length ? (
                 <EmptyData message="No sales data available" />
               ) : (
                 <div className={CHART_CONTAINER}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={sales?.weeklyTrends}>
+                    <BarChart data={salesTrends?.data || []}>
                       <CartesianGrid strokeDasharray="3 3" className="text-muted" />
                       <XAxis
+                        dataKey="date"
                         tick={{ fill: '#6b7280' }}
                         tickLine={{ stroke: '#e5e7eb' }}
                       />
@@ -687,9 +576,11 @@ export function Dashboard() {
                         }}
                       />
                       <Bar 
-                        dataKey="sales" 
-                        fill="hsl(var(--primary))" 
+                        dataKey="total_sales" 
+                        fill="#3b82f6"
                         radius={[4, 4, 0, 0]}
+                        maxBarSize={50}
+                        fillOpacity={0.8}
                       />
                     </BarChart>
                   </ResponsiveContainer>
@@ -702,64 +593,62 @@ export function Dashboard() {
               <CardTitle className="text-lg">Categories Overview</CardTitle>
             </CardHeader>
             <CardContent className="h-[500px] flex flex-col">
-              <div className="flex-1">
-                {isCategoriesLoading ? (
-                  <ChartSkeleton />
-                ) : categoriesError ? (
-                  <Alert variant="destructive">
-                    <AlertDescription>{categoriesError.message}</AlertDescription>
-                  </Alert>
-                ) : !categoriesData?.length ? (
-                  <EmptyChart message="No category data available" />
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoriesData}
-                        dataKey="totalValue"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius="30%"
-                        outerRadius="95%"
-                        paddingAngle={0}
-                        strokeWidth={2}
-                      >
-                        {categoriesData?.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={entry.color}
+              {!categoryBreakdown?.data?.length ? (
+                <EmptyChart message="No category data available" />
+              ) : (
+                <div className="flex justify-between items-center flex-1">
+                  <div className="w-full h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                        <Pie
+                          data={categoryBreakdown.data}
+                          dataKey="total_value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="60%"
+                          outerRadius="95%"
+                          paddingAngle={0}
+                          labelLine={false}
+                        >
+                          {categoryBreakdown.data.map((entry: CategoryBreakdownItem, index: number) => (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={entry.color}
+                              stroke="hsl(var(--background))"
+                              strokeWidth={2}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          formatter={(value) => `${formatNumber(value as number)} FCFA`}
+                          contentStyle={{ 
+                            background: 'hsl(var(--background))',
+                            borderColor: 'hsl(var(--border))',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                            color: 'hsl(var(--foreground))'
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="space-y-2">
+                    {categoryBreakdown.data.map((category) => (
+                      <div key={category.id} className="flex justify-between text-sm">
+                        <span className="flex items-center">
+                          <span 
+                            className="w-3 h-3 rounded-full mr-2" 
+                            style={{ backgroundColor: category.color }}
                           />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value) => `${formatNumber(value as number)} FCFA`}
-                        contentStyle={{ 
-                          background: 'hsl(var(--background))',
-                          borderColor: 'hsl(var(--border))',
-                          borderRadius: '8px',
-                          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                          color: 'hsl(var(--foreground))'
-                        }}
-                      />
-                      <Legend 
-                        layout="vertical"
-                        align="right"
-                        verticalAlign="middle"
-                        formatter={(value, entry) => {
-                          const total = categoriesData?.reduce((sum, cat) => sum + cat.totalValue, 0) || 1;
-                          const percent = ((entry.value as number) / total) * 100;
-                          return (
-                            <span className="text-sm text-muted-foreground">
-                              {value} - {percent.toFixed(1)}%
-                            </span>
-                          );
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
+                          {category.name}:
+                        </span>
+                        <span className="font-medium">{category.percentage.toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -767,24 +656,24 @@ export function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Top Customers</CardTitle>
+              <CardTitle>Top Suppliers</CardTitle>
             </CardHeader>
             <CardContent>
-              {!customers?.topCustomers?.length ? (
-                <EmptyData message="No customer data available" />
+              {!(topSuppliers?.data || []).length ? (
+                <EmptyData message="No supplier data available" />
               ) : (
                 <div className="space-y-4">
-                  {customers?.topCustomers.map((customer, index) => (
-                    <div key={index} className="flex items-center">
+                  {(topSuppliers?.data || []).map((supplier: Supplier) => (
+                    <div key={supplier.id} className="flex items-center">
                       <div className={`w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold mr-4`}>
-                        {customer.name.charAt(0)}
+                        {supplier.name.charAt(0)}
                       </div>
                       <div className="flex-1">
-                        <h3 className="font-medium">{customer.name}</h3>
-                        <p className="text-sm text-gray-500">{customer.orders} orders</p>
+                        <h3 className="font-medium">{supplier.name}</h3>
+                        <p className="text-sm text-gray-500">{supplier.items} items</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-medium">{formatNumber(customer.spent)} FCFA</p>
+                        <p className="font-medium">{formatNumber(supplier.value)} FCFA</p>
                       </div>
                     </div>
                   ))}
@@ -792,9 +681,65 @@ export function Dashboard() {
               )}
             </CardContent>
           </Card>
-          {renderTopProducts()}
+          <Card>
+            <CardHeader>
+              <CardTitle>Top Products</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!(topProducts?.data || []).length ? (
+                <EmptyData message="No product data available" />
+              ) : (
+                <div className="relative w-full overflow-auto">
+                  <table className="w-full caption-bottom text-sm">
+                    <thead>
+                      <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Product</th>
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Amount</th>
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Units Sold</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(topProducts?.data || []).map((product: Product) => (
+                        <tr key={product.id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              {product.featuredImage ? (
+                                <Image
+                                  src={product.featuredImage}
+                                  alt={product.name}
+                                  width={40}
+                                  height={40}
+                                  className="rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                                  <Package className="h-6 w-6 text-gray-600" />
+                                </div>
+                              )}
+                              <div>
+                                <p className="font-medium">{product.name}</p>
+                                <p className="text-sm text-muted-foreground">SKU: {product.sku}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className="font-medium">{formatNumber(product.sellingPrice)} FCFA</span>
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className="font-medium">{formatNumber(product.unitsSold)} sold</span>
+                            <p className="text-sm text-gray-500">{formatNumber(product.currentStock)} in stock</p>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
+        {/* Restore the bottom cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="col-span-2">
             <CardHeader className="flex flex-row items-center justify-between">
@@ -803,32 +748,28 @@ export function Dashboard() {
             <CardContent>
               <div className="mb-4 flex justify-between">
                 <div>
-                  <h4 className="text-2xl font-bold">{formatNumber(finance.overview.totalOrders)}</h4>
-                  <p className="text-sm text-gray-500">Orders Today</p>
-                </div>
-                <div>
-                  <h4 className="text-2xl font-bold">{formatNumber(finance.overview.total_income)} FCFA</h4>
+                  <h4 className="text-2xl font-bold">{formatNumber((salesStats?.data?.[0]?.total_sales || 0))} FCFA</h4>
                   <p className="text-sm text-gray-500">Revenue Today</p>
                 </div>
               </div>
-              {!finance.monthlyData?.length ? (
+              {!(salesTrends?.data || []).length ? (
                 <EmptyData message="No financial data available" />
               ) : (
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={finance.monthlyData}>
+                  <LineChart data={salesTrends?.data || []}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
-                      dataKey="name" 
+                      dataKey="date" 
                       tickFormatter={(value) => formatTimeLabel(value, currentView)}
                     />
                     <YAxis />
                     <Tooltip 
                       formatter={(value) => `${formatNumber(value as number)} FCFA`}
-                      labelFormatter={(label) => formatTimeLabel(label, currentView)}
+                      labelFormatter={(label) => formatTimeLabel(label as string, currentView)}
                     />
                     <Legend />
-                    <Line type="monotone" dataKey="income" stroke="#8884d8" name="Income" />
-                    <Line type="monotone" dataKey="expenses" stroke="#82ca9d" name="Expenses" />
+                    <Line type="monotone" dataKey="total_sales" stroke="#8884d8" name="Income" />
+                    <Line type="monotone" dataKey="total_expenses" stroke="#82ca9d" name="Expenses" />
                   </LineChart>
                 </ResponsiveContainer>
               )}
@@ -841,18 +782,32 @@ export function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="mb-4">
-                <h4 className="text-2xl font-bold">{formatNumber(sales?.weeklyStats.totalItems || 0)}</h4>
-                <p className="text-sm text-gray-500">Items Sold</p>
-                <h4 className="text-2xl font-bold mt-2">{formatNumber(sales?.weeklyStats.totalRevenue || 0)} FCFA</h4>
+                <h4 className="text-2xl font-bold">{formatNumber((salesStats?.data?.[0]?.total_orders || 0))}</h4>
+                <p className="text-sm text-gray-500">Orders</p>
+                <h4 className="text-2xl font-bold mt-2">{formatNumber((salesStats?.data?.[0]?.total_sales || 0))} FCFA</h4>
                 <p className="text-sm text-gray-500">Revenue</p>
               </div>
-              {!sales?.dailyTrends?.length ? (
+              {!(salesTrends?.data || []).length ? (
                 <EmptyData message="No recent sales data" />
               ) : (
                 <ResponsiveContainer width="100%" height={150}>
-                  <BarChart data={sales?.dailyTrends || []}>
-                    <Bar dataKey="sales" fill="#10B981" />
-                    <Tooltip />
+                  <BarChart data={salesTrends?.data?.slice(-7) || []}>
+                    <Bar 
+                      dataKey="total_sales" 
+                      fill="#3b82f6"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={35}
+                      fillOpacity={0.8}
+                    />
+                    <Tooltip 
+                      formatter={(value) => `${formatNumber(value as number)} FCFA`}
+                      contentStyle={{
+                        background: 'hsl(var(--background))',
+                        borderColor: 'hsl(var(--border))',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                      }}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               )}

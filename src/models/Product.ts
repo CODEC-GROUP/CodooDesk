@@ -18,7 +18,7 @@ export interface ProductAttributes {
   purchasePrice: number;
   featuredImage: string | null;
   additionalImages: string[] | null;
-  reorderPoint?: number;
+  reorderPoint: number;
   minimumStockLevel?: number;
   maximumStockLevel?: number;
   valuationMethod: 'FIFO' | 'LIFO' | 'AVERAGE_COST';
@@ -49,7 +49,7 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
   public purchasePrice!: number;
   public featuredImage!: string | null;
   public additionalImages!: string[] | null;
-  public reorderPoint?: number;
+  public reorderPoint!: number;
   public minimumStockLevel?: number;
   public maximumStockLevel?: number;
   public valuationMethod!: 'FIFO' | 'LIFO' | 'AVERAGE_COST';
@@ -126,7 +126,7 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
         },
         reorderPoint: {
           type: DataTypes.INTEGER,
-          allowNull: true,
+          allowNull: false,
           defaultValue: 10
         },
         minimumStockLevel: {
@@ -184,10 +184,9 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
             }
           },
           beforeSave: (product: Product) => {
-            const reorderPoint = product.reorderPoint ?? 10;
-            if (product.quantity <= reorderPoint) {
+            if (product.quantity <= product.reorderPoint) {
               product.status = 'low_stock';
-            } else if (product.quantity <= reorderPoint * 2) {
+            } else if (product.quantity <= product.reorderPoint * 2) {
               product.status = 'medium_stock';
             } else {
               product.status = 'high_stock';

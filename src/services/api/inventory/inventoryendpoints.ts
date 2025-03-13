@@ -3,6 +3,19 @@ import Inventory, { InventoryAttributes } from '../../../models/Inventory.js';
 import Shop from '../../../models/Shop.js';
 import InventoryItem from '../../../models/InventoryItem.js';
 import { z } from 'zod';
+import { Op } from 'sequelize';
+
+// Add interface for inventory items
+interface InventoryItemType {
+  quantity: number;
+  unit_cost: number;
+  selling_price: number;
+  value: number;
+}
+
+interface InventoryWithItems extends InventoryAttributes {
+  inventoryItems?: InventoryItemType[];
+}
 
 // Input validation schemas
 const inventorySchema = z.object({
@@ -152,16 +165,33 @@ export function registerInventoryHandlers() {
   });
 
   // Get inventories by shop handler with pagination
-  ipcMain.handle(IPC_CHANNELS.GET_INVENTORIES_BY_SHOP, async (event, { shopId, isAdmin, pagination }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_INVENTORIES_BY_SHOP, async (event, { shopId, shopIds, isAdmin, pagination }) => {
     try {
       const { page, limit } = paginationSchema.parse(pagination || {});
-      const whereClause = isAdmin ? {} : { shopId };
+      
+      // Build where clause based on shop access
+      let whereClause = {};
+      if (shopId) {
+        whereClause = { shopId };
+      } else if (shopIds && shopIds.length > 0) {
+        whereClause = {
+          shopId: {
+            [Op.in]: shopIds
+          }
+        };
+      } else if (!isAdmin) {
+        throw new Error('No shop access configured');
+      }
       
       const { count, rows: inventories } = await Inventory.findAndCountAll({
         where: whereClause,
         include: [
           { model: Shop, as: 'shop' },
-          { model: InventoryItem, as: 'inventoryItems' }
+          { 
+            model: InventoryItem,
+            as: 'inventoryItems',
+            attributes: ['quantity', 'unit_cost', 'selling_price', 'value']
+          }
         ],
         limit,
         offset: (page - 1) * limit,
@@ -171,15 +201,39 @@ export function registerInventoryHandlers() {
       return { 
         success: true, 
         data: {
-          items: inventories.map(inv => ({
-            id: inv.id,
-            name: inv.name,
-            level: inv.level,
-            value: inv.value,
-            status: inv.status,
-            shopId: inv.shopId,
-            description: inv.description
-          })),
+          items: (inventories as unknown as InventoryWithItems[]).map(inv => {
+            // Calculate totals from inventory items
+            const totalLevel = inv.inventoryItems?.reduce((sum: number, item: InventoryItemType) => 
+              sum + (item.quantity || 0), 0) || 0;
+            
+            // Calculate total value using unit_cost (purchase price) for accurate inventory valuation
+            const totalValue = inv.inventoryItems?.reduce((sum: number, item: InventoryItemType) => {
+              const itemValue = item.unit_cost || 0;
+              return sum + ((item.quantity || 0) * itemValue);
+            }, 0) || 0;
+            
+            // Determine status based on total level
+            let status = inv.status;
+            if (totalLevel === 0) {
+              status = 'Low';
+            } else if (totalLevel < 10) {
+              status = 'Low';
+            } else if (totalLevel < 50) {
+              status = 'Medium';
+            } else {
+              status = 'High';
+            }
+            
+            return {
+              id: inv.id,
+              name: inv.name,
+              level: totalLevel,
+              value: totalValue,
+              status: status,
+              shopId: inv.shopId,
+              description: inv.description
+            };
+          }),
           pagination: {
             page,
             limit,

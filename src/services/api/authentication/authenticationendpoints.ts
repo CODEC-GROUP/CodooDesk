@@ -33,6 +33,30 @@ interface ShopWithLocation extends ShopAttributes {
   } | null;
 }
 
+interface ShopLocation {
+  address: string | null;
+  city: string | null;
+  country: string | null;
+  region: string | null;
+  postalCode: string | null;
+}
+
+interface ExtendedShopAttributes extends ShopAttributes {
+  location?: ShopLocation | null;
+  employees?: Array<{
+    id: number;
+    firstName: string;
+    lastName: string;
+    role: string;
+  }> | null;
+}
+
+interface ShopsByBusiness {
+  [key: string]: Shop[];
+}
+
+type UserRole = 'admin' | 'shop_owner' | 'manager' | 'seller';
+
 // Register IPC handlers
 export function registerAuthHandlers() {
   console.log('=== AUTH HANDLERS START ===');
@@ -234,7 +258,7 @@ export function registerAuthHandlers() {
 
           if (business && business.shops?.[0]) {
             const businessJSON = business.toJSON();
-            const employeeShop = business.shops[0].toJSON() as ShopWithLocation;
+            const employeeShop = business.shops[0].toJSON() as ExtendedShopAttributes;
 
             const loginResponse = {
               success: true,
@@ -436,6 +460,7 @@ export function registerAuthHandlers() {
       });
 
       if (user.role === 'admin') {
+        // Get all shops for admin users
         const allShops = await Shop.findAll({
           include: [
             {
@@ -451,14 +476,68 @@ export function registerAuthHandlers() {
           ]
         });
 
+        // Group shops by business
+        const shopsByBusiness = allShops.reduce<ShopsByBusiness>((acc, shop) => {
+          const businessId = shop.businessId;
+          if (!acc[businessId]) {
+            acc[businessId] = [];
+          }
+          acc[businessId].push(shop);
+          return acc;
+        }, {});
+
+        // Get all businesses
+        const businesses = await BusinessInformation.findAll();
+        
+        // Format response with consistent structure
         return {
           success: true,
           user: safeUser,
           isSetupComplete: true,
-          shops: allShops.map(shop => shop.toJSON())
+          businesses: businesses.map(business => {
+            const businessJSON = business.toJSON();
+            return {
+              id: businessJSON.id,
+              fullBusinessName: businessJSON.fullBusinessName,
+              shopLogo: businessJSON.shopLogo,
+              address: businessJSON.address,
+              businessType: businessJSON.businessType,
+              numberOfEmployees: businessJSON.numberOfEmployees,
+              taxIdNumber: businessJSON.taxIdNumber,
+              shops: (shopsByBusiness[business.id] || []).map((shop: Shop) => {
+                const shopJSON = shop.toJSON();
+                const location = shop.get('location') as ShopLocation;
+                const employees = shop.get('employees') as Array<{
+                  id: number;
+                  firstName: string;
+                  lastName: string;
+                  role: string;
+                }>;
+                return {
+                  id: shopJSON.id,
+                  name: shopJSON.name,
+                  type: shopJSON.type,
+                  status: shopJSON.status,
+                  contactInfo: shopJSON.contactInfo,
+                  manager: shopJSON.manager,
+                  businessId: shopJSON.businessId,
+                  location: location ? {
+                    address: location.address,
+                    city: location.city,
+                    country: location.country,
+                    region: location.region,
+                    postalCode: location.postalCode
+                  } : null,
+                  operatingHours: shopJSON.operatingHours,
+                  employees: employees || []
+                };
+              })
+            };
+          })
         };
       }
       else if (user.role === 'shop_owner') {
+        // For shop owners, get all their business information with all shops
         const business = await BusinessInformation.findOne({
           where: { ownerId: user.id },
           include: [{
@@ -479,16 +558,64 @@ export function registerAuthHandlers() {
           }]
         });
 
+        if (!business) {
+          return {
+            success: true,
+            user: safeUser,
+            isSetupComplete: false,
+            business: null,
+            shops: []
+          };
+        }
+
+        const businessJSON = business.toJSON();
+        
+        // Format response with consistent structure
         return {
           success: true,
           user: safeUser,
-          isSetupComplete: !!business,
-          shops: business?.shops?.map(shop => shop.toJSON()) ?? [],
-          business: business?.toJSON() || null
+          isSetupComplete: true,
+          business: {
+            id: businessJSON.id,
+            fullBusinessName: businessJSON.fullBusinessName,
+            shopLogo: businessJSON.shopLogo,
+            address: businessJSON.address,
+            businessType: businessJSON.businessType,
+            numberOfEmployees: businessJSON.numberOfEmployees,
+            taxIdNumber: businessJSON.taxIdNumber,
+            shops: business.shops?.map(shop => {
+              const shopJSON = shop.toJSON();
+              const location = shop.get('location') as ShopLocation;
+              const employees = shop.get('employees') as Array<{
+                id: number;
+                firstName: string;
+                lastName: string;
+                role: string;
+              }>;
+              return {
+                id: shopJSON.id,
+                name: shopJSON.name,
+                type: shopJSON.type,
+                status: shopJSON.status,
+                contactInfo: shopJSON.contactInfo,
+                manager: shopJSON.manager,
+                businessId: shopJSON.businessId,
+                location: location ? {
+                  address: location.address,
+                  city: location.city,
+                  country: location.country,
+                  region: location.region,
+                  postalCode: location.postalCode
+                } : null,
+                operatingHours: shopJSON.operatingHours,
+                employees: employees || []
+              };
+            }) || []
+          }
         };
       }
       else {
-        // For non-owner users, get their shop through employee record
+        // For regular employees, get their assigned shop and the business it belongs to
         console.log('Fetching employee information for user:', user.id);
         const employee = await Employee.findOne({ 
           where: { userId: user.id },
@@ -503,91 +630,96 @@ export function registerAuthHandlers() {
           }]
         });
 
-        if (employee?.shop) {
-          console.log('Fetching business information for employee shop:', employee.shop.businessId);
-          const business = await BusinessInformation.findOne({
-            where: { id: employee.shop.businessId },
-            include: [{
-              model: Shop,
-              as: 'shops',
-              where: { id: employee.shop.id }, // Only include the employee's shop
-              include: [{
-                model: Location,
-                as: 'location',
-                attributes: ['address', 'city', 'country', 'region', 'postalCode']
-              }]
-            }]
-          });
-
-          if (business && business.shops?.[0]) {
-            const businessJSON = business.toJSON();
-            const employeeShop = business.shops[0].toJSON() as ShopWithLocation;
-
-            const loginResponse = {
-              success: true,
-              message: 'Login successful',
-              user: safeUser,
-              business: {
-                id: businessJSON.id,
-                fullBusinessName: businessJSON.fullBusinessName,
-                shopLogo: businessJSON.shopLogo,
-                address: businessJSON.address,
-                businessType: businessJSON.businessType,
-                numberOfEmployees: businessJSON.numberOfEmployees,
-                taxIdNumber: businessJSON.taxIdNumber,
-                shops: [{
-                  id: employeeShop.id,
-                  name: employeeShop.name,
-                  type: employeeShop.type,
-                  status: employeeShop.status,
-                  contactInfo: employeeShop.contactInfo,
-                  manager: employeeShop.manager,
-                  businessId: employeeShop.businessId,
-                  location: employeeShop.location ? {
-                    address: employeeShop.location.address,
-                    city: employeeShop.location.city,
-                    country: employeeShop.location.country,
-                    region: employeeShop.location.region,
-                    postalCode: employeeShop.location.postalCode
-                  } : null,
-                  operatingHours: employeeShop.operatingHours
-                }]
-              },
-              isSetupComplete: true,
-              shopId: employeeShop.id
-            };
-
-            // Log detailed login response information
-            console.log('=== LOGIN RESPONSE DETAILS ===');
-            console.log('User:', {
-              id: loginResponse.user.id,
-              username: loginResponse.user.username,
-              email: loginResponse.user.email,
-              role: loginResponse.user.role
-            });
-            console.log('Business:', {
-              id: loginResponse.business.id,
-              name: loginResponse.business.fullBusinessName,
-              type: loginResponse.business.businessType
-            });
-            console.log('Available Shops:', loginResponse.business.shops.map(shop => ({
-              id: shop.id,
-              name: shop.name,
-              type: shop.type
-            })));
-            console.log('Employee Shop ID:', loginResponse.shopId);
-            console.log('Setup Complete:', loginResponse.isSetupComplete);
-            console.log('=== END LOGIN RESPONSE ===');
-
-            return loginResponse;
-          }
+        if (!employee?.shop) {
+          return {
+            success: false,
+            message: 'No shop assigned to this employee account'
+          };
         }
 
-        // If no shop found for employee or business not found
-        return {
-          success: false,
-          message: 'No shop assigned to this employee account or business not found'
+        // Get the business information but only include the employee's assigned shop
+        const business = await BusinessInformation.findOne({
+          where: { id: employee.shop.businessId },
+          include: [{
+            model: Shop,
+            as: 'shops',
+            where: { id: employee.shop.id }, // Only include the employee's shop
+            include: [{
+              model: Location,
+              as: 'location',
+              attributes: ['address', 'city', 'country', 'region', 'postalCode']
+            }]
+          }]
+        });
+
+        if (!business || !business.shops?.[0]) {
+          return {
+            success: false,
+            message: 'Business information not found for this employee'
+          };
+        }
+
+        const businessJSON = business.toJSON();
+        const employeeShop = business.shops[0].toJSON() as ExtendedShopAttributes;
+
+        // Format response with consistent structure but only include the employee's shop
+        const loginResponse = {
+          success: true,
+          message: 'Login successful',
+          user: safeUser,
+          business: {
+            id: businessJSON.id,
+            fullBusinessName: businessJSON.fullBusinessName,
+            shopLogo: businessJSON.shopLogo,
+            address: businessJSON.address,
+            businessType: businessJSON.businessType,
+            numberOfEmployees: businessJSON.numberOfEmployees,
+            taxIdNumber: businessJSON.taxIdNumber,
+            shops: [{
+              id: employeeShop.id,
+              name: employeeShop.name,
+              type: employeeShop.type,
+              status: employeeShop.status,
+              contactInfo: employeeShop.contactInfo,
+              manager: employeeShop.manager,
+              businessId: employeeShop.businessId,
+              location: employeeShop.location ? {
+                address: employeeShop.location.address,
+                city: employeeShop.location.city,
+                country: employeeShop.location.country,
+                region: employeeShop.location.region,
+                postalCode: employeeShop.location.postalCode
+              } : null,
+              operatingHours: employeeShop.operatingHours
+            }]
+          },
+          isSetupComplete: true,
+          shopId: employeeShop.id
         };
+
+        // Log detailed login response information
+        console.log('=== LOGIN RESPONSE DETAILS ===');
+        console.log('User:', {
+          id: loginResponse.user.id,
+          username: loginResponse.user.username,
+          email: loginResponse.user.email,
+          role: loginResponse.user.role
+        });
+        console.log('Business:', {
+          id: loginResponse.business.id,
+          name: loginResponse.business.fullBusinessName,
+          type: loginResponse.business.businessType
+        });
+        console.log('Available Shops:', loginResponse.business.shops.map(shop => ({
+          id: shop.id,
+          name: shop.name,
+          type: shop.type
+        })));
+        console.log('Employee Shop ID:', loginResponse.shopId);
+        console.log('Setup Complete:', loginResponse.isSetupComplete);
+        console.log('=== END LOGIN RESPONSE ===');
+
+        return loginResponse;
       }
 
       return {

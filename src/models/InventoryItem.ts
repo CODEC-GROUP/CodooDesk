@@ -159,6 +159,21 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
         sequelize,
         modelName: 'InventoryItem',
         timestamps: true,
+        hooks: {
+          beforeUpdate: async (item: InventoryItem) => {
+            // Check if quantity has changed
+            const changes = item.changed();
+            if (changes && changes.includes('quantity')) {
+              item.last_restock_date = new Date();
+            }
+          },
+          beforeCreate: async (item: InventoryItem) => {
+            // Set initial last_restock_date when creating with quantity
+            if (item.quantity > 0) {
+              item.last_restock_date = new Date();
+            }
+          }
+        }
       }
     );
   }

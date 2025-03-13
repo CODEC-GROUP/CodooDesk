@@ -268,41 +268,66 @@ export function registerOrderManagementHandlers() {
   ipcMain.handle(IPC_CHANNELS.GET_SALES_WITH_ORDERS, async (event, { 
     user,
     shopId,
+    shopIds,
     page = 1,
     limit = 10,
+    status,
+    search,
     startDate,
-    endDate,
-    status
+    endDate
   }) => {
     try {
-      const whereClause: any = {};
-      
-      // Handle shop ID based on user role
-      if (user.role === 'admin' || user.role === 'shop_owner') {
-        if (shopId) {
-          whereClause.shopId = shopId;
-        } else if (user.role === 'shop_owner') {
-          whereClause.shopId = {
-            [Op.in]: user.shops || []
-          };
-        }
-      } else {
-        whereClause.shopId = shopId;
-      }
-
-      if (startDate && endDate) {
-        whereClause.createdAt = {
-          [Op.between]: [new Date(startDate), new Date(endDate)]
+      // Validate shop ID requirement
+      if (!shopId && (!shopIds || !shopIds.length)) {
+        return {
+          success: false,
+          message: 'Shop ID or shop IDs are required',
+          sales: [],
+          total: 0,
+          currentPage: page,
+          pages: 0
         };
       }
 
+      const whereClause: any = {};
+      
+      // Handle shop IDs based on input
+      if (shopId) {
+        whereClause.shopId = shopId;
+      } else if (shopIds && shopIds.length > 0) {
+        whereClause.shopId = {
+          [Op.in]: shopIds
+        };
+      }
+
+      // Add status filter if provided
       if (status && status !== 'all') {
         whereClause.deliveryStatus = status;
+      }
+
+      // Add date range filter if provided
+      if (startDate && endDate) {
+        whereClause.createdAt = {
+          [Op.between]: [
+            new Date(startDate),
+            new Date(new Date(endDate).setHours(23, 59, 59, 999)) // End of the selected day
+          ]
+        };
+      }
+
+      // Add search functionality if provided
+      if (search) {
+        whereClause[Op.or] = [
+          { id: { [Op.like]: `%${search}%` } },
+          { '$customer.first_name$': { [Op.like]: `%${search}%` } },
+          { '$customer.last_name$': { [Op.like]: `%${search}%` } }
+        ];
       }
 
       const offset = (page - 1) * limit;
 
       const { rows: sales, count } = await Sales.findAndCountAll({
+        where: whereClause,
         include: [
           {
             model: Customer,

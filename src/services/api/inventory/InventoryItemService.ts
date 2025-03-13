@@ -47,14 +47,15 @@ export function registerInventoryItemHandlers() {
 
       // Create stock movement record
       await StockMovement.create({
-        productId: itemData.product_id,
+        inventoryItem_id: item.id,
         movementType: 'added',
         quantity: itemData.quantity,
         source_inventory_id: itemData.inventory_id,
         direction: 'inbound',
         cost_per_unit: itemData.unit_cost,
         total_cost: itemData.unit_cost * itemData.quantity,
-        performedBy_id: itemData.userId || null
+        performedBy: itemData.userId || null,
+        status: 'completed'
       }, { transaction: t });
 
       await t.commit();
@@ -80,10 +81,18 @@ export function registerInventoryItemHandlers() {
           { model: Supplier, as: 'supplier' }
         ]
       });
-      return items.map(item => item.get({ plain: true }));
+
+      const totalItems = items.length;
+      const totalValue = items.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0);
+
+      return {
+        items: items.map(item => item.get({ plain: true })),
+        totalItems,
+        totalValue
+      };
     } catch (error) {
       console.error('Error fetching inventory items:', error);
-      return [];
+      return { items: [], totalItems: 0, totalValue: 0 };
     }
   });
 
@@ -129,15 +138,30 @@ export function registerInventoryItemHandlers() {
   });
 
   // Search products handler
-  ipcMain.handle(IPC_CHANNELS.SEARCH_PRODUCTS, async (event, { query }) => {
+  ipcMain.handle(IPC_CHANNELS.SEARCH_PRODUCTS, async (event, { query, warehouseId }) => {
     try {
+      // First get the inventory to find its associated shop
+      const inventory = await Inventory.findByPk(warehouseId);
+      if (!inventory) {
+        return {
+          success: false,
+          message: 'Inventory not found',
+          products: []
+        };
+      }
+
       const products = await Product.findAll({
         where: {
-          [Op.or]: [
-            { name: { [Op.like]: `%${query}%` } },
-            { sku: { [Op.like]: `%${query}%` } }
+          [Op.and]: [
+            {
+              [Op.or]: [
+                { name: { [Op.like]: `%${query}%` } },
+                { sku: { [Op.like]: `%${query}%` } }
+              ]
+            },
+            { shop_id: inventory.shopId }
           ]
-        },
+        } as any,
         include: [{
           model: Supplier,
           through: { attributes: [] } as any,

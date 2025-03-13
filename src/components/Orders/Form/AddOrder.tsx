@@ -278,13 +278,16 @@ export function AddOrder({ onBack }: AddOrderProps) {
       setIsLoading(true);
       const customer = customers.find(c => c.id === selectedCustomer);
 
+      // Format order items to match the order management service structure
+      const formattedOrderItems = orderItems.map(item => ({
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        sellingPrice: item.unitPrice
+      }));
+
       const orderData = {
-        orderItems: orderItems.map(item => ({
-          productId: item.productId,
-          productName: item.productName,
-          quantity: item.quantity,
-          sellingPrice: item.unitPrice
-        })),
+        orderItems: formattedOrderItems,
         customer: selectedCustomer === 'walk-in' ? null : customer,
         paymentMethod,
         paymentStatus,
@@ -297,7 +300,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
       };
 
       const response = await safeIpcInvoke<OrderResponse>(
-        paymentStatus === 'paid' ? 'pos:sale:create' : 'order-management:create-sale',
+        'order-management:create-sale',
         orderData
       );
 
@@ -307,7 +310,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
           title: "Success",
           description: `Order ${paymentStatus === 'paid' ? 'receipt' : 'invoice'} created successfully`,
         });
-        // Don't call onBack() here to keep the form open
+        onBack();
       } else {
         toast({
           title: "Error",

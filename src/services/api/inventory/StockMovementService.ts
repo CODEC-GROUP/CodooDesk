@@ -1,7 +1,7 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import StockMovement from '../../../models/StockMovement.js';
+import InventoryItem from '../../../models/InventoryItem.js';
 import Product from '../../../models/Product.js';
-import Inventory from '../../../models/Inventory.js';
 import User from '../../../models/User.js';
 import { sequelize } from '../../database/index.js';
 import { Op } from 'sequelize';
@@ -11,6 +11,7 @@ import { createErrorResponse } from '../../../utils/errorHandling.js';
 const IPC_CHANNELS = {
   CREATE_MOVEMENT: 'stock-movement:create',
   GET_MOVEMENTS: 'stock-movement:get-all',
+  GET_BY_INVENTORY: 'stock-movement:get-by-inventory',
   GET_MOVEMENT: 'stock-movement:get',
   GET_MOVEMENTS_BY_DATE: 'stock-movement:get-by-date',
   GET_MOVEMENTS_BY_PRODUCT: 'stock-movement:get-by-product',
@@ -18,37 +19,106 @@ const IPC_CHANNELS = {
 };
 
 export function registerStockMovementHandlers() {
+  // Get stock movements by inventory ID
+  ipcMain.handle(IPC_CHANNELS.GET_BY_INVENTORY, async (event, { 
+    inventoryId,
+    page = 1,
+    limit = 10,
+    movementType,
+    searchTerm
+  }) => {
+    try {
+      const whereClause: any = {
+        source_inventory_id: inventoryId
+      };
+      
+      if (movementType) {
+        whereClause.movementType = movementType;
+      }
+      
+      if (searchTerm) {
+        whereClause[Op.or] = [
+          { reason: { [Op.like]: `%${searchTerm}%` } },
+          { movementType: { [Op.like]: `%${searchTerm}%` } }
+        ];
+      }
+
+      const { count, rows } = await StockMovement.findAndCountAll({
+        where: whereClause,
+        include: [
+          {
+            model: InventoryItem,
+            as: 'inventoryItem',
+            include: [{
+              model: Product,
+              as: 'product',
+              attributes: ['name', 'sku']
+            }]
+          },
+          {
+            model: User,
+            as: 'performer',
+            attributes: ['username']
+          }
+        ],
+        order: [['createdAt', 'DESC']],
+        limit,
+        offset: (page - 1) * limit
+      });
+
+      return { 
+        success: true, 
+        movements: rows,
+        total: count,
+        pages: Math.ceil(count / limit)
+      };
+
+    } catch (error) {
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Failed to fetch stock movements' 
+      };
+    }
+  });
+
   // Create stock movement
-  ipcMain.handle(IPC_CHANNELS.CREATE_MOVEMENT, async (event, { data, businessId }) => {
-    // Should add validation and inventory updates
+  ipcMain.handle(IPC_CHANNELS.CREATE_MOVEMENT, async (event, { 
+    inventoryItemId,
+    movementType,
+    quantity,
+    direction,
+    reason,
+    cost_per_unit,
+    performedBy,
+    source_inventory_id,
+    destination_inventory_id
+  }) => {
     const transaction = await sequelize.transaction();
     try {
       // Validate current stock levels
-      const sourceInventory = await Inventory.findByPk(data.source_inventory_id);
-      if (!sourceInventory || sourceInventory.level < data.quantity) {
+      const inventoryItem = await InventoryItem.findByPk(inventoryItemId);
+      if (!inventoryItem) {
+        throw new Error('Inventory item not found');
+      }
+
+      if (direction === 'outbound' && inventoryItem.quantity < quantity) {
         throw new Error('Insufficient stock');
       }
 
       // Create movement record
       const movement = await StockMovement.create({
-        ...data,
-        performedBy: data.userId,
+        inventoryItem_id: inventoryItemId,
+        movementType,
+        quantity,
+        direction,
+        source_inventory_id,
+        destination_inventory_id,
+        reason,
+        cost_per_unit,
+        total_cost: quantity * cost_per_unit,
+        performedBy,
         status: 'completed'
       }, { transaction });
-
-      // Update inventory levels
-      await sourceInventory.decrement('level', {
-        by: data.quantity,
-        transaction
-      });
-
-      if (data.destination_inventory_id) {
-        await Inventory.increment('level', {
-          where: { id: data.destination_inventory_id },
-          by: data.quantity,
-          transaction
-        });
-      }
 
       await transaction.commit();
       return { success: true, movement };
@@ -125,49 +195,37 @@ export function registerStockMovementHandlers() {
   });
 
   // Create stock adjustment
-  ipcMain.handle(IPC_CHANNELS.CREATE_ADJUSTMENT, async (event: IpcMainInvokeEvent, { 
-    data,
-    businessId 
+  ipcMain.handle(IPC_CHANNELS.CREATE_ADJUSTMENT, async (event, { 
+    data: {
+      inventoryItemId,
+      physical_count,
+      reason,
+      performedBy
+    }
   }) => {
     const transaction = await sequelize.transaction();
     
     try {
-      const { 
-        productId,
-        inventory_id,
-        physical_count,
-        system_count,
-        reason,
-        performedBy_id
-      } = data;
+      const inventoryItem = await InventoryItem.findByPk(inventoryItemId);
+      if (!inventoryItem) {
+        throw new Error('Inventory item not found');
+      }
 
+      const system_count = inventoryItem.quantity;
       const discrepancy = physical_count - system_count;
 
       // Create adjustment movement
       const adjustment = await StockMovement.create({
-        productId,
+        inventoryItem_id: inventoryItemId,
         movementType: 'adjustment',
         quantity: Math.abs(discrepancy),
         direction: discrepancy > 0 ? 'inbound' : 'outbound',
-        source_inventory_id: inventory_id,
-        performedBy_id,
+        source_inventory_id: inventoryItem.inventory_id,
         reason,
-        physical_count,
-        system_count,
-        discrepancy,
-        adjustment_reason: reason,
-        cost_per_unit: 0,
-        total_cost: 0
-      }, { transaction });
-
-      // Update inventory quantity
-      const inventory = await Inventory.findByPk(inventory_id);
-      if (!inventory) {
-        throw new Error('Inventory not found');
-      }
-
-      await inventory.update({
-        level: physical_count
+        cost_per_unit: inventoryItem.unit_cost,
+        total_cost: Math.abs(discrepancy) * inventoryItem.unit_cost,
+        performedBy,
+        status: 'completed'
       }, { transaction });
 
       await transaction.commit();

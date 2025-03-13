@@ -219,17 +219,55 @@ const Income = () => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
+
+        // Add business check first
+        if (!business?.id) {
+          console.error('No business configured');
+          toast({
+            title: "Error",
+            description: "Business configuration not loaded",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Improved user check
+        if (!user?.id) {
+          console.error('No user found');
+          toast({
+            title: "Error",
+            description: "User not authenticated",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Determine shop IDs based on selection and role
+        let requestShopId = null;
+        let requestShopIds = null;
+
+        if (selectedShopId) {
+          // If specific shop is selected, use that
+          requestShopId = selectedShopId;
+        } else if (user.role === 'admin' || user.role === 'shop_owner') {
+          // For admin/owner without specific shop selected, use all available shop IDs
+          requestShopIds = business.shops?.map(shop => shop.id);
+        } else {
+          // For regular employees, use their assigned shop
+          requestShopId = availableShops?.[0]?.id;
+        }
+
+        // Validate shop ID requirement
+        if (!requestShopId && (!requestShopIds || requestShopIds.length === 0)) {
+          console.error('No shop IDs available');
+          toast({
+            title: "Error",
+            description: "No shops available - configure shops first",
+            variant: "destructive",
+          });
+          return;
+        }
         
-        // Replace user?.shopId with context values
-        const shopIdToUse = user?.role === 'admin' || user?.role === 'shop_owner' 
-          ? selectedShopId 
-          : availableShops?.[0]?.id;
-
-        // Update the shop filter
-        const shopFilter = (user?.role !== 'admin' && user?.role !== 'shop_owner') 
-          ? { shopId: shopIdToUse }
-          : {};
-
         // Fetch OHADA codes for income
         const codesResponse = await safeIpcInvoke<OhadaCodeResponse>(
           'finance:ohada-codes:get-by-type',
@@ -250,13 +288,19 @@ const Income = () => {
         // Fetch incomes with associated OHADA codes
         const incomesResponse = await safeIpcInvoke<IncomeResponse>(
           'finance:income:get-all',
-          shopFilter,
+          {
+            userId: user.id,
+            userRole: user.role,
+            shopId: requestShopId,
+            shopIds: requestShopIds
+          },
           { success: false }
         );
 
         if (incomesResponse?.success && incomesResponse.incomes) {
           setIncomes(incomesResponse.incomes);
         } else {
+          setIncomes([]);
           toast({
             title: "Error",
             description: incomesResponse?.message || 'Failed to load incomes',
@@ -265,6 +309,7 @@ const Income = () => {
         }
       } catch (error) {
         console.error('Error fetching data:', error);
+        setIncomes([]);
         toast({
           title: "Error",
           description: 'Failed to load data',
@@ -276,7 +321,7 @@ const Income = () => {
     };
 
     fetchData();
-  }, []);
+  }, [user, business, selectedShopId, availableShops]);
 
   const handleAddItem = async () => {
     try {

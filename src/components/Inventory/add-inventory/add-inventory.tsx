@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useReducer } from "react"
+import { useState, useEffect, useReducer, useMemo } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import { Label } from "@/components/Shared/ui/label"
@@ -11,7 +11,7 @@ import { Calendar } from "@/components/Shared/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/Shared/ui/popover"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
-import { Calendar as CalendarIcon, Search, Upload, ArrowLeft, ChevronDown, Tag, Package, DollarSign } from "lucide-react"
+import { Calendar as CalendarIcon, Search, Upload, ArrowLeft, ChevronDown, Tag, Package } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { safeIpcInvoke } from "@/lib/ipc"
 import { toast } from "@/hooks/use-toast"
@@ -62,7 +62,7 @@ interface AddInventoryProps {
 }
 
 const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSuccess, parentView = 'inventory' }) => {
-  const { user } = useAuthLayout();
+  const { user, business, availableShops } = useAuthLayout();
   const router = useRouter()
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
@@ -81,6 +81,13 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
   const [isProductSearchFocused, setIsProductSearchFocused] = useState(false)
   const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1)
 
+  // Add shop IDs handling
+  const shopIds = useMemo(() => {
+    return (user?.role === 'admin' || user?.role === 'shop_owner')
+      ? business?.shops?.map(shop => shop.id) || []
+      : [availableShops?.[0]?.id].filter(Boolean) as string[];
+  }, [user, business, availableShops]);
+
   const filteredSuppliers = selectedProduct?.suppliers?.filter(supplier =>
     supplier.name.toLowerCase().includes(supplierSearchTerm.toLowerCase())
   ) || [];
@@ -91,7 +98,10 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
         try {
           const result = await safeIpcInvoke(
             'inventory:product:search',
-            { query: searchTerm },
+            { 
+              query: searchTerm,
+              warehouseId // Pass the warehouse ID
+            },
             { products: [] }
           );
           
@@ -105,7 +115,7 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
       }
     };
     searchProducts();
-  }, [searchTerm]);
+  }, [searchTerm, warehouseId]); // Add warehouseId to dependencies
 
   useEffect(() => {
     const fetchOhadaCodes = async () => {
@@ -207,8 +217,8 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
     // Convert numeric price to string without formatting
     setSellingPrice(product.sellingPrice?.toString() || '');
     
-    // Convert quantity to string explicitly
-    const qty = product.quantity?.toString() || '';
+    // PROPERLY SET QUANTITY FROM PRODUCT
+    const qty = product.quantity?.toString() || '1'; // Default to 1 if no quantity
     setQuantity(qty);
     
     // Clear supplier if none available
@@ -298,6 +308,16 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
     }
   };
 
+  // Add a function to format price in FCFA
+  const formatPrice = (price: number): string => {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'XAF',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(price);
+  };
+
   return (
     <div className="container mx-auto py-10">
       <div className="flex items-center mb-6">
@@ -362,8 +382,7 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
                                 </div>
                               )}
                               <div className="flex items-center text-green-600">
-                                <DollarSign className="h-3 w-3 mr-1" />
-                                <span className="text-xs font-medium">{product.sellingPrice}</span>
+                                <span className="text-xs font-medium">{formatPrice(product.sellingPrice)}</span>
                               </div>
                             </div>
                           </div>

@@ -202,16 +202,17 @@ export function registerInventoryHandlers() {
 
       // Create transfer movement
       await StockMovement.create({
-        productId,
+        inventoryItem_id: sourceInventoryItem.id,
         movementType: 'transfer',
         quantity,
-        direction: 'transfer',
+        direction: 'outbound',
         source_inventory_id: sourceInventoryId,
         destination_inventory_id: destinationInventoryId,
-        performedBy_id,
+        performedBy: performedBy_id,
         reason: 'Inter-shop transfer',
         cost_per_unit: sourceInventoryItem.unit_cost,
-        total_cost: sourceInventoryItem.unit_cost * quantity
+        total_cost: sourceInventoryItem.unit_cost * quantity,
+        status: 'completed'
       }, { transaction });
 
       // Update quantities
