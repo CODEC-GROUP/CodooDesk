@@ -66,6 +66,7 @@ interface ReturnActionResponse {
   success: boolean;
   return?: Return;
   message?: string;
+  details?: string;
 }
 
 interface Customer {
@@ -283,74 +284,10 @@ const Returns = () => {
     }
   };
 
-  const handleApproveReturn = async (returnId: string) => {
-    try {
-      setIsProcessing(true);
-      const response = await safeIpcInvoke<ReturnActionResponse>('returns:approve', {
-        returnId
-      }, { success: false });
-
-      if (response?.success) {
-        toast({
-          title: "Success",
-          description: "Return approved successfully",
-        });
-        await fetchReturns();
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to approve return",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Error approving return:', error);
-      toast({
-        title: "Error",
-        description: "Failed to approve return",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleRejectReturn = async (returnId: string) => {
-    try {
-      setIsProcessing(true);
-      const response = await safeIpcInvoke<ReturnActionResponse>('returns:reject', {
-        returnId
-      }, { success: false });
-
-      if (response?.success) {
-        toast({
-          title: "Success",
-          description: "Return rejected successfully",
-        });
-        await fetchReturns();
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to reject return",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Error rejecting return:', error);
-      toast({
-        title: "Error",
-        description: "Failed to reject return",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   const handleDeleteReturn = async (returnId: string) => {
     try {
       setIsProcessing(true);
-      const response = await safeIpcInvoke<ReturnActionResponse>('returns:delete', {
+      const response = await safeIpcInvoke<ReturnActionResponse>('entities:return:delete', {
         returnId
       }, { success: false });
 
@@ -363,7 +300,7 @@ const Returns = () => {
       } else {
         toast({
           title: "Error",
-          description: "Failed to delete return",
+          description: response?.message || "Failed to delete return",
           variant: "destructive",
         });
       }
@@ -442,15 +379,25 @@ const Returns = () => {
           title: "Success",
           description: "Return created successfully",
         });
-        setReturns(prev => [...prev, response.return as Return]);
-        // Reset form
+        
+        // Reset form state
         setSale(null);
         setSelectedProduct(null);
         setReturnQuantity(0);
         setReturnAmount(0);
-        setIsAddReturnOpen(false);
+        setSearchTerm('');
+        setSuggestions([]);
+        setShowSuggestions(false);
+        setSelectedOrder(null);
+        
+        // Switch back to list tab
         setActiveTab("list");
-        await fetchReturns(); // Refresh the returns list
+        
+        // Refresh the returns list
+        await fetchReturns();
+        
+        // Reset pagination to first page
+        setCurrentPage(1);
       } else {
         toast({
           title: "Error",
@@ -496,40 +443,93 @@ const Returns = () => {
     setIsDetailOpen(true)
   }
 
-  const handleEditClick = () => {
-    if (selectedReturns.length === 1) {
-      const returnToEdit = returns.find(returnItem => returnItem.id === selectedReturns[0])
-      if (returnToEdit) {
-        setEditingReturn(returnToEdit)
-        setIsEditModalOpen(true)
+  const handleEditClick = (returnItem: Return) => {
+    setEditingReturn(returnItem);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSave = async (updatedReturn: Return) => {
+    try {
+      setIsProcessing(true);
+      const response = await safeIpcInvoke<ReturnActionResponse>('entities:return:update', {
+        returnId: updatedReturn.id,
+        returnData: updatedReturn
+      }, { success: false });
+
+      if (response?.success) {
+        toast({
+          title: "Success",
+          description: "Return updated successfully",
+        });
+        await fetchReturns();
+      } else {
+        toast({
+          title: "Error",
+          description: response?.message || "Failed to update return",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error updating return:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update return",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+      setEditingReturn(null);
+      setIsEditModalOpen(false);
+    }
+  };
+
+  const handleDeleteClick = (returnId: string) => {
+    setReturnToDelete(returnId);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (returnToDelete) {
+      try {
+        setIsProcessing(true);
+        console.log('Attempting to delete return:', returnToDelete);
+        
+        const response = await safeIpcInvoke<ReturnActionResponse>('entities:return:delete', {
+          returnId: returnToDelete
+        }, { success: false });
+
+        console.log('Delete response:', response);
+
+        if (response?.success) {
+          toast({
+            title: "Success",
+            description: response.message || "Return deleted successfully",
+          });
+          await fetchReturns();
+        } else {
+          toast({
+            title: "Error",
+            description: response?.message || "Failed to delete return",
+            variant: "destructive",
+          });
+          if (response?.details) {
+            console.error('Delete error details:', response.details);
+          }
+        }
+      } catch (error) {
+        console.error('Error deleting return:', error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to delete return",
+          variant: "destructive",
+        });
+      } finally {
+        setIsProcessing(false);
+        setReturnToDelete(null);
+        setIsDeleteModalOpen(false);
       }
     }
-  }
-
-  const handleEditSave = (updatedReturn: Return) => {
-    setReturns(returns.map(returnItem =>
-      returnItem.id === updatedReturn.id ? updatedReturn : returnItem
-    ))
-    setEditingReturn(null)
-    setIsEditModalOpen(false)
-    setSelectedReturns([])
-  }
-
-  const handleDeleteClick = () => {
-    if (selectedReturns.length > 0) {
-      setReturnToDelete(selectedReturns[0])
-      setIsDeleteModalOpen(true)
-    }
-  }
-
-  const handleDeleteConfirm = () => {
-    if (returnToDelete) {
-      setReturns(returns.filter(returnItem => returnItem.id !== returnToDelete))
-      setSelectedReturns(selectedReturns.filter(id => id !== returnToDelete))
-      setReturnToDelete(null)
-      setIsDeleteModalOpen(false)
-    }
-  }
+  };
 
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
@@ -659,7 +659,7 @@ const Returns = () => {
           ) : (
             <div className="space-y-6">
               {/* Search and Filter Section */}
-              <div className="flex items-center py-4">
+              <div className="flex items-center gap-4 py-4">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="Filter by status" />
@@ -671,7 +671,27 @@ const Returns = () => {
                     <SelectItem value="rejected">Rejected</SelectItem>
                   </SelectContent>
                 </Select>
-                <div className="relative ml-2" ref={searchRef}>
+
+                {(user?.role === 'admin' || user?.role === 'shop_owner') && (
+                  <Select
+                    value={selectedShopId}
+                    onValueChange={setSelectedShopId}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Filter by Shop" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Shops</SelectItem>
+                      {business?.shops?.map((shop: any) => (
+                        <SelectItem key={shop.id} value={shop.id}>
+                          {shop.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                <div className="relative flex-1" ref={searchRef}>
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
                   <Input
                     placeholder="Search returns..."
@@ -699,26 +719,6 @@ const Returns = () => {
                   )}
                 </div>
               </div>
-
-              {/* Add shop filter UI */}
-              {(user?.role === 'admin' || user?.role === 'shop_owner') && (
-                <Select
-                  value={selectedShopId}
-                  onValueChange={setSelectedShopId}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Filter by Shop" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Shops</SelectItem>
-                    {business?.shops?.map((shop: any) => (
-                      <SelectItem key={shop.id} value={shop.id}>
-                        {shop.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
 
               {/* Returns Table */}
               <div className="rounded-md border">
@@ -774,22 +774,12 @@ const Returns = () => {
                             <Button variant="ghost" size="icon" onClick={() => openDetailModal(returnItem)}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleEditClick()}>
+                            <Button variant="ghost" size="icon" onClick={() => handleEditClick(returnItem)}>
                               <PenIcon className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick()}>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(returnItem.id)}>
                               <TrashIcon className="h-4 w-4" />
                             </Button>
-                            {returnItem.status === 'pending' && (
-                              <Button variant="ghost" size="icon" onClick={() => handleApproveReturn(returnItem.id)}>
-                                <ArrowRight className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {returnItem.status === 'pending' && (
-                              <Button variant="ghost" size="icon" onClick={() => handleRejectReturn(returnItem.id)}>
-                                <ArrowLeft className="h-4 w-4" />
-                              </Button>
-                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -948,6 +938,105 @@ const Returns = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setReturnToDelete(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+      />
+
+      {/* Edit Return Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Return</DialogTitle>
+          </DialogHeader>
+          {editingReturn && (
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleEditSave(editingReturn);
+            }} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="reason">Reason</Label>
+                <Select
+                  value={editingReturn.items[0].reason}
+                  onValueChange={(value) => {
+                    setEditingReturn({
+                      ...editingReturn,
+                      items: [{
+                        ...editingReturn.items[0],
+                        reason: value
+                      }]
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select reason" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DEFECTIVE">Defective Product</SelectItem>
+                    <SelectItem value="WRONG_ITEM">Wrong Item</SelectItem>
+                    <SelectItem value="NOT_AS_DESCRIBED">Not as Described</SelectItem>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  value={editingReturn.items[0].description}
+                  onChange={(e) => {
+                    setEditingReturn({
+                      ...editingReturn,
+                      items: [{
+                        ...editingReturn.items[0],
+                        description: e.target.value
+                      }]
+                    });
+                  }}
+                  placeholder="Additional details about the return..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="paymentMethod">Refund Method</Label>
+                <Select
+                  value={editingReturn.paymentMethod}
+                  onValueChange={(value) => {
+                    setEditingReturn({
+                      ...editingReturn,
+                      paymentMethod: value
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select refund method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CASH">Cash</SelectItem>
+                    <SelectItem value="MOBILE_MONEY">Mobile Money</SelectItem>
+                    <SelectItem value="BANK">Bank Transfer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isProcessing}>
+                  {isProcessing ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

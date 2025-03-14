@@ -323,19 +323,70 @@ export function registerReturnHandlers() {
 
   // Delete return handler
   ipcMain.handle(IPC_CHANNELS.DELETE_RETURN, async (event, { id }) => {
+    const t = await sequelize.transaction();
+    
     try {
-      const returnInstance = await Return.findByPk(id);
+      // First find the return with all necessary relations
+      const returnInstance = await Return.findByPk(id, { 
+        transaction: t,
+        include: [{
+          model: Order,
+          as: 'order',
+          required: false
+        }]
+      });
+
       if (!returnInstance) {
-        return { success: false, message: 'Return not found' };
+        await t.rollback();
+        return { 
+          success: false, 
+          message: 'Return not found',
+          details: 'The specified return ID does not exist in the database'
+        };
       }
-      await returnInstance.destroy();
-      return { success: true, message: 'Return deleted successfully' };
-    } catch (error: Error | unknown) {
-      if (error instanceof Error) {
-        return { success: false, message: error.message };
-      } else {
-        return { success: false, message: 'Error deleting return' };
+
+      // Get the associated order
+      const order = await Order.findByPk(returnInstance.orderId, { transaction: t });
+      
+      if (order) {
+        // Restore the order quantity
+        await order.update({
+          quantity: order.quantity + returnInstance.quantity,
+          paymentStatus: 'paid' // Reset payment status since we're restoring the order
+        }, { transaction: t });
+
+        // Update the sale's net amount
+        const sale = await Sales.findByPk(order.saleId, { transaction: t });
+        if (sale) {
+          const newNetAmount = sale.netAmount + (returnInstance.quantity * returnInstance.amount / returnInstance.quantity);
+          await sale.update({
+            netAmount: newNetAmount,
+            status: newNetAmount > 0 ? 'completed' : 'cancelled'
+          }, { transaction: t });
+        }
       }
+
+      // Delete the return
+      await returnInstance.destroy({ transaction: t });
+      
+      // Commit the transaction
+      await t.commit();
+      
+      return { 
+        success: true, 
+        message: 'Return deleted successfully',
+        deletedReturnId: id
+      };
+    } catch (error) {
+      // Rollback the transaction on error
+      await t.rollback();
+      console.error('Error deleting return:', error);
+      
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Error deleting return',
+        details: error instanceof Error ? error.stack : 'Unknown error occurred'
+      };
     }
   });
 

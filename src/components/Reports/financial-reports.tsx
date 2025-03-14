@@ -68,6 +68,10 @@ interface FinanceData {
     total_expenses: number;
     revenue_growth: number;
     expense_growth: number;
+    profit_margin: number;
+    income_coverage: number;
+    operating_cash_flow: number;
+    debt_to_income: number;
   };
   monthlyData: Array<{
     name: string;
@@ -100,10 +104,84 @@ interface FinanceDashboardResponse {
 // Add near the top with other constants
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
+// Add CircularProgressBar component
+const CircularProgressBar = ({ percentage, color }: { percentage: number, color: string }) => (
+  <div className="relative w-32 h-32">
+    <svg className="w-full h-full" viewBox="0 0 100 100">
+      <circle
+        className="text-gray-200 stroke-current"
+        strokeWidth="10"
+        cx="50"
+        cy="50"
+        r="40"
+        fill="transparent"
+      ></circle>
+      <circle
+        className={`${color} stroke-current`}
+        strokeWidth="10"
+        strokeLinecap="round"
+        cx="50"
+        cy="50"
+        r="40"
+        fill="transparent"
+        strokeDasharray={`${percentage * 2.51327} 251.327`}
+        transform="rotate(-90 50 50)"
+      ></circle>
+    </svg>
+    <span className="absolute inset-0 flex items-center justify-center text-2xl font-bold">
+      {percentage}%
+    </span>
+  </div>
+);
+
 interface ShopResponse {
   success: boolean;
   shops: Shop[];
 }
+
+// Update the FinancialHealthMetric component
+const FinancialHealthMetric = ({ 
+  title, 
+  value, 
+  unit = '%', 
+  trend, 
+  description,
+  threshold,
+  isPositiveUp = true
+}: { 
+  title: string; 
+  value: number; 
+  unit?: string; 
+  trend?: 'up' | 'down'; 
+  description: string;
+  threshold: number;
+  isPositiveUp?: boolean;
+}) => {
+  const isPositive = isPositiveUp ? value >= threshold : value <= threshold;
+  const trendColor = isPositive ? 'text-green-500' : 'text-red-500';
+  const trendIcon = isPositive ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />;
+  const trendText = isPositive ? '↑' : '↓';
+  const percentageChange = Math.abs(value).toFixed(1);
+
+  return (
+    <div className="p-4 rounded-lg bg-card border">
+      <h4 className="text-sm font-medium text-muted-foreground">{title}</h4>
+      <div className="mt-2 flex items-baseline">
+        <p className="text-2xl font-semibold">
+          {value.toFixed(1)}{unit}
+        </p>
+        <span className={`ml-2 ${trendColor} flex items-center gap-1`}>
+          {trendIcon}
+          <span className="text-sm">{percentageChange}{unit}</span>
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <div className="mt-2 text-xs text-muted-foreground">
+        {isPositive ? 'Above' : 'Below'} target threshold of {threshold}{unit}
+      </div>
+    </div>
+  );
+};
 
 export function FinancialReports() {
   const { business, user, availableShops } = useAuthLayout()
@@ -370,29 +448,67 @@ export function FinancialReports() {
       <div className="grid gap-6 mb-8 md:grid-cols-2">
         <Card>
           <CardContent className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Financial Health</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  +{(financeData.overview.revenue_growth || 0).toFixed(1)}%
-                </div>
-                <div className="text-sm">Revenue Growth</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-red-600">
-                  +{(financeData.overview.expense_growth || 0).toFixed(1)}%
-                </div>
-                <div className="text-sm">Expense Growth</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">
-                  {(
-                    (financeData.overview.total_income / 
-                    (financeData.overview.total_expenses || 1)) 
-                  ).toFixed(1)}x
-                </div>
-                <div className="text-sm">Income Coverage</div>
-              </div>
+            <h3 className="text-lg font-semibold mb-4">Financial Health Overview</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FinancialHealthMetric
+                title="Revenue Growth"
+                value={financeData.overview.revenue_growth}
+                threshold={0}
+                isPositiveUp={true}
+                description="Percentage increase in revenue compared to previous period"
+              />
+              <FinancialHealthMetric
+                title="Expense Growth"
+                value={financeData.overview.expense_growth}
+                threshold={0}
+                isPositiveUp={false}
+                description="Percentage increase in expenses compared to previous period"
+              />
+              <FinancialHealthMetric
+                title="Profit Margin"
+                value={financeData.overview.profit_margin}
+                threshold={20}
+                isPositiveUp={true}
+                description="Percentage of revenue that is profit"
+              />
+              <FinancialHealthMetric
+                title="Income Coverage"
+                value={financeData.overview.income_coverage}
+                unit="x"
+                threshold={1.5}
+                isPositiveUp={true}
+                description="Ratio of income to expenses"
+              />
+              <FinancialHealthMetric
+                title="Operating Cash Flow"
+                value={financeData.overview.operating_cash_flow}
+                unit="x"
+                threshold={1.2}
+                isPositiveUp={true}
+                description="Ability to cover expenses with operating income"
+              />
+              <FinancialHealthMetric
+                title="Debt-to-Income"
+                value={financeData.overview.debt_to_income}
+                unit="x"
+                threshold={0.4}
+                isPositiveUp={false}
+                description="Ratio of expenses to income"
+              />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="text-lg font-semibold mb-4">Financial Health Score</h3>
+            <div className="flex flex-col items-center justify-center h-full">
+              <CircularProgressBar 
+                percentage={calculateHealthScore(financeData.overview)} 
+                color="text-blue-600" 
+              />
+              <p className="mt-4 text-sm text-muted-foreground text-center">
+                Overall financial health score based on multiple metrics
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -400,3 +516,36 @@ export function FinancialReports() {
     </div>
   )
 }
+
+// Add this helper function at the top of the file
+const calculateHealthScore = (overview: FinanceData['overview']) => {
+  let score = 0;
+  const weights = {
+    revenueGrowth: 0.2,
+    expenseGrowth: 0.2,
+    profitMargin: 0.2,
+    incomeCoverage: 0.2,
+    operatingCashFlow: 0.1,
+    debtToIncome: 0.1
+  };
+
+  // Revenue Growth (0-100)
+  score += Math.min(Math.max(overview.revenue_growth + 50, 0), 100) * weights.revenueGrowth;
+
+  // Expense Growth (0-100)
+  score += Math.min(Math.max(50 - overview.expense_growth, 0), 100) * weights.expenseGrowth;
+
+  // Profit Margin (0-100)
+  score += Math.min(Math.max(overview.profit_margin * 5, 0), 100) * weights.profitMargin;
+
+  // Income Coverage (0-100)
+  score += Math.min(Math.max((overview.income_coverage - 1) * 50, 0), 100) * weights.incomeCoverage;
+
+  // Operating Cash Flow (0-100)
+  score += Math.min(Math.max((overview.operating_cash_flow - 1) * 50, 0), 100) * weights.operatingCashFlow;
+
+  // Debt-to-Income (0-100)
+  score += Math.min(Math.max((1 - overview.debt_to_income) * 100, 0), 100) * weights.debtToIncome;
+
+  return Math.round(score);
+};

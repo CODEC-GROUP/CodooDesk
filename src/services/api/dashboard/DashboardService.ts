@@ -11,6 +11,8 @@ import { Op, fn, col, literal } from 'sequelize';
 import Category from '../../../models/Category.js';
 import Order from '../../../models/Order.js';
 import { createErrorResponse, createSuccessResponse } from '../../../utils/errorHandling.js';
+import Income from '../../../models/Income.js';
+import Expense from '../../../models/Expense.js';
 
 const IPC_CHANNELS = {
   // Inventory Dashboard
@@ -24,7 +26,13 @@ const IPC_CHANNELS = {
   GET_SALES_TRENDS: 'dashboard:sales:trends',
   
   // Categories
-  GET_CATEGORY_BREAKDOWN: 'dashboard:categories:breakdown'
+  GET_CATEGORY_BREAKDOWN: 'dashboard:categories:breakdown',
+
+  // Customers
+  GET_TOP_CUSTOMERS: 'dashboard:customers:top',
+
+  // Finance Time Series
+  GET_FINANCE_TIME_SERIES: 'dashboard:finance:timeSeries'
 };
 
 interface WhereClause {
@@ -39,6 +47,8 @@ interface InventoryStatsResult {
 interface SalesStatsResult {
   total_orders: number;
   total_sales: number;
+  total_revenue: number;
+  total_expenses: number;
 }
 
 interface CategoryResult {
@@ -47,6 +57,22 @@ interface CategoryResult {
   product_count: number;
   total_items: number;
   total_value: number;
+}
+
+interface TrendResult {
+  date: string;
+  total_sales: number;
+  transaction_count: number;
+}
+
+interface IncomeTimeSeriesResult {
+  date: string;
+  income: number;
+}
+
+interface ExpenseTimeSeriesResult {
+  date: string;
+  expenses: number;
 }
 
 async function getInventoryStats(whereClause: WhereClause): Promise<InventoryStatsResult> {
@@ -68,12 +94,15 @@ async function getInventoryStats(whereClause: WhereClause): Promise<InventorySta
       [sequelize.fn('COUNT', sequelize.col('orders.id')), 'total_products_sold'],
       [sequelize.fn('SUM', sequelize.col('orders.quantity')), 'total_quantity_sold']
     ],
+    group: ['Product.id'],
     raw: true
-  }) as unknown as Array<{ total_products_sold: number; total_quantity_sold: number }>;
+  });
+
+  const totalOrders = inventoryStats.length;
 
   return {
-    total_products_sold: Number(inventoryStats[0]?.total_products_sold || 0),
-    total_value: Number(inventoryStats[0]?.total_quantity_sold || 0)
+    total_products_sold: totalOrders,
+    total_value: inventoryStats.reduce((sum, stat: any) => sum + Number(stat.total_quantity_sold || 0), 0)
   };
 }
 
@@ -158,9 +187,10 @@ async function getSalesStats(whereClause: WhereClause, dateRange?: { start: stri
     }
   } : {};
 
-  const results = await Sales.findAll({
+  // Get revenue from Income
+  const revenueResult = await Income.findOne({
     where: {
-      ...dateWhereClause
+      ...dateWhereClause,
     },
     include: [{
       model: Shop,
@@ -169,28 +199,81 @@ async function getSalesStats(whereClause: WhereClause, dateRange?: { start: stri
       required: true
     }],
     attributes: [
+      [sequelize.fn('SUM', sequelize.col('amount')), 'total_revenue']
+    ],
+    raw: true
+  }) as unknown as { total_revenue: number } | null;
+
+  // Get expenses
+  const expenseResult = await Expense.findOne({
+    where: {
+      ...dateWhereClause,
+    },
+    include: [{
+      model: Shop,
+      as: 'shop',
+      where: whereClause,
+      required: true
+    }],
+    attributes: [
+      [sequelize.fn('SUM', sequelize.col('amount')), 'total_expenses']
+    ],
+    raw: true
+  }) as unknown as { total_expenses: number } | null;
+
+  // Get sales data
+  const results = await Sales.findAll({
+    where: {
+      ...dateWhereClause,
+      status: 'completed'
+    },
+    include: [{
+      model: Shop,
+      as: 'shop',
+      where: whereClause,
+      required: true
+    }, {
+      model: Order,
+      as: 'orders',
+      required: false,
+      attributes: []
+    }],
+    attributes: [
       [sequelize.fn('SUM', sequelize.col('netAmount')), 'total_sales'],
-      [sequelize.fn('COUNT', sequelize.literal('DISTINCT Sales.id')), 'total_orders']
+      [sequelize.fn('COUNT', sequelize.literal('DISTINCT orders.product_id')), 'total_orders']
     ],
     raw: true
   }) as unknown as Array<{ total_sales: number; total_orders: number }>;
 
   return results.map(result => ({
+    total_revenue: Number(revenueResult?.total_revenue || 0),
+    total_expenses: Number(expenseResult?.total_expenses || 0),
     total_sales: Number(result.total_sales || 0),
     total_orders: Number(result.total_orders || 0)
   }));
 }
 
-async function getDailyTrends() {
-  return await Sales.findAll({
+async function getTrends() {
+  const results = await Sales.findAll({
+    where: {
+      status: 'completed'
+    },
     attributes: [
       [fn('strftime', '%Y-%m-%d', col('createdAt')), 'date'],
       [fn('sum', col('netAmount')), 'total_sales'],
       [fn('count', col('id')), 'transaction_count']
     ],
     group: ['date'],
-    order: [['date', 'ASC']]
-  });
+    order: [['date', 'ASC']],
+    raw: true
+  }) as unknown as TrendResult[];
+
+  // Map the results to plain objects with the correct structure
+  return results.map(result => ({
+    date: result.date,
+    total_sales: Number(result.total_sales || 0),
+    transaction_count: Number(result.transaction_count || 0)
+  }));
 }
 
 async function getCategoryBreakdown(whereClause: WhereClause): Promise<CategoryResult[]> {
@@ -229,6 +312,147 @@ async function getCategoryBreakdown(whereClause: WhereClause): Promise<CategoryR
     percentage: totalValue ? (Number(category.total_value) / totalValue) * 100 : 0,
     color: `hsl(${(index * 360) / results.length}, 70%, 50%)`
   }));
+}
+
+async function getTopCustomers(whereClause: WhereClause) {
+  return await Sales.findAll({
+    include: [{
+      model: Shop,
+      as: 'shop',
+      where: whereClause,
+      required: true
+    }],
+    attributes: [
+      'customerName',
+      [sequelize.fn('COUNT', sequelize.col('id')), 'orders'],
+      [sequelize.fn('SUM', sequelize.col('netAmount')), 'spent']
+    ],
+    group: ['customerName'],
+    order: [[sequelize.literal('spent'), 'DESC']],
+    limit: 10,
+    raw: true
+  });
+}
+
+async function getFinanceTimeSeries(whereClause: WhereClause, dateRange?: { start: string; end: string }) {
+  const dateWhereClause = dateRange ? {
+    '$Income.createdAt$': {
+      [Op.between]: [dateRange.start, dateRange.end]
+    }
+  } : {};
+
+  console.log('=== Finance Time Series Debug ===');
+  console.log('Input Parameters:', {
+    whereClause,
+    dateRange,
+    dateWhereClause
+  });
+
+  try {
+    // Get income time series
+    const incomeSeries = await Income.findAll({
+      where: {
+        ...dateWhereClause,
+      },
+      include: [{
+        model: Shop,
+        as: 'shop',
+        where: whereClause,
+        required: true
+      }],
+      attributes: [
+        [fn('strftime', '%Y-%m-%d', col('Income.createdAt')), 'date'],
+        [fn('SUM', col('Income.amount')), 'income']
+      ],
+      group: [fn('strftime', '%Y-%m-%d', col('Income.createdAt'))],
+      order: [[fn('strftime', '%Y-%m-%d', col('Income.createdAt')), 'ASC']],
+      raw: true
+    }) as unknown as IncomeTimeSeriesResult[];
+
+    console.log('Income Query Result:', {
+      count: incomeSeries.length,
+      data: incomeSeries,
+      sql: Income.findAll.toString()
+    });
+
+    // Get expense time series with different dateWhereClause
+    const expenseDateWhereClause = dateRange ? {
+      '$Expense.createdAt$': {
+        [Op.between]: [dateRange.start, dateRange.end]
+      }
+    } : {};
+
+    const expenseSeries = await Expense.findAll({
+      where: {
+        ...expenseDateWhereClause,
+      },
+      include: [{
+        model: Shop,
+        as: 'shop',
+        where: whereClause,
+        required: true
+      }],
+      attributes: [
+        [fn('strftime', '%Y-%m-%d', col('Expense.createdAt')), 'date'],
+        [fn('SUM', col('Expense.amount')), 'expenses']
+      ],
+      group: [fn('strftime', '%Y-%m-%d', col('Expense.createdAt'))],
+      order: [[fn('strftime', '%Y-%m-%d', col('Expense.createdAt')), 'ASC']],
+      raw: true
+    }) as unknown as ExpenseTimeSeriesResult[];
+
+    console.log('Expense Query Result:', {
+      count: expenseSeries.length,
+      data: expenseSeries,
+      sql: Expense.findAll.toString()
+    });
+
+    // Merge the series by date
+    const dateMap = new Map();
+    
+    // Add income data
+    incomeSeries.forEach(item => {
+      const date = item.date;
+      const income = Number(item.income) || 0;
+      console.log('Processing income:', { date, income });
+      dateMap.set(date, {
+        date,
+        income,
+        expenses: 0
+      });
+    });
+
+    // Add expense data
+    expenseSeries.forEach(item => {
+      const date = item.date;
+      const expenses = Number(item.expenses) || 0;
+      console.log('Processing expense:', { date, expenses });
+      if (dateMap.has(date)) {
+        dateMap.get(date).expenses = expenses;
+      } else {
+        dateMap.set(date, {
+          date,
+          income: 0,
+          expenses
+        });
+      }
+    });
+
+    // Convert map to array and sort by date
+    const result = Array.from(dateMap.values()).sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    console.log('Final Result:', {
+      count: result.length,
+      data: result
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error in getFinanceTimeSeries:', error);
+    throw error;
+  }
 }
 
 function getWhereClause(params: { businessId: string; shopId?: string; shopIds?: string[] }): WhereClause {
@@ -295,7 +519,8 @@ export function registerDashboardHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.GET_SALES_TRENDS, async (event) => {
     try {
-      const trends = await getDailyTrends();
+      const trends = await getTrends();
+      console.log(trends);
       return createSuccessResponse(trends);
     } catch (error) {
       return createErrorResponse(error);
@@ -308,6 +533,29 @@ export function registerDashboardHandlers() {
       const whereClause = getWhereClause(params);
       const breakdown = await getCategoryBreakdown(whereClause);
       return createSuccessResponse(breakdown);
+    } catch (error) {
+      return createErrorResponse(error);
+    }
+  });
+
+  // Customers Dashboard Handler
+  ipcMain.handle(IPC_CHANNELS.GET_TOP_CUSTOMERS, async (event, params) => {
+    try {
+      const whereClause = getWhereClause(params);
+      const customers = await getTopCustomers(whereClause);
+      return createSuccessResponse(customers);
+    } catch (error) {
+      return createErrorResponse(error);
+    }
+  });
+
+  // Finance Time Series Handler
+  ipcMain.handle(IPC_CHANNELS.GET_FINANCE_TIME_SERIES, async (event, params) => {
+    try {
+      const { dateRange, ...restParams } = params;
+      const whereClause = getWhereClause(restParams);
+      const timeSeries = await getFinanceTimeSeries(whereClause, dateRange);
+      return createSuccessResponse(timeSeries);
     } catch (error) {
       return createErrorResponse(error);
     }

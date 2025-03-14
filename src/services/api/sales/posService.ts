@@ -90,10 +90,11 @@ export function registerPOSHandlers() {
 
       // Create orders and update product quantities
       for (const item of request.cartItems) {
-        // Create order
+        // Create order with product name
         await Order.create({
           saleId: sale.id,
           product_id: item.id,
+          productName: item.name,  // Add product name
           quantity: item.quantity,
           sellingPrice: item.actualPrice,
           paymentStatus: 'paid',

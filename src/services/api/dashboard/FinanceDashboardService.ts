@@ -313,6 +313,29 @@ export function registerFinanceDashboardHandlers() {
       const prevIncomeTotal = prevIncomeStats?.total_income || 0;
       const prevExpenseTotal = prevExpenseStats?.total_expenses || 0;
 
+      // Calculate financial health metrics
+      const revenueGrowth = prevIncomeTotal > 0 
+        ? ((incomeStats.total_income - prevIncomeTotal) / prevIncomeTotal) * 100
+        : 0;
+
+      const expenseGrowth = prevExpenseTotal > 0 
+        ? ((expenseStats.total_expenses - prevExpenseTotal) / prevExpenseTotal) * 100
+        : 0;
+
+      const profitMargin = prevIncomeTotal > 0 
+        ? (profit / incomeStats.total_income) * 100
+        : 0;
+
+      const incomeCoverage = (incomeStats.total_income || 0) / 
+        (expenseStats.total_expenses || 1);
+
+      const operatingCashFlow = (incomeStats.total_income || 0) / 
+        (expenseStats.total_expenses || 1);
+
+      // Calculate debt-to-income ratio (assuming we have debt data)
+      const debtToIncome = (expenseStats.total_expenses || 0) / 
+        (incomeStats.total_income || 1);
+
       return {
         success: true,
         data: {
@@ -320,19 +343,13 @@ export function registerFinanceDashboardHandlers() {
             total_income: incomeStats.total_income,
             total_expenses: expenseStats.total_expenses,
             total_profit: profit,
-            revenue_growth: prevIncomeTotal > 0 
-              ? ((incomeStats.total_income - prevIncomeTotal) / prevIncomeTotal) * 100
-              : 0,
-            expense_growth: prevExpenseTotal > 0 
-              ? ((expenseStats.total_expenses - prevExpenseTotal) / prevExpenseTotal) * 100
-              : 0,
+            revenue_growth: revenueGrowth,
+            expense_growth: expenseGrowth,
             totalOrders: incomeStats.totalOrders || 0,
-            profit_margin: prevIncomeTotal > 0 
-              ? ((profit - (prevIncomeTotal - prevExpenseTotal)) / 
-                (prevIncomeTotal - prevExpenseTotal)) * 100
-              : 0,
-            income_coverage: (incomeStats.total_income || 0) / 
-              (expenseStats.total_expenses || 1)
+            profit_margin: profitMargin,
+            income_coverage: incomeCoverage,
+            operating_cash_flow: operatingCashFlow,
+            debt_to_income: debtToIncome
           },
           monthlyData: monthlyTrends,
           expenseCategories: expenseCategories.map(c => ({ 

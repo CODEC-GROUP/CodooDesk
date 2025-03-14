@@ -329,6 +329,7 @@ interface InventoryStats {
 
 interface SalesStats {
   total_sales: number;
+  total_revenue: number;
   total_orders: number;
   total_expenses: number;
 }
@@ -336,6 +337,7 @@ interface SalesStats {
 interface SalesTrend {
   date: string;
   total_sales: number;
+  transaction_count: number;
 }
 
 interface Supplier {
@@ -353,6 +355,12 @@ interface Product {
   sellingPrice: number;
   unitsSold: number;
   currentStock: number;
+}
+
+interface FinanceTimeSeriesData {
+  date: string;
+  income: number;
+  expenses: number;
 }
 
 export function Dashboard() {
@@ -412,17 +420,17 @@ export function Dashboard() {
     enabled: !!business?.id
   });
 
-  // Fetch top suppliers
-  const { data: topSuppliers } = useQuery<ApiResponse<Supplier[]>>({
-    queryKey: ['topSuppliers', params],
-    queryFn: () => safeInvoke('dashboard:inventory:suppliers', params),
-    enabled: !!business?.id
-  });
-
   // Fetch top products
   const { data: topProducts } = useQuery<ApiResponse<Product[]>>({
     queryKey: ['topProducts', params],
     queryFn: () => safeInvoke('dashboard:inventory:products', params),
+    enabled: !!business?.id
+  });
+
+  // Fetch top customers
+  const { data: topCustomers } = useQuery<ApiResponse<any[]>>({
+    queryKey: ['topCustomers', params],
+    queryFn: () => safeInvoke('dashboard:customers:top', params),
     enabled: !!business?.id
   });
 
@@ -447,10 +455,35 @@ export function Dashboard() {
     enabled: !!business?.id
   });
 
-  if (isLoadingInventory || isLoadingSales || isLoadingCategories) {
+  // Add new query for finance time series
+  const { data: financeTimeSeries, isLoading: isLoadingFinance } = useQuery({
+    queryKey: ['financeTimeSeries', params],
+    queryFn: async () => {
+      console.log('Fetching finance time series with params:', params);
+      const result = await safeInvoke<FinanceTimeSeriesData[]>('dashboard:finance:timeSeries', params);
+      console.log('Finance time series response:', result);
+      return result;
+    },
+    enabled: !!business?.id
+  });
+
+  // Add console logs to inspect the data
+  useEffect(() => {
+    console.log('=== Finance Time Series Frontend Debug ===');
+    console.log('Loading state:', isLoadingFinance);
+    console.log('Raw response:', financeTimeSeries);
+    console.log('Data array:', financeTimeSeries?.data);
+    console.log('Data length:', financeTimeSeries?.data?.length);
+    console.log('First item:', financeTimeSeries?.data?.[0]);
+    console.log('Params used:', params);
+  }, [financeTimeSeries, isLoadingFinance, params]);
+
+  if (isLoadingInventory || isLoadingSales || isLoadingCategories || isLoadingFinance) {
     return <LoadingSpinner />;
   }
 
+  console.log('Sales Stats:', salesStats?.data);
+  
   // Update inventory card to show products sold
   const renderInventoryCard = () => {
     const stats = inventoryStats?.data || { total_products_sold: 0, total_value: 0 };
@@ -463,7 +496,7 @@ export function Dashboard() {
           <div>
             <p className="text-sm text-muted-foreground">Products Sold</p>
             <h3 className="text-2xl font-semibold">
-              {formatNumber(stats.total_products_sold)}
+              {formatNumber((salesStats?.data?.[0]?.total_orders || 0))}
             </h3>
           </div>
         </CardContent>
@@ -498,7 +531,7 @@ export function Dashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">Total Revenue</p>
                 <h3 className="text-2xl font-semibold">
-                  {formatNumber((salesStats?.data?.[0]?.total_sales || 0))} FCFA
+                  {formatNumber((salesStats?.data?.[0]?.total_revenue || 0))} FCFA
                 </h3>
               </div>
             </CardContent>
@@ -522,7 +555,7 @@ export function Dashboard() {
                 <Package className="h-6 w-6 text-purple-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Orders</p>
+                <p className="text-sm text-muted-foreground">Products Sold</p>
                 <h3 className="text-2xl font-semibold">
                   {formatNumber((salesStats?.data?.[0]?.total_orders || 0))}
                 </h3>
@@ -537,7 +570,7 @@ export function Dashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">Net Profit</p>
                 <h3 className="text-2xl font-semibold">
-                  {formatNumber((salesStats?.data?.[0]?.total_sales || 0) - (salesStats?.data?.[0]?.total_expenses || 0))} FCFA
+                  {formatNumber((salesStats?.data?.[0]?.total_revenue || 0) - (salesStats?.data?.[0]?.total_expenses || 0))} FCFA
                 </h3>
               </div>
             </CardContent>
@@ -656,27 +689,44 @@ export function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Top Suppliers</CardTitle>
+              <CardTitle>Top Customers</CardTitle>
             </CardHeader>
             <CardContent>
-              {!(topSuppliers?.data || []).length ? (
-                <EmptyData message="No supplier data available" />
+              {!(topCustomers?.data || []).length ? (
+                <EmptyData message="No customer data available" />
               ) : (
-                <div className="space-y-4">
-                  {(topSuppliers?.data || []).map((supplier: Supplier) => (
-                    <div key={supplier.id} className="flex items-center">
-                      <div className={`w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold mr-4`}>
-                        {supplier.name.charAt(0)}
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium">{supplier.name}</h3>
-                        <p className="text-sm text-gray-500">{supplier.items} items</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium">{formatNumber(supplier.value)} FCFA</p>
-                      </div>
-                    </div>
-                  ))}
+                <div className="relative w-full overflow-auto">
+                  <table className="w-full caption-bottom text-sm">
+                    <thead>
+                      <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Name</th>
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Orders</th>
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Spent</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(topCustomers?.data || []).map((customer: any) => (
+                        <tr key={customer.id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
+                                {customer.name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="font-medium">{customer.name}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className="font-medium">{customer.orders}</span>
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className="font-medium">{formatNumber(customer.spent)} FCFA</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </CardContent>
@@ -693,13 +743,13 @@ export function Dashboard() {
                   <table className="w-full caption-bottom text-sm">
                     <thead>
                       <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Product</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Name</th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Amount</th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Units Sold</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(topProducts?.data || []).map((product: Product) => (
+                      {(topProducts?.data || []).map((product: any) => (
                         <tr key={product.id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                           <td className="p-4">
                             <div className="flex items-center gap-3">
@@ -718,16 +768,14 @@ export function Dashboard() {
                               )}
                               <div>
                                 <p className="font-medium">{product.name}</p>
-                                <p className="text-sm text-muted-foreground">SKU: {product.sku}</p>
                               </div>
                             </div>
                           </td>
                           <td className="p-4 text-right">
-                            <span className="font-medium">{formatNumber(product.sellingPrice)} FCFA</span>
+                            <span className="font-medium">{formatNumber(product.totalAmount)} FCFA</span>
                           </td>
                           <td className="p-4 text-right">
-                            <span className="font-medium">{formatNumber(product.unitsSold)} sold</span>
-                            <p className="text-sm text-gray-500">{formatNumber(product.currentStock)} in stock</p>
+                            <span className="font-medium">{formatNumber(product.unitsSold)}</span>
                           </td>
                         </tr>
                       ))}
@@ -743,20 +791,24 @@ export function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="col-span-2">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Income Over Time</CardTitle>
+              <CardTitle>Income & Expenses Over Time</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="mb-4 flex justify-between">
                 <div>
-                  <h4 className="text-2xl font-bold">{formatNumber((salesStats?.data?.[0]?.total_sales || 0))} FCFA</h4>
-                  <p className="text-sm text-gray-500">Revenue Today</p>
+                  <h4 className="text-2xl font-bold">{formatNumber((salesStats?.data?.[0]?.total_revenue || 0))} FCFA</h4>
+                  <p className="text-sm text-gray-500">Total Revenue</p>
+                </div>
+                <div className="text-right">
+                  <h4 className="text-2xl font-bold">{formatNumber((salesStats?.data?.[0]?.total_expenses || 0))} FCFA</h4>
+                  <p className="text-sm text-gray-500">Total Expenses</p>
                 </div>
               </div>
-              {!(salesTrends?.data || []).length ? (
+              {!(financeTimeSeries?.data || []).length ? (
                 <EmptyData message="No financial data available" />
               ) : (
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={salesTrends?.data || []}>
+                  <LineChart data={financeTimeSeries?.data || []}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
                       dataKey="date" 
@@ -768,8 +820,22 @@ export function Dashboard() {
                       labelFormatter={(label) => formatTimeLabel(label as string, currentView)}
                     />
                     <Legend />
-                    <Line type="monotone" dataKey="total_sales" stroke="#8884d8" name="Income" />
-                    <Line type="monotone" dataKey="total_expenses" stroke="#82ca9d" name="Expenses" />
+                    <Line 
+                      type="monotone" 
+                      dataKey="income" 
+                      stroke="#3b82f6" 
+                      name="Income"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="expenses" 
+                      stroke="#ef4444" 
+                      name="Expenses"
+                      strokeWidth={2}
+                      dot={false}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               )}
@@ -782,9 +848,9 @@ export function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="mb-4">
-                <h4 className="text-2xl font-bold">{formatNumber((salesStats?.data?.[0]?.total_orders || 0))}</h4>
-                <p className="text-sm text-gray-500">Orders</p>
-                <h4 className="text-2xl font-bold mt-2">{formatNumber((salesStats?.data?.[0]?.total_sales || 0))} FCFA</h4>
+                <h4 className="text-2xl font-bold">{formatNumber(salesTrends?.data?.slice(-7).reduce((sum, day) => sum + (day.transaction_count || 0), 0) || 0)}</h4>
+                <p className="text-sm text-gray-500">Sales</p>
+                <h4 className="text-2xl font-bold mt-2">{formatNumber(salesTrends?.data?.slice(-7).reduce((sum, day) => sum + (day.total_sales || 0), 0) || 0)} FCFA</h4>
                 <p className="text-sm text-gray-500">Revenue</p>
               </div>
               {!(salesTrends?.data || []).length ? (
@@ -793,20 +859,22 @@ export function Dashboard() {
                 <ResponsiveContainer width="100%" height={150}>
                   <BarChart data={salesTrends?.data?.slice(-7) || []}>
                     <Bar 
-                      dataKey="total_sales" 
+                      dataKey="transaction_count" 
                       fill="#3b82f6"
                       radius={[4, 4, 0, 0]}
                       maxBarSize={35}
                       fillOpacity={0.8}
+                      name="Sales"
                     />
                     <Tooltip 
-                      formatter={(value) => `${formatNumber(value as number)} FCFA`}
+                      formatter={(value) => `${value} sales`}
                       contentStyle={{
                         background: 'hsl(var(--background))',
                         borderColor: 'hsl(var(--border))',
                         borderRadius: '8px',
                         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
                       }}
+                      labelFormatter={(label) => formatTimeLabel(label as string, 'daily')}
                     />
                   </BarChart>
                 </ResponsiveContainer>
