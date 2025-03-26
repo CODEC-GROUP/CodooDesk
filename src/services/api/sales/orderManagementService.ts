@@ -176,7 +176,7 @@ export function registerOrderManagementHandlers() {
           saleId: sale.id,
           date: new Date(),
           items: orderItems.map((item: OrderItem) => ({
-            name: item.productName,
+            name: item.productName, 
             quantity: item.quantity,
             sellingPrice: item.sellingPrice
           })),
@@ -209,7 +209,7 @@ export function registerOrderManagementHandlers() {
           saleId: sale.id,
           date: new Date(),
           items: orderItems.map((item: OrderItem) => ({
-            name: item.productName,
+            name: item.productName, 
             quantity: item.quantity,
             sellingPrice: item.sellingPrice
           })),

@@ -278,31 +278,56 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
         quantity: Number(formData.quantity),
         reorderPoint: Number(formData.reorderPoint),
         featuredImage: featuredImagePath,
-        additionalImages: additionalImagePaths,
+        additionalImages: additionalImagePaths.length > 0 ? additionalImagePaths : formData.additionalImages,
         businessId: business?.id,
         suppliers: selectedSuppliers,
         warehouseId: selectedWarehouse, // Pass the selected warehouse ID
       };
 
-      // Create the product (inventory item will be created in the backend)
-      const response = await safeIpcInvoke<ProductResponse>('inventory:product:create', {
-        data: productData,
-      });
-
-      if (response?.success) {
-        toast({
-          title: "Success",
-          description: "Product created successfully",
+      let response;
+      
+      if (editMode && productToEdit?.id) {
+        // Update existing product
+        response = await safeIpcInvoke<ProductResponse>('inventory:product:update', {
+          id: productToEdit.id,
+          updates: productData,
+          userId: user?.id
         });
-        onBack();
+        
+        if (response?.success) {
+          toast({
+            title: "Success",
+            description: "Product updated successfully",
+          });
+          if (onEditComplete) {
+            onEditComplete();
+          } else {
+            onBack();
+          }
+        } else {
+          throw new Error(response?.error || 'Failed to update product');
+        }
       } else {
-        throw new Error(response?.error || 'Failed to create product');
+        // Create new product
+        response = await safeIpcInvoke<ProductResponse>('inventory:product:create', {
+          data: productData,
+        });
+        
+        if (response?.success) {
+          toast({
+            title: "Success",
+            description: "Product created successfully",
+          });
+          onBack();
+        } else {
+          throw new Error(response?.error || 'Failed to create product');
+        }
       }
     } catch (error) {
-      console.error('Error creating product:', error);
+      console.error(editMode ? 'Error updating product:' : 'Error creating product:', error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to create product',
+        description: error instanceof Error ? error.message : (editMode ? 'Failed to update product' : 'Failed to create product'),
         variant: "destructive",
       });
     } finally {

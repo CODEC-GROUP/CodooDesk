@@ -9,7 +9,8 @@ export interface ReturnAttributes {
   id?: string;
   saleId?: string;
   orderId: string;
-  productId: string;
+  productId?: string;
+  productName?: string;
   shopId?: string;
   customerFirstName: string;
   customerLastName: string;
@@ -32,7 +33,8 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
   public id!: string;
   public saleId?: string;
   public orderId!: string;
-  public productId!: string;
+  public productId?: string;
+  public productName?: string;
   public shopId?: string;
   public customerFirstName!: string;
   public customerLastName!: string;
@@ -77,11 +79,15 @@ class Return extends Model<ReturnAttributes> implements ReturnAttributes {
         },
         productId: {
           type: DataTypes.UUID,
-          allowNull: false,
+          allowNull: true, 
           references: {
             model: 'Products',
             key: 'id',
           },
+        },
+        productName: {
+          type: DataTypes.STRING,
+          allowNull: true,
         },
         shopId: {
           type: DataTypes.UUID,

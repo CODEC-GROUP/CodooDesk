@@ -41,6 +41,13 @@ class SupplierProducts extends Model<SupplierProductsAttributes> implements Supp
         modelName: 'SupplierProducts',
         tableName: 'SupplierProducts',
         timestamps: true,
+        indexes: [
+          {
+            unique: true,
+            fields: ['supplier_id', 'product_id'],
+            name: 'supplier_product_unique'
+          }
+        ]
       }
     );
   }

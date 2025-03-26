@@ -11,6 +11,7 @@ import { sequelize } from '../../database/index.js';
 import AuditLog from '../../../models/AuditLog.js';
 import InventoryItem from '../../../models/InventoryItem.js';
 import StockMovement from '../../../models/StockMovement.js';
+import BatchTracking from '../../../models/BatchTracking.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -129,7 +130,7 @@ export function registerProductHandlers() {
       const product = await Product.create(sanitizedData, { transaction: t });
 
       // Handle supplier associations with array validation
-      if (data.suppliers && Array.isArray(data.suppliers)) {
+      if (data.suppliers && Array.isArray(data.suppliers) && data.suppliers.length > 0) {
         // Validate supplier IDs exist
         const existingSuppliers = await Supplier.findAll({
           where: { id: data.suppliers },
@@ -143,7 +144,13 @@ export function registerProductHandlers() {
           throw new Error(`Invalid supplier IDs: ${invalidIds.join(', ')}`);
         }
 
-        await product.setSuppliers(data.suppliers);
+        // Create supplier associations directly instead of using setSuppliers
+        const supplierProducts = data.suppliers.map((supplierId: string) => ({
+          supplier_id: supplierId,
+          product_id: product.id
+        }));
+
+        await sequelize.models.SupplierProducts.bulkCreate(supplierProducts, { transaction: t });
       }
 
       // Create inventory item if warehouse is specified
@@ -343,6 +350,42 @@ export function registerProductHandlers() {
         }, { transaction: t });
       }
 
+      // Handle supplier updates if provided
+      if (updates.suppliers && Array.isArray(updates.suppliers)) {
+        // First delete existing associations
+        await sequelize.models.SupplierProducts.destroy({
+          where: { product_id: id },
+          transaction: t
+        });
+
+        // Then create new associations if there are suppliers
+        if (updates.suppliers.length > 0) {
+          // Validate supplier IDs exist
+          const existingSuppliers = await Supplier.findAll({
+            where: { id: updates.suppliers },
+            transaction: t
+          });
+
+          if (existingSuppliers.length !== updates.suppliers.length) {
+            const invalidIds = updates.suppliers.filter((supplierId: string) => 
+              !existingSuppliers.some(s => s.id === supplierId)
+            );
+            throw new Error(`Invalid supplier IDs: ${invalidIds.join(', ')}`);
+          }
+
+          // Create new supplier associations
+          const supplierProducts = updates.suppliers.map((supplierId: string) => ({
+            supplier_id: supplierId,
+            product_id: id
+          }));
+
+          await sequelize.models.SupplierProducts.bulkCreate(supplierProducts, { transaction: t });
+        }
+
+        // Remove suppliers from updates to prevent double processing
+        delete updates.suppliers;
+      }
+
       await product.update(updates, { transaction: t });
       await t.commit();
 
@@ -350,7 +393,13 @@ export function registerProductHandlers() {
       return { success: true, product: updatedProduct };
     } catch (error) {
       await t.rollback();
-      return { success: false, message: 'Failed to update product', error };
+      console.error('Error updating product:', error);
+      return { 
+        success: false, 
+        message: error instanceof Error ? 
+          `Failed to update product: ${error.message}` : 
+          'Failed to update product'
+      };
     }
   });
 
@@ -451,6 +500,53 @@ export function registerProductHandlers() {
         return { success: false, message: 'Product not found or access denied' };
       }
 
+      // Find all related inventory items
+      const inventoryItems = await InventoryItem.findAll({
+        where: { product_id: productId },
+        transaction: t
+      });
+
+      // Delete all related stock movements for each inventory item
+      for (const item of inventoryItems) {
+        await StockMovement.destroy({
+          where: { inventoryItem_id: item.id },
+          transaction: t
+        });
+      }
+
+      // Delete all inventory items
+      await InventoryItem.destroy({
+        where: { product_id: productId },
+        transaction: t
+      });
+
+      // Delete product variants
+      await ProductVariant.destroy({
+        where: { product_id: productId },
+        transaction: t
+      });
+
+      // Delete batch tracking records
+      await BatchTracking.destroy({
+        where: { product_id: productId },
+        transaction: t
+      });
+
+      // Delete price history records
+      await PriceHistory.destroy({
+        where: { product_id: productId },
+        transaction: t
+      });
+
+      // Delete audit logs related to this product
+      await AuditLog.destroy({
+        where: { 
+          entityType: 'product',
+          entityId: productId
+        },
+        transaction: t
+      });
+
       // Remove all associations first
       await Promise.all([
         // Clear supplier associations
@@ -474,7 +570,9 @@ export function registerProductHandlers() {
       console.error('Error deleting product:', error);
       return { 
         success: false, 
-        message: error instanceof Error ? error.message : 'Error deleting product'
+        message: error instanceof Error ? 
+          `Failed to delete product: ${error.message}` : 
+          'Error deleting product'
       };
     }
   });

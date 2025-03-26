@@ -87,21 +87,41 @@ export function registerReturnHandlers() {
     const t = await sequelize.transaction();
   
     try {
-      const { saleId, items, total, customer, paymentMethod } = returnData;
+      const { saleId, items, total, customer, paymentMethod, shopId } = returnData;
       let createdReturn = null;
       
       // Create individual returns for each item
       for (const item of items) {
-        // Get the product to get its shop ID
-        const product = await Product.findByPk(item.productId);
-        if (!product) {
-          throw new Error(`Product not found: ${item.productId}`);
+        let shopId;
+        
+        // Get the product to get its shop ID if productId exists
+        if (item.productId) {
+          const product = await Product.findByPk(item.productId);
+          if (product) {
+            shopId = product.shop_id;
+            
+            // Update product stock quantity
+            await product.update({
+              quantity: product.quantity + item.quantity
+            }, { transaction: t });
+          } else {
+            // If product not found but ID was provided, use the shop ID from returnData
+            shopId = returnData.shopId;
+          }
+        } else {
+          // For manual products (null productId), use the shop ID from returnData
+          shopId = returnData.shopId;
+        }
+
+        if (!shopId) {
+          throw new Error('Shop ID not found for the product');
         }
 
         // Create the return record
         createdReturn = await Return.create({
           orderId: item.orderId,
           productId: item.productId,
+          productName: item.productName, // Store the product name explicitly
           customerFirstName: customer.name,
           customerLastName: '',
           quantity: item.quantity,
@@ -111,7 +131,7 @@ export function registerReturnHandlers() {
           paymentMethod: paymentMethod,
           status: 'pending',
           date: new Date(),
-          shopId: product.shop_id,
+          shopId: shopId,
           saleId: saleId
         }, { transaction: t });
 
@@ -128,11 +148,6 @@ export function registerReturnHandlers() {
             paymentStatus: updatedQuantity === 0 ? 'refunded' : 'paid'
           }, { transaction: t });
         }
-
-        // Update product stock quantity
-        await product.update({
-          quantity: product.quantity + item.quantity
-        }, { transaction: t });
       }
 
       // Update the sale's net amount
@@ -155,7 +170,7 @@ export function registerReturnHandlers() {
         items: [{
           id: createdReturn.id,
           productId: createdReturn.productId,
-          productName: items[0].productName,
+          productName: createdReturn.productName,
           quantity: createdReturn.quantity,
           price: createdReturn.amount / createdReturn.quantity,
           reason: createdReturn.reason,
@@ -249,33 +264,32 @@ export function registerReturnHandlers() {
       });
 
       // Format returns for frontend
-      const formattedReturns = returns.map(returnItem => ({
-        id: returnItem.id,
-        shopId: returnItem.shopId,
-        orderId: returnItem.orderId,
-        saleId: returnItem.saleId,
-        items: [{
-          id: returnItem.id,
-          productId: returnItem.productId,
-          productName: returnItem.product?.name || '',
-          quantity: returnItem.quantity,
-          price: returnItem.amount / returnItem.quantity,
-          reason: returnItem.reason,
-          description: returnItem.description
-        }],
-        total: returnItem.amount,
-        status: returnItem.status,
-        createdAt: returnItem.date.toISOString(),
-        customer: {
-          id: '',
-          name: returnItem.customerFirstName + ' ' + returnItem.customerLastName
-        },
-        paymentMethod: returnItem.paymentMethod,
-        sale: returnItem.sale ? {
-          receipt_id: returnItem.sale.receipt_id,
-          invoice_id: returnItem.sale.invoice_id
-        } : null
-      }));
+      const formattedReturns = returns.map(returnItem => {
+        const plainReturn = returnItem.get({ plain: true });
+        return {
+          id: plainReturn.id,
+          shopId: plainReturn.shopId,
+          orderId: plainReturn.orderId,
+          saleId: plainReturn.saleId,
+          items: [{
+            id: plainReturn.id,
+            productId: plainReturn.productId,
+            productName: plainReturn.productName || (plainReturn.product ? plainReturn.product.name : 'Unknown Product'),
+            quantity: plainReturn.quantity,
+            price: plainReturn.amount / plainReturn.quantity,
+            reason: plainReturn.reason,
+            description: plainReturn.description
+          }],
+          total: plainReturn.amount,
+          status: plainReturn.status,
+          createdAt: plainReturn.date.toISOString(),
+          customer: {
+            id: '', // No customer ID in the return model
+            name: `${plainReturn.customerFirstName} ${plainReturn.customerLastName}`.trim()
+          },
+          paymentMethod: plainReturn.paymentMethod
+        };
+      });
 
       return { success: true, returns: formattedReturns };
     } catch (error) {
@@ -287,13 +301,40 @@ export function registerReturnHandlers() {
   // Get return by ID handler
   ipcMain.handle(IPC_CHANNELS.GET_RETURN, async (event, { id }) => {
     try {
-      const returnInstance = await Return.findByPk(id, {
+      const returnItem = await Return.findByPk(id, {
         include: ['sale', 'product'],
       });
-      if (!returnInstance) {
+      if (!returnItem) {
         return { success: false, message: 'Return not found' };
       }
-      return { success: true, return: returnInstance };
+
+      const plainReturn = returnItem.get({ plain: true });
+      
+      // Format return for frontend
+      const formattedReturn = {
+        id: plainReturn.id,
+        shopId: plainReturn.shopId,
+        orderId: plainReturn.orderId,
+        items: [{
+          id: plainReturn.id,
+          productId: plainReturn.productId,
+          productName: plainReturn.productName || (plainReturn.product ? plainReturn.product.name : 'Unknown Product'),
+          quantity: plainReturn.quantity,
+          price: plainReturn.amount / plainReturn.quantity,
+          reason: plainReturn.reason,
+          description: plainReturn.description
+        }],
+        total: plainReturn.amount,
+        status: plainReturn.status,
+        createdAt: plainReturn.date.toISOString(),
+        customer: {
+          id: '', // No customer ID in the return model
+          name: `${plainReturn.customerFirstName} ${plainReturn.customerLastName}`.trim()
+        },
+        paymentMethod: plainReturn.paymentMethod
+      };
+
+      return { success: true, return: formattedReturn };
     } catch (error: Error | unknown) {
       if (error instanceof Error) {
         return { success: false, message: error.message };
@@ -306,17 +347,84 @@ export function registerReturnHandlers() {
   // Update return handler
   ipcMain.handle(IPC_CHANNELS.UPDATE_RETURN, async (event, { id, updates }) => {
     try {
-      const returnInstance = await Return.findByPk(id);
-      if (!returnInstance) {
+      const returnItem = await Return.findByPk(id);
+      if (!returnItem) {
         return { success: false, message: 'Return not found' };
       }
-      await returnInstance.update(updates);
-      return { success: true, message: 'Return updated successfully', return: returnInstance };
+
+      // Extract the first item from the updates.items array if it exists
+      const itemUpdates = updates.items && updates.items.length > 0 ? updates.items[0] : null;
+      
+      // Prepare the update object
+      const updateData: any = {};
+      
+      // Update basic fields if provided
+      if (updates.status) updateData.status = updates.status;
+      if (updates.paymentMethod) updateData.paymentMethod = updates.paymentMethod;
+      
+      // Update item-specific fields if provided
+      if (itemUpdates) {
+        if (itemUpdates.reason) updateData.reason = itemUpdates.reason;
+        if (itemUpdates.description) updateData.description = itemUpdates.description;
+        if (itemUpdates.productName) updateData.productName = itemUpdates.productName;
+        
+        // Only update quantity and amount if quantity is provided
+        if (itemUpdates.quantity) {
+          updateData.quantity = itemUpdates.quantity;
+          // Recalculate amount based on new quantity and price
+          if (itemUpdates.price) {
+            updateData.amount = itemUpdates.quantity * itemUpdates.price;
+          } else {
+            // Use existing price to calculate new amount
+            updateData.amount = itemUpdates.quantity * (returnItem.amount / returnItem.quantity);
+          }
+        }
+      }
+      
+      // Perform the update
+      await returnItem.update(updateData);
+      
+      // Fetch the updated return with associations
+      const updatedReturn = await Return.findByPk(id, {
+        include: ['product']
+      });
+      
+      if (!updatedReturn) {
+        return { success: false, message: 'Failed to retrieve updated return' };
+      }
+      
+      const plainReturn = updatedReturn.get({ plain: true });
+      
+      // Format the return for frontend
+      const formattedReturn = {
+        id: plainReturn.id,
+        shopId: plainReturn.shopId,
+        orderId: plainReturn.orderId,
+        items: [{
+          id: plainReturn.id,
+          productId: plainReturn.productId,
+          productName: plainReturn.productName || (plainReturn.product ? plainReturn.product.name : 'Unknown Product'),
+          quantity: plainReturn.quantity,
+          price: plainReturn.amount / plainReturn.quantity,
+          reason: plainReturn.reason,
+          description: plainReturn.description
+        }],
+        total: plainReturn.amount,
+        status: plainReturn.status,
+        createdAt: plainReturn.date.toISOString(),
+        customer: {
+          id: '', // No customer ID in the return model
+          name: `${plainReturn.customerFirstName} ${plainReturn.customerLastName}`.trim()
+        },
+        paymentMethod: plainReturn.paymentMethod
+      };
+
+      return { success: true, return: formattedReturn };
     } catch (error: Error | unknown) {
       if (error instanceof Error) {
         return { success: false, message: error.message };
       } else {
-        return { success: false, message: 'Error updating return' };
+        return { success: false, message: 'An unknown error occurred' };
       }
     }
   });

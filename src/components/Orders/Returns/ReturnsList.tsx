@@ -82,6 +82,7 @@ interface OrderProduct {
   quantity: number;
   total: number;
   product_id: string;
+  orderId?: string; // Add orderId field to store the actual order ID
 }
 
 interface Order {
@@ -90,6 +91,7 @@ interface Order {
   date: string;
   total: number;
   product: OrderProduct;
+  products?: OrderProduct[]; // Add products array to store all products in the order
 }
 
 interface OrderSuggestion {
@@ -101,8 +103,6 @@ interface OrderSuggestion {
   created_at: string;
   display: string;
 }
-
-
 
 interface SaleDetailsResponse {
   success: boolean;
@@ -140,6 +140,8 @@ const Returns = () => {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const [selectedShopId, setSelectedShopId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"list" | "add-return">("list");
+  const [selectedProducts, setSelectedProducts] = useState<Map<string, { product: OrderProduct, quantity: number }>>(new Map());
+  const [totalReturnAmount, setTotalReturnAmount] = useState(0);
 
   useEffect(() => {
     if (business?.shops && business.shops.length > 0) {
@@ -321,12 +323,20 @@ const Returns = () => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
 
-    if (!sale || !selectedProduct || !returnQuantity) {
+    if (!sale || !selectedProducts.size) {
       toast({
         title: "Error",
-        description: "Please select a sale and product, and specify return quantity",
+        description: "Please select a sale and products",
         variant: "destructive",
       });
+      return;
+    }
+
+    if (!validateSelectedProducts()) {
+      return;
+    }
+
+    if (!validateOrderIds()) {
       return;
     }
 
@@ -344,23 +354,39 @@ const Returns = () => {
     }
 
     try {
+      setIsProcessing(true);
+      
+      // Debug: Log the sale structure before creating return
+      const logSaleStructure = () => {
+        if (sale) {
+          console.log('Sale structure:', JSON.stringify(sale, null, 2));
+          if (sale.orders) {
+            console.log('Orders structure:', JSON.stringify(sale.orders, null, 2));
+          }
+        }
+      };
+      logSaleStructure();
+      
+      // Debug: Log the items we're sending
+      const items = Array.from(selectedProducts.values()).map(({ product, quantity }) => ({
+        orderId: product.orderId || '', // Use the stored order ID from the selected product
+        productId: product.product_id || null, // Handle null product_id for manual products
+        productName: product.name, // Always use the name from the selected product
+        quantity,
+        price: product.price,
+        reason,
+        description
+      }));
+      
+      console.log('Return items to be created:', JSON.stringify(items, null, 2));
+      
       const returnData = {
         saleId: sale.id,
         shopId: (user?.role === 'admin' || user?.role === 'shop_owner')
           ? selectedShopId
           : business?.shops?.[0]?.id,
-        items: [
-          {
-            orderId: selectedProduct.id,
-            productId: selectedProduct.product_id,
-            productName: selectedProduct.name,
-            quantity: returnQuantity,
-            price: selectedProduct.price,
-            reason,
-            description
-          }
-        ],
-        total: returnQuantity * selectedProduct.price,
+        items,
+        total: totalReturnAmount,
         status: 'pending',
         customer: {
           id: sale.customer_id,
@@ -370,7 +396,6 @@ const Returns = () => {
       };
 
       console.log('Creating return with data:', returnData);
-      setIsProcessing(true);
       const response = await safeIpcInvoke<ReturnActionResponse>('entities:return:create', { returnData }, { success: false });
       console.log('Return creation response:', response);
 
@@ -382,13 +407,12 @@ const Returns = () => {
         
         // Reset form state
         setSale(null);
-        setSelectedProduct(null);
-        setReturnQuantity(0);
-        setReturnAmount(0);
+        setSelectedOrder(null);
+        setSelectedProducts(new Map());
+        setTotalReturnAmount(0);
         setSearchTerm('');
         setSuggestions([]);
         setShowSuggestions(false);
-        setSelectedOrder(null);
         
         // Switch back to list tab
         setActiveTab("list");
@@ -418,10 +442,13 @@ const Returns = () => {
   };
 
   // Update return amount when quantity changes
-  const handleQuantityChange = (qty: number) => {
-    if (selectedProduct && qty <= selectedProduct.quantity) {
-      setReturnQuantity(qty);
-      setReturnAmount(qty * selectedProduct.price);
+  const handleQuantityChange = (productId: string, qty: number) => {
+    const product = selectedOrder?.products?.find(p => p.id === productId);
+    if (product && qty > 0 && qty <= product.quantity) {
+      const newSelectedProducts = new Map(selectedProducts);
+      newSelectedProducts.set(productId, { product, quantity: qty });
+      setSelectedProducts(newSelectedProducts);
+      updateTotalReturnAmount(newSelectedProducts);
     }
   };
 
@@ -600,32 +627,45 @@ const Returns = () => {
 
       if (response?.success && response.sale) {
         setSale(response.sale);
+        
+        // Debug: Log the sale structure
+        console.log('Sale structure:', JSON.stringify(response.sale, null, 2));
+        
+        // Create an array of products from all orders in the sale
+        const products: OrderProduct[] = response.sale?.orders?.map(order => {
+          console.log('Processing order:', order);
+          return {
+            id: order.id || '',
+            name: order.product?.name || (order as any)?.productName || '',
+            price: order.sellingPrice || 0,
+            quantity: order.quantity || 0,
+            total: (order.quantity || 0) * (order.sellingPrice || 0),
+            product_id: order.product?.id || '',
+            orderId: order.id || '', // Store the actual order ID
+          };
+        }) || [];
+        
         const order: Order = {
           id: response.sale?.id || '',
           customerName: response.sale?.customer?.first_name || 'Walking Customer',
           date: response.sale?.createdAt?.toISOString() || '',
           total: response.sale?.netAmount || 0,
-          product: response.sale?.orders?.[0] ? {
-            id: response.sale?.orders?.[0]?.id || '', // This is the order ID
-            name: response.sale?.orders?.[0]?.product?.name || '',
-            price: response.sale?.orders?.[0]?.sellingPrice || 0,
-            quantity: response.sale?.orders?.[0]?.quantity || 0,
-            total: (response.sale?.orders?.[0]?.quantity || 0) * (response.sale?.orders?.[0]?.sellingPrice || 0),
-            product_id: response.sale?.orders?.[0]?.product?.id || '' // This is the actual product ID
-          } : {
+          product: products[0] || {
             id: '',
             name: '',
             price: 0,
             quantity: 0,
             total: 0,
-            product_id: ''
+            product_id: '',
+            orderId: '',
           },
+          products: products, // Store all products
         };
 
         console.log('Selected order:', order);
         setSelectedOrder(order);
-        setSelectedProduct(null);
-        setReturnQuantity(0);
+        setSelectedProducts(new Map());
+        setTotalReturnAmount(0);
         setShowSuggestions(false);
         setSearchTerm(suggestion.display);
       } else {
@@ -643,6 +683,45 @@ const Returns = () => {
         variant: "destructive",
       });
     }
+  };
+
+  // Update total return amount when products or quantities change
+  const updateTotalReturnAmount = (products: Map<string, { product: OrderProduct, quantity: number }>) => {
+    const total = Array.from(products.values()).reduce((acc, { product, quantity }) => acc + quantity * product.price, 0);
+    setTotalReturnAmount(total);
+  };
+
+  // Validate that all selected products have valid quantities
+  const validateSelectedProducts = () => {
+    for (const [_, { quantity }] of selectedProducts.entries()) {
+      if (quantity <= 0) {
+        toast({
+          title: "Error",
+          description: "Please specify a valid quantity for all selected products",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Validate that all order IDs are valid UUIDs
+  const validateOrderIds = () => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    
+    for (const [_, { product }] of selectedProducts.entries()) {
+      if (!product.orderId || !uuidRegex.test(product.orderId)) {
+        console.error('Invalid order ID:', product.orderId);
+        toast({
+          title: "Error",
+          description: "One or more products have invalid order IDs",
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+    return true;
   };
 
   return (
@@ -848,44 +927,70 @@ const Returns = () => {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Select</TableHead>
+                          <TableHead className="w-10">Select</TableHead>
                           <TableHead>Product</TableHead>
                           <TableHead>Price</TableHead>
-                          <TableHead>Ordered Qty</TableHead>
+                          <TableHead>Available Qty</TableHead>
                           <TableHead>Return Qty</TableHead>
-                          <TableHead>Total</TableHead>
+                          <TableHead>Return Amount</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        <TableRow>
-                          <TableCell>
-                            <input
-                              type="radio"
-                              checked={selectedProduct?.id === selectedOrder.product.id}
-                              onChange={() => {
-                                console.log('Setting selected product:', selectedOrder.product);
-                                setSelectedProduct(selectedOrder.product);
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>{selectedOrder.product.name}</TableCell>
-                          <TableCell>{selectedOrder.product.price.toLocaleString()} XAF</TableCell>
-                          <TableCell>{selectedOrder.product.quantity}</TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="1"
-                              max={selectedOrder.product.quantity}
-                              className="w-20"
-                              value={returnQuantity}
-                              onChange={(e) => handleQuantityChange(parseInt(e.target.value))}
-                              disabled={!selectedProduct}
-                            />
-                          </TableCell>
-                          <TableCell>{returnAmount.toLocaleString()} XAF</TableCell>
-                        </TableRow>
+                        {selectedOrder.products?.map((product, index) => (
+                          <TableRow key={product.id}>
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={selectedProducts.has(product.id)}
+                                onChange={() => {
+                                  const newSelectedProducts = new Map(selectedProducts);
+                                  if (selectedProducts.has(product.id)) {
+                                    newSelectedProducts.delete(product.id);
+                                  } else {
+                                    newSelectedProducts.set(product.id, { product, quantity: 1 });
+                                  }
+                                  setSelectedProducts(newSelectedProducts);
+                                  updateTotalReturnAmount(newSelectedProducts);
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>{product.name}</TableCell>
+                            <TableCell>{product.price.toLocaleString()} XAF</TableCell>
+                            <TableCell>{product.quantity}</TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="1"
+                                max={product.quantity}
+                                className="w-20"
+                                value={selectedProducts.get(product.id)?.quantity || 0}
+                                onChange={(e) => {
+                                  handleQuantityChange(product.id, parseInt(e.target.value));
+                                }}
+                                disabled={!selectedProducts.has(product.id)}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              {((selectedProducts.get(product.id)?.quantity || 0) * product.price).toLocaleString()} XAF
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
+                    <div className="mt-4 flex justify-between items-center">
+                      <div className="text-lg font-semibold">
+                        Total Return Amount: {totalReturnAmount.toLocaleString()} XAF
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {selectedProducts.size} product(s) selected
+                      </div>
+                    </div>
+                    
+                    {selectedProducts.size === 0 && (
+                      <div className="mt-4 p-4 bg-yellow-50 text-yellow-800 rounded-md">
+                        Please select at least one product to return by checking the checkbox next to the product.
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -931,7 +1036,13 @@ const Returns = () => {
                 </div>
 
                 <div className="flex justify-end space-x-4">
-                  <Button type="submit">Process Return</Button>
+                  <Button 
+                    type="submit" 
+                    className="w-full"
+                    disabled={isProcessing || selectedProducts.size === 0}
+                  >
+                    {isProcessing ? "Processing..." : "Create Return"}
+                  </Button>
                 </div>
               </form>
             </CardContent>
