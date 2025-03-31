@@ -213,6 +213,11 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
     this.hasMany(models.ProductVariant, { foreignKey: 'product_id', as: 'variants' });
     this.hasMany(models.BatchTracking, { foreignKey: 'product_id', as: 'batches' });
     this.hasMany(models.PriceHistory, { foreignKey: 'product_id', as: 'priceHistory' });
+    this.hasMany(models.Return, { 
+      foreignKey: 'productId', 
+      as: 'returns',
+      constraints: false // Don't enforce foreign key constraints
+    });
   }
 }
 

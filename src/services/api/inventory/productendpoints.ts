@@ -7,11 +7,13 @@ import Supplier from '../../../models/Supplier.js';
 import ProductVariant from '../../../models/ProductVariant.js';
 import PriceHistory from '../../../models/PriceHistory.js';
 import User from '../../../models/User.js';
-import { sequelize } from '../../database/index.js';
 import AuditLog from '../../../models/AuditLog.js';
 import InventoryItem from '../../../models/InventoryItem.js';
 import StockMovement from '../../../models/StockMovement.js';
 import BatchTracking from '../../../models/BatchTracking.js';
+import Expense from '../../../models/Expense.js';
+import OhadaCode from '../../../models/OhadaCode.js';
+import { sequelize } from '../../database/index.js';
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -22,7 +24,8 @@ const IPC_CHANNELS = {
   DELETE_PRODUCT: 'inventory:product:delete',
   GET_BY_CATEGORY: 'inventory:product:get-by-category',
   GET_PRICE_HISTORY: 'inventory:product:price-history:get',
-  GET_WITH_VARIANTS: 'inventory:product:get-with-variants'
+  GET_WITH_VARIANTS: 'inventory:product:get-with-variants',
+  GET_ALL_WITH_INVENTORIES: 'inventory:product:get-all-with-inventories'
 };
 
 // Types for sanitized data
@@ -242,6 +245,34 @@ export function registerProductHandlers() {
         performedAt: new Date()
       }, { transaction: t });
 
+      // Calculate total expense amount
+      const totalExpenseAmount = Number(data.purchasePrice) * Number(data.quantity);
+
+      // Only create expense entry if there's an actual expense (quantity > 0)
+      if (totalExpenseAmount > 0) {
+        // Fetch the OHADA code for inventory purchases (usually 601 or 602)
+        const ohadaCode = await OhadaCode.findOne({ 
+          where: { code: '601' }, // "Purchases of goods" code
+          transaction: t 
+        });
+
+        if (!ohadaCode) {
+          console.warn('Inventory purchase OHADA code not found, expense record not created');
+        } else {
+          // Create expense entry for the inventory purchase
+          await Expense.create({
+            date: new Date(),
+            description: `Inventory purchase - ${data.name} (${data.quantity} units)`,
+            amount: totalExpenseAmount,
+            paymentMethod: 'cash', // Default payment method, could be made configurable
+            ohadaCodeId: ohadaCode.id,
+            shopId: data.shop_id,
+            userId: data.userId,
+            status: 'completed'
+          }, { transaction: t });
+        }
+      }
+
       await t.commit();
 
       return {
@@ -256,6 +287,152 @@ export function registerProductHandlers() {
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Failed to create product'
+      };
+    }
+  });
+
+  // Get all products with their inventory information
+  ipcMain.handle(IPC_CHANNELS.GET_ALL_WITH_INVENTORIES, async (event: IpcMainInvokeEvent, { shopIds, businessId, includeInventories = true }) => {
+    try {
+      const whereClause: any = { 
+        '$shop.businessId$': businessId,
+        shop_id: shopIds?.length ? { [Op.in]: shopIds } : undefined 
+      };
+
+      const products = await Product.findAll({
+        where: whereClause,
+        include: [
+          {
+            model: Shop,
+            as: 'shop',
+            attributes: ['id', 'name', 'businessId']
+          },
+          {
+            model: Category,
+            as: 'category',
+            attributes: ['id', 'name', 'description', 'image', 'businessId']
+          },
+          {
+            model: Supplier,
+            as: 'suppliers',
+            through: { attributes: [] },
+            attributes: ['id', 'name']
+          }
+        ],
+        order: [['createdAt', 'DESC']]
+      });
+
+      // Convert products to plain objects to avoid circular references
+      const plainProducts = products.map(product => product.get({ plain: true }));
+
+      // If we need to include inventory information
+      if (includeInventories) {
+        // Get all product IDs and filter out any undefined values
+        const productIds = plainProducts
+          .map(p => p.id)
+          .filter((id): id is string => id !== undefined);
+        
+        // Only proceed if we have valid product IDs
+        if (productIds.length > 0) {
+          // Fetch inventory items for these products
+          const inventoryItems = await InventoryItem.findAll({
+            where: {
+              product_id: { [Op.in]: productIds }
+            },
+            include: [
+              {
+                model: sequelize.models.Inventory,
+                as: 'inventory',
+                attributes: ['id', 'name', 'description', 'shopId']
+              }
+            ]
+          });
+
+          // Convert inventory items to plain objects
+          const plainInventoryItems = inventoryItems.map(item => item.get({ plain: true }));
+
+          // Group inventory items by product ID
+          const inventoryByProduct = plainInventoryItems.reduce((acc, item) => {
+            if (!acc[item.product_id]) {
+              acc[item.product_id] = [];
+            }
+            acc[item.product_id].push(item);
+            return acc;
+          }, {} as Record<string, any[]>);
+
+          // Add inventory items to each product
+          const productsWithInventory = plainProducts.map(product => {
+            const productWithRelations = product as unknown as ProductInstance;
+            const sanitizedProduct = {
+              ...product,
+              suppliers: product.suppliers?.map((supplier: any) => ({
+                id: supplier.id,
+                name: supplier.name
+              })) || [],
+              category: (productWithRelations as ProductInstance).category ? {
+                id: (productWithRelations as ProductInstance).category!.id,
+                name: (productWithRelations as ProductInstance).category!.name,
+                description: (productWithRelations as ProductInstance).category!.description ?? null,
+                image: (productWithRelations as ProductInstance).category!.image ?? null,
+                businessId: (productWithRelations as ProductInstance).category!.businessId
+              } : null,
+              shop: (productWithRelations as ProductInstance).shop ? {
+                id: (productWithRelations as ProductInstance).shop!.id,
+                name: (productWithRelations as ProductInstance).shop!.name,
+                businessId: (productWithRelations as ProductInstance).shop!.businessId ?? '',
+                locationId: (productWithRelations as ProductInstance).shop!.locationId ?? '',
+                status: (productWithRelations as ProductInstance).shop!.status ?? 'inactive',
+                type: (productWithRelations as ProductInstance).shop!.type ?? '',
+                contactInfo: (productWithRelations as ProductInstance).shop!.contactInfo ?? { email: '' }
+              } : null
+            };
+            
+            return {
+              ...sanitizedProduct,
+              inventories: product.id !== undefined ? inventoryByProduct[product.id] || [] : []
+            };
+          });
+
+          return {
+            success: true,
+            products: productsWithInventory
+          };
+        }
+      }
+
+      // If we don't need inventory information or have no valid product IDs, just sanitize the products
+      return {
+        success: true,
+        products: plainProducts.map(product => ({
+          ...product,
+          suppliers: product.suppliers?.map((supplier: any) => ({
+            id: supplier.id,
+            name: supplier.name
+          })) || [],
+          category: (product as ProductInstance).category ? {
+            id: (product as ProductInstance).category!.id,
+            name: (product as ProductInstance).category!.name,
+            description: (product as ProductInstance).category!.description ?? null,
+            image: (product as ProductInstance).category!.image ?? null,
+            businessId: (product as ProductInstance).category!.businessId
+          } : null,
+          shop: (product as ProductInstance).shop ? {
+            id: (product as ProductInstance).shop!.id,
+            name: (product as ProductInstance).shop!.name,
+            businessId: (product as ProductInstance).shop!.businessId ?? '',
+            locationId: (product as ProductInstance).shop!.locationId ?? '',
+            status: (product as ProductInstance).shop!.status ?? 'inactive',
+            type: (product as ProductInstance).shop!.type ?? '',
+            contactInfo: (product as ProductInstance).shop!.contactInfo ?? { email: '' }
+          } : null,
+          inventories: [] // Return empty inventories array if we couldn't fetch them
+        }))
+      };
+    } catch (error) {
+      console.error('Error fetching products with inventories:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch products with inventories'
       };
     }
   });
@@ -384,6 +561,38 @@ export function registerProductHandlers() {
 
         // Remove suppliers from updates to prevent double processing
         delete updates.suppliers;
+      }
+
+      // Check if quantity is being increased
+      if (updates.quantity !== undefined && updates.quantity > product.quantity) {
+        const quantityIncrease = updates.quantity - product.quantity;
+        const purchasePrice = updates.purchasePrice !== undefined ? updates.purchasePrice : product.purchasePrice;
+        const expenseAmount = purchasePrice * quantityIncrease;
+
+        // Only create expense if there's an actual increase in quantity
+        if (quantityIncrease > 0 && expenseAmount > 0) {
+          // Fetch the OHADA code for inventory purchases
+          const ohadaCode = await OhadaCode.findOne({ 
+            where: { code: '601' }, // "Purchases of goods" code
+            transaction: t 
+          });
+
+          if (ohadaCode) {
+            // Create expense entry for the additional inventory
+            await Expense.create({
+              date: new Date(),
+              description: `Additional inventory - ${product.name} (${quantityIncrease} units)`,
+              amount: expenseAmount,
+              paymentMethod: 'cash', // Default payment method
+              ohadaCodeId: ohadaCode.id,
+              shopId: product.shop_id,
+              userId: userId,
+              status: 'completed'
+            }, { transaction: t });
+          } else {
+            console.warn('Inventory purchase OHADA code not found, expense record not created');
+          }
+        }
       }
 
       await product.update(updates, { transaction: t });

@@ -3,6 +3,7 @@
 import { useState, useEffect, useReducer, useMemo } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
+import { fetchProductDependencies } from '../../Products/utils/productUtils'; // Import fetchProductDependencies
 import { Label } from "@/components/Shared/ui/label"
 import { Textarea } from "@/components/Shared/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
@@ -29,16 +30,19 @@ interface Product {
   unitType?: string;
   sellingPrice: number;
   purchasePrice: number;
-  suppliers: { id: number; name: string }[];
+  // suppliers: { id: number; name: string }[]; // Removed from Product interface if not needed directly here
   featuredImage?: string;
   quantity?: number;
 }
 
-// Add these interfaces
+// Use Supplier type from productUtils if consistent, otherwise keep local definition
+// Use Supplier type from productUtils if consistent, otherwise keep local definition
+// Adjusting local Supplier interface to match fetched data (id: string)
 interface Supplier {
-  id: number;
+  id: string; // Changed from number to string
   name: string;
 }
+
 
 interface SpendingAccount {
   id: number;
@@ -65,17 +69,19 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
   const { user, business, availableShops } = useAuthLayout();
   const router = useRouter()
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+  // Remove selectedSupplier state
   const [purchaseDate, setPurchaseDate] = useState<Date>()
   const [quantity, setQuantity] = useState("")
   const [batchNumber, setBatchNumber] = useState("")
   const [stockDescription, setStockDescription] = useState("")
   const [unitType, setUnitType] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
-  const [supplierSearchTerm, setSupplierSearchTerm] = useState("")
+  // Remove supplierSearchTerm state
   const [sellingPrice, setSellingPrice] = useState("")
   const [selectedExpenseType, setSelectedExpenseType] = useState<string>("601")
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]); // Add state for all suppliers
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | undefined>(undefined); // Changed state type to string | undefined
   const [ohadaCodes, setOhadaCodes] = useState<OhadaCodeAttributes[]>([])
   const [, forceUpdate] = useReducer(x => x + 1, 0)
   const [isProductSearchFocused, setIsProductSearchFocused] = useState(false)
@@ -88,9 +94,7 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
       : [availableShops?.[0]?.id].filter(Boolean) as string[];
   }, [user, business, availableShops]);
 
-  const filteredSuppliers = selectedProduct?.suppliers?.filter(supplier =>
-    supplier.name.toLowerCase().includes(supplierSearchTerm.toLowerCase())
-  ) || [];
+  // Remove filteredSuppliers logic
 
   useEffect(() => {
     const searchProducts = async () => {
@@ -117,6 +121,26 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
     searchProducts();
   }, [searchTerm, warehouseId]); // Add warehouseId to dependencies
 
+  // Fetch all suppliers
+  useEffect(() => {
+    const loadSuppliers = async () => {
+        if (business?.id) {
+            try {
+                // Use fetchProductDependencies or a direct IPC call if more appropriate
+                // Assuming fetchProductDependencies returns { suppliers: Supplier[] }
+                const result = await fetchProductDependencies(business.id, shopIds);
+                // Ensure the fetched supplier structure matches the local Supplier interface if kept
+                // If fetchProductDependencies returns suppliers with string IDs, adapt accordingly
+                setAllSuppliers(result?.suppliers ?? []);
+            } catch (error) {
+                console.error('Error fetching suppliers:', error);
+                toast({ variant: 'destructive', title: 'Error', description: 'Failed to load suppliers.' });
+            }
+        }
+    };
+    loadSuppliers();
+  }, [business?.id, shopIds]); // Add dependencies
+
   useEffect(() => {
     const fetchOhadaCodes = async () => {
       try {
@@ -139,11 +163,7 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
     fetchOhadaCodes();
   }, []);
 
-  useEffect(() => {
-    if (selectedProduct?.suppliers && selectedProduct.suppliers.length > 0) {
-      setSelectedSupplier(selectedProduct.suppliers[0]);
-    }
-  }, [selectedProduct]);
+  // Remove useEffect that sets selectedSupplier based on selectedProduct
 
   useEffect(() => {
     console.log('Current quantity state:', quantity);
@@ -221,8 +241,8 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
     const qty = product.quantity?.toString() || '1'; // Default to 1 if no quantity
     setQuantity(qty);
     
-    // Clear supplier if none available
-    setSelectedSupplier(null);
+    // Set supplier based on product's supplierId, otherwise reset
+    setSelectedSupplierId(product.supplierId || undefined); 
     
     // Reset search state
     setHighlightedProductIndex(-1);
@@ -260,7 +280,7 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
       batch_number: batchNumber,
       unit_type: unitType,
       stock_type: 'purchase',
-      supplier_id: selectedSupplier?.id,
+      supplier_id: selectedSupplierId, // Use selectedSupplierId state
       userId: user?.id, // Add user ID from AuthLayout context
     };
 
@@ -399,34 +419,27 @@ const AddInventory: React.FC<AddInventoryProps> = ({ onBack, warehouseId, onSucc
             </div>
           </div>
 
+          {/* Replace Supplier Search with Dropdown */}
           <div className="space-y-2">
-            <Label htmlFor="supplier-search">Supplier (Optional)</Label>
-            <div className="flex space-x-2">
-              <Input
-                id="supplier-search"
-                placeholder="Search for supplier"
-                value={supplierSearchTerm}
-                onChange={(e) => setSupplierSearchTerm(e.target.value)}
-              />
-              <Button variant="outline" size="icon">
-                <Search className="h-4 w-4" />
-              </Button>
-            </div>
-            {supplierSearchTerm && (
-              <Select onValueChange={(value) => setSelectedSupplier(JSON.parse(value))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a supplier" />
+            <Label htmlFor="supplier-select">Supplier (Optional)</Label>
+            <Select
+                value={selectedSupplierId || "none"} // Use "none" as placeholder value if undefined
+                onValueChange={(value) => setSelectedSupplierId(value === "none" ? undefined : value)} // Check for "none" placeholder
+            >
+                <SelectTrigger id="supplier-select">
+                    <SelectValue placeholder="Select a supplier" />
                 </SelectTrigger>
                 <SelectContent>
-                  {filteredSuppliers.map((supplier) => (
-                    <SelectItem key={supplier.id} value={JSON.stringify(supplier)}>
-                      {supplier.name}
-                    </SelectItem>
-                  ))}
+                    <SelectItem value="none">None</SelectItem> {/* Use "none" as value */}
+                    {allSuppliers.map((supplier) => (
+                        <SelectItem key={supplier.id} value={supplier.id}> {/* Use string ID directly */}
+                            {supplier.name}
+                        </SelectItem>
+                    ))}
                 </SelectContent>
-              </Select>
-            )}
+            </Select>
           </div>
+
 
           {selectedProduct && (
             <div className="space-y-2">

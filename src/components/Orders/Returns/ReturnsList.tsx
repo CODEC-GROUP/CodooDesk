@@ -368,17 +368,46 @@ const Returns = () => {
       logSaleStructure();
       
       // Debug: Log the items we're sending
-      const items = Array.from(selectedProducts.values()).map(({ product, quantity }) => ({
-        orderId: product.orderId || '', // Use the stored order ID from the selected product
-        productId: product.product_id || null, // Handle null product_id for manual products
-        productName: product.name, // Always use the name from the selected product
-        quantity,
-        price: product.price,
-        reason,
-        description
-      }));
+      const items = Array.from(selectedProducts.values()).map(({ product, quantity }) => {
+        // Ensure orderId is a valid string
+        if (!product.orderId) {
+          console.error('Missing orderId for product:', product.name);
+          throw new Error(`Missing order ID for product: ${product.name}`);
+        }
+        
+        // Log product details for debugging
+        console.log(`Processing return for product: ${product.name}`, {
+          orderId: product.orderId,
+          productId: product.product_id,
+          hasValidProductId: !!(product.product_id && product.product_id.trim() !== '')
+        });
+        
+        return {
+          orderId: product.orderId,
+          // Only include productId if it exists and is not an empty string
+          productId: product.product_id && product.product_id.trim() !== '' ? product.product_id : null,
+          productName: product.name, // Always use the name from the selected product
+          quantity,
+          price: product.price,
+          reason,
+          description
+        };
+      });
       
       console.log('Return items to be created:', JSON.stringify(items, null, 2));
+      
+      // Double-check that all items have orderId
+      const missingOrderIds = items.filter(item => !item.orderId);
+      if (missingOrderIds.length > 0) {
+        console.error('Some items are missing orderId:', missingOrderIds);
+        toast({
+          title: "Error",
+          description: "Some products are missing order information. Please try again.",
+          variant: "destructive",
+        });
+        setIsProcessing(false);
+        return;
+      }
       
       const returnData = {
         saleId: sale.id,
@@ -711,11 +740,21 @@ const Returns = () => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     
     for (const [_, { product }] of selectedProducts.entries()) {
-      if (!product.orderId || !uuidRegex.test(product.orderId)) {
-        console.error('Invalid order ID:', product.orderId);
+      if (!product.orderId) {
+        console.error('Missing order ID for product:', product.name);
         toast({
           title: "Error",
-          description: "One or more products have invalid order IDs",
+          description: `Missing order ID for product: ${product.name}`,
+          variant: "destructive",
+        });
+        return false;
+      }
+      
+      if (!uuidRegex.test(product.orderId)) {
+        console.error('Invalid order ID format:', product.orderId, 'for product:', product.name);
+        toast({
+          title: "Error",
+          description: `Invalid order ID format for product: ${product.name}`,
           variant: "destructive",
         });
         return false;

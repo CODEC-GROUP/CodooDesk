@@ -92,35 +92,62 @@ export function registerReturnHandlers() {
       
       // Create individual returns for each item
       for (const item of items) {
-        let shopId;
+        // Validate that orderId exists and is valid
+        if (!item.orderId) {
+          throw new Error('Order ID is required for return processing');
+        }
         
-        // Get the product to get its shop ID if productId exists
-        if (item.productId) {
-          const product = await Product.findByPk(item.productId);
-          if (product) {
-            shopId = product.shop_id;
-            
-            // Update product stock quantity
-            await product.update({
-              quantity: product.quantity + item.quantity
-            }, { transaction: t });
-          } else {
-            // If product not found but ID was provided, use the shop ID from returnData
-            shopId = returnData.shopId;
+        const order = await Order.findOne({
+          where: { id: item.orderId },
+          transaction: t
+        });
+
+        if (!order) {
+          throw new Error(`Order with ID ${item.orderId} not found`);
+        }
+        
+        let productShopId = null;
+        
+        // Only try to update product if productId is provided and not empty
+        if (item.productId && item.productId.trim() !== '') {
+          try {
+            const product = await Product.findByPk(item.productId);
+            if (product) {
+              productShopId = product.shop_id;
+              
+              // Update product stock quantity
+              await product.update({
+                quantity: product.quantity + item.quantity
+              }, { transaction: t });
+              
+              // Keep the productId since it's valid
+            } else {
+              // Product not found, set productId to null
+              item.productId = null;
+              console.warn(`Product with ID ${item.productId} not found, setting productId to null`);
+            }
+          } catch (error) {
+            // Error finding product, set productId to null
+            item.productId = null;
+            console.warn(`Error finding product with ID ${item.productId}, setting productId to null:`, error);
           }
         } else {
-          // For manual products (null productId), use the shop ID from returnData
-          shopId = returnData.shopId;
+          // No productId or empty productId, explicitly set to null
+          item.productId = null;
+          console.log('No valid productId provided for this return item, setting productId to null');
         }
-
-        if (!shopId) {
+        
+        // Use the shop ID from the product if found, otherwise use the one from returnData
+        const effectiveShopId = productShopId || returnData.shopId;
+        
+        if (!effectiveShopId) {
           throw new Error('Shop ID not found for the product');
         }
 
         // Create the return record
         createdReturn = await Return.create({
           orderId: item.orderId,
-          productId: item.productId,
+          productId: item.productId, // This will be null if not valid
           productName: item.productName, // Store the product name explicitly
           customerFirstName: customer.name,
           customerLastName: '',
@@ -131,23 +158,20 @@ export function registerReturnHandlers() {
           paymentMethod: paymentMethod,
           status: 'pending',
           date: new Date(),
-          shopId: shopId,
+          shopId: effectiveShopId,
           saleId: saleId
         }, { transaction: t });
 
         // Update the corresponding order's quantity and payment status
-        const order = await Order.findOne({
-          where: { id: item.orderId },
-          transaction: t
-        });
-
-        if (order) {
-          const updatedQuantity = order.quantity - item.quantity;
-          await order.update({
-            quantity: updatedQuantity,
-            paymentStatus: updatedQuantity === 0 ? 'refunded' : 'paid'
-          }, { transaction: t });
+        const updatedQuantity = order.quantity - item.quantity;
+        if (updatedQuantity < 0) {
+          throw new Error(`Cannot return more items (${item.quantity}) than were ordered (${order.quantity})`);
         }
+        
+        await order.update({
+          quantity: updatedQuantity,
+          paymentStatus: updatedQuantity === 0 ? 'refunded' : 'paid'
+        }, { transaction: t });
       }
 
       // Update the sale's net amount

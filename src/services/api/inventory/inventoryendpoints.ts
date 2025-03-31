@@ -5,12 +5,10 @@ import InventoryItem from '../../../models/InventoryItem.js';
 import { z } from 'zod';
 import { Op } from 'sequelize';
 
-// Add interface for inventory items
+// Add interface for inventory items needed for warehouse value calculation
 interface InventoryItemType {
   quantity: number;
-  unit_cost: number;
   selling_price: number;
-  value: number;
 }
 
 interface InventoryWithItems extends InventoryAttributes {
@@ -187,10 +185,11 @@ export function registerInventoryHandlers() {
         where: whereClause,
         include: [
           { model: Shop, as: 'shop' },
-          { 
+          {
             model: InventoryItem,
             as: 'inventoryItems',
-            attributes: ['quantity', 'unit_cost', 'selling_price', 'value']
+            // Only fetch attributes needed for this calculation
+            attributes: ['quantity', 'selling_price']
           }
         ],
         limit,
@@ -202,14 +201,15 @@ export function registerInventoryHandlers() {
         success: true, 
         data: {
           items: (inventories as unknown as InventoryWithItems[]).map(inv => {
-            // Calculate totals from inventory items
-            const totalLevel = inv.inventoryItems?.reduce((sum: number, item: InventoryItemType) => 
-              sum + (item.quantity || 0), 0) || 0;
+            // Calculate level as the count of distinct inventory items
+            const totalLevel = inv.inventoryItems?.length || 0;
             
-            // Calculate total value using unit_cost (purchase price) for accurate inventory valuation
+            // Calculate total value using selling_price for potential revenue valuation
             const totalValue = inv.inventoryItems?.reduce((sum: number, item: InventoryItemType) => {
-              const itemValue = item.unit_cost || 0;
-              return sum + ((item.quantity || 0) * itemValue);
+              // Ensure values are treated as numbers
+              const price = Number(item.selling_price) || 0;
+              const qty = Number(item.quantity) || 0;
+              return sum + (qty * price);
             }, 0) || 0;
             
             // Determine status based on total level

@@ -34,6 +34,10 @@ export function registerInventoryItemHandlers() {
       if (!itemData.inventory_id) throw new Error('Inventory ID is required');
       if (!itemData.quantity || itemData.quantity <= 0) throw new Error('Valid quantity is required');
       if (!itemData.unit_cost || itemData.unit_cost <= 0) throw new Error('Valid unit cost is required');
+      // Add validation for selling_price
+      if (typeof itemData.selling_price === 'undefined' || itemData.selling_price < 0) {
+        throw new Error('Valid selling price is required');
+      }
 
       const item = await InventoryItem.create(itemData, { transaction: t });
       
@@ -83,7 +87,12 @@ export function registerInventoryItemHandlers() {
       });
 
       const totalItems = items.length;
-      const totalValue = items.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0);
+      // Calculate total value using selling_price for consistency
+      const totalValue = items.reduce((sum, item) => {
+        const price = Number(item.selling_price) || 0;
+        const qty = Number(item.quantity) || 0;
+        return sum + (qty * price);
+      }, 0);
 
       return {
         items: items.map(item => item.get({ plain: true })),
@@ -113,12 +122,16 @@ export function registerInventoryItemHandlers() {
   ipcMain.handle(IPC_CHANNELS.UPDATE_ITEM, async (event, { id, updates }) => {
     try {
       const item = await InventoryItem.findByPk(id);
-      if (!item) {
-        return { success: false, message: 'Inventory item not found' };
-      }
-      await item.update(updates);
-      return { success: true, message: 'Inventory item updated successfully', item };
-    } catch (error) {
+    if (!item) {
+      return { success: false, message: 'Inventory item not found' };
+    }
+    // Add validation for selling_price if it's being updated
+    if (typeof updates.selling_price !== 'undefined' && updates.selling_price < 0) {
+      throw new Error('Valid selling price is required');
+    }
+    await item.update(updates);
+    return { success: true, message: 'Inventory item updated successfully', item };
+  } catch (error) {
       return { success: false, message: 'Error updating inventory item', error };
     }
   });

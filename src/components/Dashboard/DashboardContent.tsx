@@ -476,7 +476,10 @@ export function Dashboard() {
     console.log('Data length:', financeTimeSeries?.data?.length);
     console.log('First item:', financeTimeSeries?.data?.[0]);
     console.log('Params used:', params);
-  }, [financeTimeSeries, isLoadingFinance, params]);
+
+    // Log category breakdown
+    console.log('Category Breakdown Response:', categoryBreakdown);
+  }, [financeTimeSeries, isLoadingFinance, params, categoryBreakdown]);
 
   if (isLoadingInventory || isLoadingSales || isLoadingCategories || isLoadingFinance) {
     return <LoadingSpinner />;

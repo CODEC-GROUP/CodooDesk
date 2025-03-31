@@ -27,6 +27,7 @@ const IPC_CHANNELS = {
   
   // Categories
   GET_CATEGORY_BREAKDOWN: 'dashboard:categories:breakdown',
+  GET_TOP_CATEGORIES_BY_PRODUCT_COUNT: 'dashboard:categories:topByProductCount', // New channel
 
   // Customers
   GET_TOP_CUSTOMERS: 'dashboard:customers:top',
@@ -57,6 +58,15 @@ interface CategoryResult {
   product_count: number;
   total_items: number;
   total_value: number;
+  percentage: number; // Added percentage for breakdown
+  color: string; // Added color for breakdown chart
+}
+
+// New interface for top categories by product count
+interface TopCategoryResult {
+  id: string;
+  name: string;
+  product_count: number;
 }
 
 interface TrendResult {
@@ -277,19 +287,39 @@ async function getTrends() {
 }
 
 async function getCategoryBreakdown(whereClause: WhereClause): Promise<CategoryResult[]> {
+  // Create a proper where clause based on what's provided
+  let productWhere: WhereClause = {};
+  let includeOptions = [];
+
+  if (whereClause.shopId) {
+    // If we have a direct shopId, use shop_id field on Product
+    productWhere.shop_id = whereClause.shopId;
+  } else if (whereClause['$shop.businessId$']) {
+    // If we're filtering by businessId, we need to include the Shop model
+    includeOptions.push({
+      model: Shop,
+      as: 'shop',
+      where: { businessId: whereClause['$shop.businessId$'] },
+      required: true,
+      attributes: []
+    });
+  }
+
   const results = await Category.findAll({
     include: [{
       model: Product,
+      as: 'products',
       required: true,
-      where: whereClause,
+      where: productWhere,
+      include: includeOptions,
       attributes: []
     }],
     attributes: [
       'id',
       'name',
-      [fn('COUNT', col('Products.id')), 'product_count'],
-      [fn('SUM', col('Products.quantity')), 'total_items'],
-      [fn('SUM', literal('Products.quantity * Products.sellingPrice')), 'total_value']
+      [fn('COUNT', col('products.id')), 'product_count'],
+      [fn('SUM', col('products.quantity')), 'total_items'],
+      [fn('SUM', literal('products.quantity * products.sellingPrice')), 'total_value']
     ],
     group: ['Category.id'],
     raw: true
@@ -313,6 +343,54 @@ async function getCategoryBreakdown(whereClause: WhereClause): Promise<CategoryR
     color: `hsl(${(index * 360) / results.length}, 70%, 50%)`
   }));
 }
+
+// New function to get top categories by product count
+async function getTopCategoriesByProductCount(whereClause: WhereClause, limit: number = 5): Promise<TopCategoryResult[]> {
+  // Create a proper where clause based on what's provided
+  let productWhere: WhereClause = {};
+  let includeOptions = [];
+
+  if (whereClause.shopId) {
+    // If we have a direct shopId, use shop_id field on Product
+    productWhere.shop_id = whereClause.shopId;
+  } else if (whereClause['$shop.businessId$']) {
+    // If we're filtering by businessId, we need to include the Shop model
+    includeOptions.push({
+      model: Shop,
+      as: 'shop',
+      where: { businessId: whereClause['$shop.businessId$'] },
+      required: true,
+      attributes: []
+    });
+  }
+
+  const results = await Category.findAll({
+    include: [{
+      model: Product,
+      as: 'products',
+      required: true,
+      where: productWhere,
+      include: includeOptions,
+      attributes: []
+    }],
+    attributes: [
+      'id',
+      'name',
+      [fn('COUNT', col('products.id')), 'product_count']
+    ],
+    group: ['Category.id', 'Category.name'],
+    order: [[literal('product_count'), 'DESC']],
+    limit: limit,
+    raw: true
+  }) as unknown as TopCategoryResult[];
+
+  // Ensure product_count is a number
+  return results.map(cat => ({
+    ...cat,
+    product_count: Number(cat.product_count)
+  }));
+}
+
 
 async function getTopCustomers(whereClause: WhereClause) {
   return await Sales.findAll({
@@ -457,12 +535,26 @@ async function getFinanceTimeSeries(whereClause: WhereClause, dateRange?: { star
 
 function getWhereClause(params: { businessId: string; shopId?: string; shopIds?: string[] }): WhereClause {
   const { businessId, shopId, shopIds } = params;
-  return shopIds?.length 
-    ? { '$shop.id$': { [Op.in]: shopIds } }
-    : shopId 
-      ? { shopId }
-      : { '$shop.businessId$': businessId };
+
+  // Prioritize shopId if provided for direct filtering where possible
+  if (shopId) {
+    return { shopId: shopId };
+  }
+  // Handle multiple shopIds if needed (adjust based on specific query needs)
+  if (shopIds?.length) {
+    // Example: For queries joining with Shop model directly
+    // return { '$shop.id$': { [Op.in]: shopIds } };
+    // Example: For queries filtering Product model directly
+    return { shop_id: { [Op.in]: shopIds } };
+  }
+  // Fallback to businessId filtering via Shop association
+  if (businessId) {
+    return { '$shop.businessId$': businessId };
+  }
+  // Return empty if no identifiers provided (should ideally not happen)
+  return {};
 }
+
 
 export function registerDashboardHandlers() {
   // Inventory Dashboard Handlers
@@ -537,6 +629,18 @@ export function registerDashboardHandlers() {
       return createErrorResponse(error);
     }
   });
+
+  // New handler for top categories by product count
+  ipcMain.handle(IPC_CHANNELS.GET_TOP_CATEGORIES_BY_PRODUCT_COUNT, async (event, params) => {
+    try {
+      const whereClause = getWhereClause(params);
+      const topCategories = await getTopCategoriesByProductCount(whereClause); // Default limit is 5
+      return createSuccessResponse(topCategories);
+    } catch (error) {
+      return createErrorResponse(error);
+    }
+  });
+
 
   // Customers Dashboard Handler
   ipcMain.handle(IPC_CHANNELS.GET_TOP_CUSTOMERS, async (event, params) => {

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/Shared/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select" // Removed SelectPortal
 import { Card, CardContent } from "@/components/ui/card"
 import { Edit, Minus, Plus, X, RefreshCcw, AlertCircle } from "lucide-react"
 import Image from 'next/image'
@@ -28,18 +28,34 @@ interface Product {
     id: string;
     name: string;
   };
+  inventories?: InventoryItem[]; // Add inventories to track warehouse information
 }
 
 // Define the CartItem interface (extends Product with quantity and inventory)
 interface CartItem extends Product {
   quantity: number;
   actualPrice: number;
+  selectedInventory?: InventoryItem; // Keep this for compatibility
 }
 
 // Define the Inventory interface
 interface Inventory {
-  id: number;
+  id: string;
   name: string;
+  description?: string;
+  shopId?: string | null;
+}
+
+// Define the InventoryItem interface
+interface InventoryItem {
+  id: string;
+  product_id: string;
+  inventory_id: string;
+  inventory?: Inventory;
+  quantity: number;
+  unit_cost: number;
+  selling_price: number;
+  status: 'in_stock' | 'low_stock' | 'out_of_stock';
 }
 
 // Define the Customer interface
@@ -78,6 +94,9 @@ interface ProductCardProps {
 const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
   // Normalize the image path by converting backslashes to forward slashes
   const normalizedImagePath = product.featuredImage?.replace(/\\/g, '/');
+  
+  // Check if product has multiple inventories
+  const hasMultipleInventories = product.inventories && product.inventories.length > 1;
 
   return (
     <Card
@@ -93,6 +112,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart }) => {
         >
           in stock
         </span>
+
+        {/* Removed warehouse count badge */}
 
         <div className="flex justify-center mb-2">
           <Image
@@ -122,18 +143,35 @@ interface CartItemProps {
   onUpdateQuantity: (id: string, quantity: number) => void;
   onRemove: (id: string) => void;
   onUpdatePrice: (id: string, price: number) => void;
+  onUpdateItemWarehouse: (itemId: string, inventoryId: string) => void; // Added prop
 }
 
 const CartItem: React.FC<CartItemProps> = ({
   item,
   onUpdateQuantity,
   onRemove,
-  onUpdatePrice
-}) => (
-  <div className="flex flex-col py-2 border-b">
-    <div className="flex justify-between items-start">
-      <div className="space-y-1">
-        <h4 className="font-medium text-sm">{item.name}</h4>
+  onUpdatePrice,
+  onUpdateItemWarehouse // Added prop
+}) => {
+  // Filter valid inventories directly without enforcing uniqueness by inventory_id
+  const validInventoriesForDropdown = React.useMemo(() => {
+    if (!Array.isArray(item.inventories)) {
+      return []; // Return empty array if inventories is not an array
+    }
+    // Filter out items without a valid inventory_id or inventory object
+    return item.inventories.filter(inv => 
+      inv && 
+      typeof inv.id === 'string' && inv.id.trim() !== '' && // Use the InventoryItem ID as the key/value
+      inv.inventory && // Ensure inventory details exist
+      typeof inv.inventory_id === 'string' && inv.inventory_id.trim() !== ''
+    );
+  }, [item.inventories]); // Recalculate only when item.inventories changes
+
+  return (
+  <div className="flex flex-col py-2 border-b px-2"> {/* Removed cursor-pointer */}
+    <div className="flex justify-between items-start mb-1 pb-1"> {/* Added mb-1 and pb-1 */}
+      <div className="space-y-1 flex-1 mr-2"> {/* Added flex-1 mr-2 */}
+        <h4 className="font-medium text-sm truncate">{item.name}</h4> {/* Added truncate */}
         <div className="flex items-center gap-2">
           <Input
             type="number"
@@ -177,9 +215,68 @@ const CartItem: React.FC<CartItemProps> = ({
           <X className="h-3 w-3" />
         </Button>
       </div>
+
+      {/* REMOVED Duplicated Quantity Controls */}
+      {/* <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
+          className="h-7 w-7"
+        >
+          <Minus className="h-3 w-3" />
+        </Button>
+        <span className="w-8 text-center text-sm">{item.quantity}</span>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
+          className="h-7 w-7"
+        >
+          <Plus className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onRemove(item.id)}
+          className="h-7 w-7 ml-1"
+        >
+          <X className="h-3 w-3" />
+        </Button>
+      </div> */}
     </div>
+
+    {/* Warehouse Selection for this item - Use the filtered (but not unique by ID) list */}
+    {/* Show dropdown if there's at least one valid inventory item */}
+    {validInventoriesForDropdown.length > 0 && (
+      <Select
+        // Use the specific InventoryItem ID (inv.id) for the value if available, fallback needed if selectedInventory isn't set yet
+        value={item.selectedInventory?.id ?? ''} 
+        // Pass the InventoryItem ID (inv.id) to the handler
+        onValueChange={(inventoryItemId) => onUpdateItemWarehouse(item.id, inventoryItemId)} 
+      >
+        <SelectTrigger className="h-8 text-xs w-full relative z-10">
+          <SelectValue placeholder="Select Stock Entry / Warehouse" />
+        </SelectTrigger>
+        <SelectContent className="z-50">
+          {validInventoriesForDropdown.map((inv) => { // Map over the filtered list
+              // Log the inventory item being rendered to check its quantity
+              console.log(`Rendering dropdown item for ${item.name} - Warehouse ${inv.inventory?.name} (Item ID: ${inv.id}):`, inv);
+              return (
+                // Use the InventoryItem's own ID (inv.id) as the key and value
+                <SelectItem key={`${item.id}-${inv.id}`} value={inv.id} className="text-xs">
+                  {/* Display warehouse name and quantity for this specific inventory item */}
+                  {inv.inventory?.name || 'Unnamed Warehouse'} ({inv.quantity} in stock)
+                  {/* Optionally add more details like batch number if available */}
+                </SelectItem>
+              );
+          })}
+        </SelectContent>
+      </Select>
+    )}
   </div>
-)
+  );
+};
 
 // Define the default walk-in customer
 const defaultCustomer: Customer = {
@@ -218,6 +315,8 @@ export function Pos() {
   const [lastSaleData, setLastSaleData] = useState<any>(null);
   const [lastReceiptData, setLastReceiptData] = useState<any>(null);
   const [showAddProductForm, setShowAddProductForm] = useState(false);
+  // Removed selectedWarehouse state
+  const [availableWarehouses, setAvailableWarehouses] = useState<Inventory[]>([]); // Keep this to know *which* warehouses exist
 
   const handleAddProduct = () => {
     setShowAddProductForm(true);
@@ -245,17 +344,48 @@ export function Pos() {
       setAlertMessage("This product is out of stock.");
       return;
     }
+    
+    // If product has inventories, use the first one as default or the selected warehouse
+    let selectedInventory: InventoryItem | undefined = undefined;
+    
+    if (product.inventories && product.inventories.length > 0) {
+      // If no warehouse selected or no match found, use the first inventory as default
+      // Removed the check for the now non-existent selectedWarehouse state
+      if (!selectedInventory) {
+        selectedInventory = product.inventories[0];
+        // No need to set global selectedWarehouse anymore
+      }
+    }
+    
     const existingItem = cartItems.find(item => item.id === product.id)
     if (existingItem) {
       setCartItems(cartItems.map(item =>
         item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
       ))
     } else {
-      setCartItems([...cartItems, {
-        ...product,
+      // --- Start Corrected Logic ---
+      // Directly use product.inventories. Ensure it's an array.
+      const productInventories = Array.isArray(product.inventories) ? product.inventories : [];
+
+      // Select the default inventory from the full list (e.g., the first one if available)
+      let defaultInventoryForItem: InventoryItem | undefined = undefined;
+      if (productInventories.length > 0) {
+          // Simple selection of the first item as default for now
+          defaultInventoryForItem = productInventories[0]; 
+      }
+
+      // Add the new item to the cart, passing the *complete* inventories list.
+      // Ensure we are creating a new object for the cart item.
+      const newItem: CartItem = {
+        ...product, // Spread product properties first
+        inventories: productInventories, // Explicitly set the full inventories list
         quantity: 1,
-        actualPrice: product.sellingPrice
-      }])
+        actualPrice: product.sellingPrice,
+        selectedInventory: defaultInventoryForItem // Use the determined default
+      };
+
+      setCartItems(prevCartItems => [...prevCartItems, newItem]);
+      // --- End Corrected Logic ---
     }
   }
 
@@ -316,10 +446,17 @@ export function Pos() {
 
       const total = calculateTotal();
 
+      // Include inventory information with each cart item
+      const cartItemsWithInventory = cartItems.map(item => ({
+        ...item,
+        inventoryId: item.selectedInventory?.inventory_id || null,
+        warehouseId: item.selectedInventory?.inventory_id || null
+      }));
+
       const saleData = {
         shopId: currentShopId,
         customer: customer,
-        cartItems: cartItems,
+        cartItems: cartItemsWithInventory,
         subtotal: total,
         paymentMethod: paymentType,
         amountPaid: amountPaid,
@@ -445,12 +582,32 @@ export function Pos() {
     setCartItems([])
     setPaymentSuccess(false)
     setPaymentType("CASH")
-  }
+  }; // Added missing closing brace
 
   const updatePrice = (id: string, newPrice: number) => {
     setCartItems(cartItems.map(item =>
       item.id === id ? { ...item, actualPrice: newPrice } : item
     ));
+  };
+
+  // Handler to update the selected inventory item for a specific cart item
+  const handleUpdateItemWarehouse = (itemId: string, inventoryItemId: string) => {
+    // Use functional update for safety when new state depends on previous state
+    setCartItems(currentCartItems =>
+      currentCartItems.map(item => {
+        if (item.id === itemId) {
+          // Find the specific InventoryItem by its own ID (inventoryItemId)
+          const newSelectedInventory = item.inventories?.find(inv => inv.id === inventoryItemId);
+          // Ensure a new object is created for the item AND the inventory to trigger re-render reliably
+          return {
+            ...item,
+            // Create a new object reference for selectedInventory
+            selectedInventory: newSelectedInventory ? { ...newSelectedInventory } : undefined
+          };
+        }
+        return item;
+      })
+    );
   };
 
   useEffect(() => {
@@ -499,9 +656,10 @@ export function Pos() {
           success: boolean;
           message?: string;
           products: never[];
-        }>('inventory:product:get-all', {
+        }>('inventory:product:get-all-with-inventories', {
           shopIds: [shopIdToUse],
-          businessId: business.id
+          businessId: business.id,
+          includeInventories: true
         }, {
           success: false,
           products: []
@@ -514,6 +672,24 @@ export function Pos() {
         }
 
         setProducts(response.products || []);
+        
+        // Extract unique warehouses from all products
+        const warehouses: Inventory[] = [];
+        const warehouseIds = new Set<string>();
+        
+        response.products.forEach((product: any) => {
+          if (product.inventories) {
+            product.inventories.forEach((inv: InventoryItem) => {
+              if (inv.inventory && inv.inventory.id && !warehouseIds.has(inv.inventory.id)) {
+                warehouseIds.add(inv.inventory.id);
+                warehouses.push(inv.inventory);
+              }
+            });
+          }
+        });
+        
+        setAvailableWarehouses(warehouses);
+        // No need to set default global warehouse anymore
       } catch (error) {
         console.error('Error loading products:', error);
         setError(error instanceof Error ? error.message : 'Failed to load products');
@@ -583,10 +759,10 @@ export function Pos() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="h-[calc(100vh-4rem)]"> {/* Removed overflow-hidden */}
       <div className="flex flex-col md:flex-row gap-4 p-4 h-full">
         {/* Left Section - Product Catalog */}
-        <div className="w-full md:w-2/3 bg-white rounded-lg shadow-sm p-4 flex flex-col h-full">
+        <div className="w-full md:w-3/4 bg-white rounded-lg shadow-sm p-4 flex flex-col h-full">
           {/* Alert Message */}
           {alertMessage && (
             <div className="flex items-center bg-red-100 text-red-800 p-2 rounded mb-4">
@@ -668,7 +844,7 @@ export function Pos() {
           {products.length === 0 ? (
             <EmptyState onAddProduct={handleAddProduct} />
           ) : (
-            <div className="flex-1 overflow-y-auto min-h-0 pb-4">
+            <div className="flex-1 min-h-0 pb-4"> {/* Removed overflow-y-auto */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                 {currentProducts.map(product => (
                   <ProductCard
@@ -708,8 +884,8 @@ export function Pos() {
         {/* Right Section - Cart */}
         <div className="w-full md:w-1/3 h-full flex">
           <Card className="flex-1 flex flex-col">
-            <CardContent className="p-4 flex flex-col h-full">
-              <div className="flex justify-between items-center mb-4">
+            <CardContent className="py-4 flex flex-col h-full"> {/* Changed p-4 to py-4 */}
+              <div className="flex justify-between items-center mb-4 px-4"> {/* Added px-4 */}
                 <h2 className="text-xl font-bold">Cart</h2>
                 <Button variant="ghost" size="icon" onClick={clearCart}>
                   <RefreshCcw className="h-4 w-4" />
@@ -717,7 +893,7 @@ export function Pos() {
               </div>
 
               {/* Customer Selection */}
-              <div className="mb-4">
+              <div className="mb-4 px-4"> {/* Added px-4 */}
                 <Select
                   value={selectedCustomer?.id.toString()}
                   onValueChange={(value) => {
@@ -738,9 +914,11 @@ export function Pos() {
                   </SelectContent>
                 </Select>
               </div>
+              
+              {/* Removed Global Warehouse Selection Dropdown */}
 
-              {/* Scrollable Cart Items */}
-              <div className="flex-1 overflow-y-auto min-h-0 border-y">
+              {/* Cart Items (Removed scroll) */}
+              <div className="flex-1 min-h-0 border-y h-96"> {/* Removed overflow-y-auto */}
                 {cartItems.map(item => (
                   <CartItem
                     key={item.id}
@@ -748,6 +926,7 @@ export function Pos() {
                     onUpdateQuantity={updateQuantity}
                     onRemove={removeFromCart}
                     onUpdatePrice={updatePrice}
+                    onUpdateItemWarehouse={handleUpdateItemWarehouse} // Pass handler down
                   />
                 ))}
               </div>
@@ -861,10 +1040,6 @@ export function Pos() {
           </Card>
         </div>
       </div>
-
-      {showAddProductForm && (
-        <AddProduct onBack={handleCloseAddProductForm} />
-      )}
     </div>
   )
 }
