@@ -38,6 +38,8 @@ interface OrderItem {
   unitPrice: number;
   quantity: number;
   total: number;
+  inventoryId?: string; // Added for inventory tracking
+  selectedInventory?: InventoryItem; // Added to track selected inventory
 }
 
 interface Customer {
@@ -54,6 +56,7 @@ interface Product {
   quantity: number;
   sku: string;
   status?: string;
+  inventories?: InventoryItem[]; // Added to track available inventories
 }
 
 interface CustomerResponse {
@@ -113,6 +116,24 @@ interface AddOrderProps {
   onBack: () => void;
 }
 
+interface Inventory {
+  id: string;
+  name: string;
+  description?: string;
+  shopId?: string | null;
+}
+
+interface InventoryItem {
+  id: string;
+  product_id: string;
+  inventory_id: string;
+  inventory?: Inventory;
+  quantity: number;
+  unit_cost: number;
+  selling_price: number;
+  status: 'in_stock' | 'low_stock' | 'out_of_stock';
+}
+
 export function AddOrder({ onBack }: AddOrderProps) {
   const { user, business, availableShops } = useAuthLayout();
   const [shopId, setShopId] = useState<string | null>(null);
@@ -139,6 +160,7 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const [selectedShopId, setSelectedShopId] = useState<string>("");
   const [isProductSearchFocused, setIsProductSearchFocused] = useState(false)
   const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1)
+  const [availableInventories, setAvailableInventories] = useState<Inventory[]>([]);
 
   // Add default walk-in customer
   const defaultCustomer: Customer = {
@@ -211,9 +233,12 @@ export function AddOrder({ onBack }: AddOrderProps) {
   const fetchProducts = async () => {
     try {
       setIsLoading(true);
-      const response = await safeIpcInvoke<ProductResponse>('inventory:product:get-all', {
+      
+      // Use the same endpoint as ProductGrid to get products with inventories in a single request
+      const response = await safeIpcInvoke<ProductResponse>('inventory:product:get-all-with-inventories', {
         shopIds,
-        businessId: business?.id
+        businessId: business?.id,
+        includeInventories: true
       }, {
         success: false,
         products: []
@@ -224,6 +249,8 @@ export function AddOrder({ onBack }: AddOrderProps) {
       }
 
       setProducts(response.products || []);
+      
+      // No need for a separate warehouse request since inventories are included with products
     } catch (error) {
       console.error('Error fetching products:', error);
       toast({
@@ -283,7 +310,9 @@ export function AddOrder({ onBack }: AddOrderProps) {
         productId: item.productId,
         productName: item.productName,
         quantity: item.quantity,
-        sellingPrice: item.unitPrice
+        sellingPrice: item.unitPrice,
+        inventoryId: item.selectedInventory?.inventory_id || null, // Include inventory information
+        warehouseId: item.selectedInventory?.inventory_id || null // For backward compatibility
       }));
 
       const orderData = {
@@ -513,13 +542,23 @@ export function AddOrder({ onBack }: AddOrderProps) {
       return;
     }
     
+    // Check if product has inventories
+    let selectedInventory: InventoryItem | undefined = undefined;
+    
+    if (product.inventories && product.inventories.length > 0) {
+      // Use the first inventory as default
+      selectedInventory = product.inventories[0];
+    }
+    
     const newItem: OrderItem = {
       id: Date.now().toString(),
       productId: product.id,
       productName: product.name,
       unitPrice: product.sellingPrice,
       quantity: tempQuantity,
-      total: product.sellingPrice * tempQuantity
+      total: product.sellingPrice * tempQuantity,
+      inventoryId: selectedInventory?.inventory_id,
+      selectedInventory: selectedInventory
     };
     
     setOrderItems([...orderItems, newItem]);
@@ -527,6 +566,30 @@ export function AddOrder({ onBack }: AddOrderProps) {
     setSelectedProduct(null);
     setTempQuantity(1);
     setHighlightedProductIndex(-1);
+  };
+
+  const handleUpdateItemInventory = (itemId: string, inventoryItemId: string) => {
+    setOrderItems(currentOrderItems =>
+      currentOrderItems.map(item => {
+        if (item.id === itemId && item.productId) {
+          // Find the product for this order item
+          const product = products.find(p => p.id === item.productId);
+          
+          if (product?.inventories) {
+            // Find the specific InventoryItem by its ID
+            const newSelectedInventory = product.inventories.find(inv => inv.id === inventoryItemId);
+            
+            // Create a new object for the item with updated inventory
+            return {
+              ...item,
+              inventoryId: newSelectedInventory?.inventory_id,
+              selectedInventory: newSelectedInventory ? { ...newSelectedInventory } : undefined
+            };
+          }
+        }
+        return item;
+      })
+    );
   };
 
   return (
@@ -667,6 +730,15 @@ export function AddOrder({ onBack }: AddOrderProps) {
                                   <span className={`${product.quantity < 5 ? 'text-orange-500' : 'text-gray-600'}`}>
                                     Stock: {product.quantity}
                                   </span>
+                                  {/* Show inventory count if available */}
+                                  {product.inventories && product.inventories.length > 0 && (
+                                    <>
+                                      <span className="mx-2">•</span>
+                                      <span className="text-blue-600">
+                                        {product.inventories.length} {product.inventories.length === 1 ? 'inventory' : 'inventories'}
+                                      </span>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 ml-4">
@@ -759,7 +831,45 @@ export function AddOrder({ onBack }: AddOrderProps) {
               <tbody className="divide-y divide-gray-200">
                 {orderItems.map(item => (
                   <tr key={item.id}>
-                    <td className="px-4 py-2">{item.productName}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-col">
+                        <span>{item.productName}</span>
+                        {/* Add inventory selection dropdown */}
+                        {item.productId && (() => {
+                          // Find the product for this order item
+                          const product = products.find(p => p.id === item.productId);
+                          
+                          // Get valid inventories for this product
+                          const validInventories = product?.inventories?.filter(inv => 
+                            inv && 
+                            typeof inv.id === 'string' && 
+                            inv.id.trim() !== '' && 
+                            inv.inventory && 
+                            typeof inv.inventory_id === 'string' && 
+                            inv.inventory_id.trim() !== ''
+                          );
+                          
+                          // Only show dropdown if there are valid inventories
+                          return validInventories && validInventories.length > 0 ? (
+                            <Select
+                              value={item.selectedInventory?.id || ''}
+                              onValueChange={(inventoryItemId) => handleUpdateItemInventory(item.id, inventoryItemId)}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-full mt-1 relative z-10">
+                                <SelectValue placeholder="Select Stock Entry / Inventory" />
+                              </SelectTrigger>
+                              <SelectContent className="z-50">
+                                {validInventories.map((inv) => (
+                                  <SelectItem key={`${item.id}-${inv.id}`} value={inv.id} className="text-xs">
+                                    {inv.inventory?.name || 'Unnamed Inventory'} ({inv.quantity} in stock)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : null;
+                        })()}
+                      </div>
+                    </td>
                     <td className="px-4 py-2 text-right">{item.unitPrice} XAF</td>
                     <td className="px-4 py-2 text-right">
                       <Input

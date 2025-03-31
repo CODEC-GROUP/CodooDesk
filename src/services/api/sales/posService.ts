@@ -7,6 +7,7 @@ import Income from '../../../models/Income.js';
 import Receipt from '../../../models/Receipt.js';
 import { sequelize } from '../../database/index.js';
 import OhadaCode from '../../../models/OhadaCode.js';
+import InventoryItem from '../../../models/InventoryItem.js';
 
 interface CartItem {
   id: string;
@@ -28,6 +29,8 @@ interface POSSaleRequest {
     name: string;
     quantity: number;
     actualPrice: number;
+    inventoryId?: string | null;
+    warehouseId?: string | null;
   }[];
   paymentMethod: string;
   amountPaid: number;
@@ -109,6 +112,72 @@ export function registerPOSHandlers() {
             transaction: t 
           }
         );
+
+        // If an inventory ID is provided, update that specific inventory item's quantity
+        if (item.inventoryId) {
+          console.log(`Processing inventory update for product ${item.id}, inventory ID: ${item.inventoryId}`);
+          
+          // Find the inventory item - use the inventoryItemId directly if available
+          const inventoryItemQuery = {
+            where: item.warehouseId ? 
+              // If we have a warehouseId/inventoryId (which is the inventory_id), use that
+              {
+                inventory_id: item.inventoryId,
+                product_id: item.id
+              } :
+              // Otherwise, try to find by the inventory item's own ID
+              {
+                id: item.inventoryId,
+                product_id: item.id
+              },
+            transaction: t
+          };
+          
+          console.log(`Inventory item query:`, inventoryItemQuery);
+          const inventoryItem = await InventoryItem.findOne(inventoryItemQuery);
+
+          if (inventoryItem) {
+            console.log(`Found inventory item: ${JSON.stringify({
+              id: inventoryItem.id,
+              product_id: inventoryItem.product_id,
+              inventory_id: inventoryItem.inventory_id,
+              quantity: inventoryItem.quantity
+            })}`);
+            
+            // Check if there's enough quantity in this specific inventory
+            if (inventoryItem.quantity < item.quantity) {
+              throw new Error(`Insufficient stock for product ${item.name} in the selected inventory`);
+            }
+
+            // Update inventory item quantity
+            await inventoryItem.decrement('quantity', {
+              by: item.quantity,
+              transaction: t
+            });
+            console.log(`Decremented inventory item quantity by ${item.quantity}`);
+
+            // Update inventory item status based on new quantity
+            const updatedInventoryItem = await InventoryItem.findOne(inventoryItemQuery);
+
+            if (updatedInventoryItem) {
+              console.log(`Updated inventory item quantity: ${updatedInventoryItem.quantity}`);
+              const newStatus = updatedInventoryItem.quantity <= 0 ? 'out_of_stock' :
+                              updatedInventoryItem.quantity <= (updatedInventoryItem.reorder_point ?? 10) ? 'low_stock' :
+                              'in_stock';
+              
+              await updatedInventoryItem.update({ 
+                status: newStatus
+              }, { transaction: t });
+              console.log(`Updated inventory item status to: ${newStatus}`);
+            } else {
+              console.log(`Could not find updated inventory item after decrement`);
+            }
+          } else {
+            console.log(`No inventory item found for product ${item.id} with inventory ID ${item.inventoryId}`);
+          }
+        } else {
+          console.log(`No inventory ID provided for product ${item.id}`);
+        }
 
         const product = await Product.findByPk(item.id, { transaction: t });
         if (product) {

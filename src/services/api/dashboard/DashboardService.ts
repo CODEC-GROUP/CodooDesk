@@ -7,6 +7,7 @@ import Product from '../../../models/Product.js';
 import Supplier from '../../../models/Supplier.js';
 import Shop from '../../../models/Shop.js';
 import Sales from '../../../models/Sales.js';
+import Customer from '../../../models/Customer.js'; // Import Customer model
 import { Op, fn, col, literal } from 'sequelize';
 import Category from '../../../models/Category.js';
 import Order from '../../../models/Order.js';
@@ -162,16 +163,22 @@ async function getTopSuppliers(whereClause: WhereClause) {
 }
 
 async function getTopProducts(whereClause: WhereClause) {
+  // Create a shop-specific where clause
+  let shopWhere: WhereClause = {};
+  
+  if (whereClause.shopId) {
+    shopWhere.id = whereClause.shopId;
+  } else if (whereClause['$shop.businessId$']) {
+    shopWhere.businessId = whereClause['$shop.businessId$'];
+  }
+
+  // Get products with their order counts
   return await Product.findAll({
     include: [{
-      model: Order,
-      attributes: [],
-      where: {
-        paymentStatus: 'paid'
-      }
-    }, {
       model: Shop,
-      where: whereClause
+      as: 'shop',
+      where: shopWhere,
+      required: true
     }],
     attributes: [
       'id',
@@ -179,12 +186,12 @@ async function getTopProducts(whereClause: WhereClause) {
       'sku',
       'featuredImage',
       'sellingPrice',
-      [sequelize.fn('COUNT', sequelize.col('Orders.id')), 'orderCount'],
-      [sequelize.fn('SUM', sequelize.col('Orders.quantity')), 'unitsSold'],
-      [sequelize.literal('(SELECT quantity FROM InventoryItems WHERE InventoryItems.productId = Product.id LIMIT 1)'), 'currentStock']
+      'quantity',
+      [sequelize.fn('COUNT', sequelize.col('Product.id')), 'orderCount'],
+      [sequelize.literal('(SELECT SUM(quantity) FROM Orders WHERE Orders.product_id = Product.id AND Orders.paymentStatus = "paid")'), 'unitsSold']
     ],
-    group: ['Product.id', 'Product.name', 'Product.sku', 'Product.featuredImage', 'Product.sellingPrice'],
-    order: [[sequelize.literal('unitsSold'), 'DESC']],
+    group: ['Product.id'],
+    order: [[sequelize.literal('orderCount'), 'DESC']],
     limit: 10,
     raw: true
   });
@@ -250,7 +257,7 @@ async function getSalesStats(whereClause: WhereClause, dateRange?: { start: stri
     }],
     attributes: [
       [sequelize.fn('SUM', sequelize.col('netAmount')), 'total_sales'],
-      [sequelize.fn('COUNT', sequelize.literal('DISTINCT orders.product_id')), 'total_orders']
+      [sequelize.fn('COUNT', sequelize.col('orders.product_id')), 'total_orders']
     ],
     raw: true
   }) as unknown as Array<{ total_sales: number; total_orders: number }>;
@@ -393,20 +400,34 @@ async function getTopCategoriesByProductCount(whereClause: WhereClause, limit: n
 
 
 async function getTopCustomers(whereClause: WhereClause) {
+  // Create a shop-specific where clause
+  let shopWhere: WhereClause = {};
+  
+  if (whereClause.shopId) {
+    shopWhere.id = whereClause.shopId;
+  } else if (whereClause['$shop.businessId$']) {
+    shopWhere.businessId = whereClause['$shop.businessId$'];
+  }
+
+  // Query directly from Sales to get top customers
   return await Sales.findAll({
+    where: {
+      status: 'completed' // Only include completed sales
+    },
     include: [{
       model: Shop,
       as: 'shop',
-      where: whereClause,
+      where: shopWhere,
       required: true
     }],
     attributes: [
-      'customerName',
-      [sequelize.fn('COUNT', sequelize.col('id')), 'orders'],
-      [sequelize.fn('SUM', sequelize.col('netAmount')), 'spent']
+      'customer_id',
+      [sequelize.fn('MAX', sequelize.col('Sales.createdAt')), 'last_purchase'],
+      [sequelize.fn('COUNT', sequelize.col('Sales.id')), 'orderCount'],
+      [sequelize.fn('SUM', sequelize.col('Sales.netAmount')), 'totalSpent']
     ],
-    group: ['customerName'],
-    order: [[sequelize.literal('spent'), 'DESC']],
+    group: ['Sales.customer_id'],
+    order: [[sequelize.literal('totalSpent'), 'DESC']],
     limit: 10,
     raw: true
   });

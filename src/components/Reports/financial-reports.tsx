@@ -401,7 +401,7 @@ export function FinancialReports() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Legend />
+                <Legend layout="vertical" align="right" verticalAlign="middle" />
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>

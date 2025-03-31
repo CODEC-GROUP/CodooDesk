@@ -318,6 +318,66 @@ export function Pos() {
   // Removed selectedWarehouse state
   const [availableWarehouses, setAvailableWarehouses] = useState<Inventory[]>([]); // Keep this to know *which* warehouses exist
 
+  // Extract fetchProducts function to make it available throughout the component
+  const fetchProducts = async () => {
+    if (!business?.id) {
+      console.log('No business ID during product load');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const shopIds = business.shops
+        ?.filter(shop => shop?.id)
+        .map(shop => shop.id) || [];
+
+      console.log('Found shop IDs:', shopIds);
+
+      if (shopIds.length === 0) {
+        console.log('No shop IDs found');
+        setError('No shops available');
+        return;
+      }
+
+      const shopIdToUse = (user?.role === 'admin' || user?.role === 'shop_owner')
+        ? selectedShopId
+        : availableShops?.[0]?.id;
+
+      if (!shopIdToUse) {
+        console.log('No shop ID to use');
+        setError('No shop selected');
+        return;
+      }
+
+      // Fetch products with inventory information
+      const response = await safeIpcInvoke<{
+        success: boolean;
+        message?: string;
+        products: any[];
+      }>('inventory:product:get-all-with-inventories', {
+        shopIds: [shopIdToUse],
+        businessId: business.id,
+        includeInventories: true
+      }, {
+        success: false,
+        products: []
+      });
+
+      if (!response?.success) {
+        throw new Error(response?.message || 'Failed to fetch products');
+      }
+
+      setProducts(response.products || []);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      setError('Failed to load products');
+      setIsLoading(false);
+    }
+  };
+
   const handleAddProduct = () => {
     setShowAddProductForm(true);
   };
@@ -503,6 +563,9 @@ export function Pos() {
         setSelectedCustomer(null);
         setDiscount(0);
 
+        // Refresh product data to show updated inventory quantities
+        fetchProducts();
+
         toast({
           title: "Success",
           description: "Payment processed successfully",
@@ -621,82 +684,6 @@ export function Pos() {
       setAuthChecked(true);
       return;
     }
-
-    const fetchProducts = async () => {
-      if (!business?.id) {
-        console.log('No business ID during product load');
-        return;
-      }
-
-      try {
-        setIsLoading(true);
-        setError(null);
-
-        const shopIds = business.shops
-          ?.filter(shop => shop?.id)
-          .map(shop => shop.id) || [];
-
-        console.log('Found shop IDs:', shopIds);
-
-        if (shopIds.length === 0) {
-          console.log('No shop IDs found');
-          setError('No shops available');
-          return;
-        }
-
-        const shopIdToUse = (user?.role === 'admin' || user?.role === 'shop_owner')
-          ? selectedShopId
-          : availableShops?.[0]?.id;
-
-        if (!shopIdToUse) {
-          throw new Error('Shop information not found');
-        }
-
-        const response = await safeIpcInvoke<{
-          success: boolean;
-          message?: string;
-          products: never[];
-        }>('inventory:product:get-all-with-inventories', {
-          shopIds: [shopIdToUse],
-          businessId: business.id,
-          includeInventories: true
-        }, {
-          success: false,
-          products: []
-        });
-
-        console.log('Product response:', response);
-
-        if (!response?.success) {
-          throw new Error(response?.message || 'Failed to fetch products');
-        }
-
-        setProducts(response.products || []);
-        
-        // Extract unique warehouses from all products
-        const warehouses: Inventory[] = [];
-        const warehouseIds = new Set<string>();
-        
-        response.products.forEach((product: any) => {
-          if (product.inventories) {
-            product.inventories.forEach((inv: InventoryItem) => {
-              if (inv.inventory && inv.inventory.id && !warehouseIds.has(inv.inventory.id)) {
-                warehouseIds.add(inv.inventory.id);
-                warehouses.push(inv.inventory);
-              }
-            });
-          }
-        });
-        
-        setAvailableWarehouses(warehouses);
-        // No need to set default global warehouse anymore
-      } catch (error) {
-        console.error('Error loading products:', error);
-        setError(error instanceof Error ? error.message : 'Failed to load products');
-      } finally {
-        setIsLoading(false);
-      }
-    };
 
     if (business?.id && !authChecked) {
       console.log('Loading products in ProductGrid');

@@ -37,11 +37,16 @@ export function registerFinanceDashboardHandlers() {
   }) => {
     try {
       // Build where clause based on user access
-      const whereClause = shopIds?.length 
-        ? { '$shop.id$': { [Op.in]: shopIds } }  // Admin with multiple shops
+      const shopWhereClause = shopIds?.length 
+        ? { id: { [Op.in]: shopIds } }  // Admin with multiple shops
         : shopId 
-          ? { shopId }  // Regular user with single shop
-          : { '$shop.businessId$': businessId };  // Fallback to business scope
+          ? { id: shopId }  // Regular user with single shop
+          : { businessId };  // Fallback to business scope
+
+      // Where clause for the main models (Income, Expense)
+      const whereClause = shopId 
+        ? { shopId }  // If specific shop is selected, filter by shopId in main model
+        : {};  // Otherwise no additional filtering needed for main model
 
       const dateWhereClause = dateRange ? {
         date: {
@@ -62,7 +67,7 @@ export function registerFinanceDashboardHandlers() {
         include: [{
           model: Shop,
           as: 'shop',
-          where: whereClause,
+          where: shopWhereClause,
           required: true
         }],
         attributes: [
@@ -85,7 +90,7 @@ export function registerFinanceDashboardHandlers() {
         include: [{
           model: Shop,
           as: 'shop',
-          where: whereClause,
+          where: shopWhereClause,
           required: true
         }],
         attributes: [
@@ -114,7 +119,7 @@ export function registerFinanceDashboardHandlers() {
         include: [{
           model: Shop,
           as: 'shop',
-          where: whereClause,
+          where: shopWhereClause,
           required: true
         }],
         attributes: [
@@ -138,7 +143,7 @@ export function registerFinanceDashboardHandlers() {
         include: [{
           model: Shop,
           as: 'shop',
-          where: whereClause,
+          where: shopWhereClause,
           required: true
         }],
         attributes: [
@@ -203,7 +208,7 @@ export function registerFinanceDashboardHandlers() {
         include: [{
           model: Shop,
           as: 'shop',
-          where: whereClause,
+          where: shopWhereClause,
           required: true
         }, {
           model: OhadaCode,
@@ -231,7 +236,7 @@ export function registerFinanceDashboardHandlers() {
           {
             model: Shop,
             as: 'shop',
-            where: whereClause,
+            where: shopWhereClause,
             required: true
           },
           {
@@ -261,7 +266,7 @@ export function registerFinanceDashboardHandlers() {
           include: [{
             model: Shop,
             as: 'shop',
-            where: whereClause,
+            where: shopWhereClause,
             required: true
           }],
           attributes: [
@@ -285,7 +290,7 @@ export function registerFinanceDashboardHandlers() {
           include: [{
             model: Shop,
             as: 'shop',
-            where: whereClause,
+            where: shopWhereClause,
             required: true
           }],
           attributes: [

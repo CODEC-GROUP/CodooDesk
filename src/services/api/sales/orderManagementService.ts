@@ -9,6 +9,7 @@ import Income from '../../../models/Income.js';
 import Customer from '../../../models/Customer.js';
 import Receipt from '../../../models/Receipt.js';
 import Invoice from '../../../models/Invoice.js';
+import InventoryItem from '../../../models/InventoryItem.js'; // Import InventoryItem model
 
 const IPC_CHANNELS = {
   CREATE_SALE_WITH_ORDERS: 'order-management:create-sale',
@@ -23,6 +24,8 @@ interface OrderItem {
   productName: string;
   quantity: number;
   sellingPrice: number;
+  inventoryId?: string | null; // Add inventory ID to track which inventory item to update
+  warehouseId?: string | null; // For backward compatibility
 }
 
 interface OrderTotals {
@@ -115,6 +118,56 @@ export function registerOrderManagementHandlers() {
             by: item.quantity,
             transaction: t
           });
+
+          // If an inventory ID is provided, update that specific inventory item's quantity
+          if (item.inventoryId) {
+            console.log(`Processing inventory update for product ${item.productId}, inventory ID: ${item.inventoryId}`);
+            
+            // Find the inventory item - use the inventoryItemId directly if available
+            const inventoryItemQuery = {
+              where: item.warehouseId ? 
+                // If we have a warehouseId/inventoryId (which is the inventory_id), use that
+                {
+                  inventory_id: item.inventoryId,
+                  product_id: item.productId
+                } :
+                // Otherwise, try to find by the inventory item's own ID
+                {
+                  id: item.inventoryId,
+                  product_id: item.productId
+                },
+              transaction: t
+            };
+            
+            console.log(`Inventory item query:`, inventoryItemQuery);
+            const inventoryItem = await InventoryItem.findOne(inventoryItemQuery);
+
+            if (inventoryItem) {
+              // Check if there's enough quantity in this specific inventory
+              if (inventoryItem.quantity < item.quantity) {
+                throw new Error(`Insufficient stock for product ${product.name} in the selected inventory`);
+              }
+
+              // Update inventory item quantity
+              await inventoryItem.decrement('quantity', {
+                by: item.quantity,
+                transaction: t
+              });
+
+              // Update inventory item status based on new quantity
+              const updatedInventoryItem = await InventoryItem.findOne(inventoryItemQuery);
+
+              if (updatedInventoryItem) {
+                const newStatus = updatedInventoryItem.quantity <= 0 ? 'out_of_stock' :
+                                updatedInventoryItem.quantity <= (updatedInventoryItem.reorder_point ?? 10) ? 'low_stock' :
+                                'in_stock';
+                
+                await updatedInventoryItem.update({ 
+                  status: newStatus
+                }, { transaction: t });
+              }
+            }
+          }
 
           // Update product status based on new quantity
           const updatedProduct = await Product.findByPk(item.productId, { transaction: t });

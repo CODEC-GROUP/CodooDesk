@@ -423,14 +423,24 @@ export function Dashboard() {
   // Fetch top products
   const { data: topProducts } = useQuery<ApiResponse<Product[]>>({
     queryKey: ['topProducts', params],
-    queryFn: () => safeInvoke('dashboard:inventory:products', params),
+    queryFn: async () => {
+      console.log('Fetching top products with params:', params);
+      const result = await safeInvoke<Product[]>('dashboard:inventory:products', params);
+      console.log('Top Products response:', result);
+      return result;
+    },
     enabled: !!business?.id
   });
 
   // Fetch top customers
   const { data: topCustomers } = useQuery<ApiResponse<any[]>>({
     queryKey: ['topCustomers', params],
-    queryFn: () => safeInvoke('dashboard:customers:top', params),
+    queryFn: async () => {
+      console.log('Fetching top customers with params:', params);
+      const result = await safeInvoke<any[]>('dashboard:customers:top', params);
+      console.log('Top Customers response:', result);
+      return result;
+    },
     enabled: !!business?.id
   });
 
@@ -709,22 +719,22 @@ export function Dashboard() {
                     </thead>
                     <tbody>
                       {(topCustomers?.data || []).map((customer: any) => (
-                        <tr key={customer.id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                        <tr key={customer.customer_id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                           <td className="p-4">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
-                                {customer.name.charAt(0)}
+                                C
                               </div>
                               <div>
-                                <p className="font-medium">{customer.name}</p>
+                                <p className="font-medium">Customer {customer.customer_id?.substring(0, 8)}</p>
                               </div>
                             </div>
                           </td>
                           <td className="p-4 text-right">
-                            <span className="font-medium">{customer.orders}</span>
+                            <span className="font-medium">{customer.orderCount}</span>
                           </td>
                           <td className="p-4 text-right">
-                            <span className="font-medium">{formatNumber(customer.spent)} FCFA</span>
+                            <span className="font-medium">{formatNumber(customer.totalSpent)} FCFA</span>
                           </td>
                         </tr>
                       ))}
@@ -775,10 +785,10 @@ export function Dashboard() {
                             </div>
                           </td>
                           <td className="p-4 text-right">
-                            <span className="font-medium">{formatNumber(product.totalAmount)} FCFA</span>
+                            <span className="font-medium">{formatNumber(product.sellingPrice * (product.unitsSold || 0))} FCFA</span>
                           </td>
                           <td className="p-4 text-right">
-                            <span className="font-medium">{formatNumber(product.unitsSold)}</span>
+                            <span className="font-medium">{formatNumber(product.unitsSold || 0)}</span>
                           </td>
                         </tr>
                       ))}
