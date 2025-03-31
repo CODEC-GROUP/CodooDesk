@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Legend } from 'recharts'
 import { Package, ShoppingCart, DollarSign, AlertTriangle, ChevronDown, Store } from 'lucide-react'
 import Image from 'next/image'
 import { useDashboard } from '@/hooks/useDashboard'
@@ -96,7 +96,12 @@ interface DashboardStats {
 interface DashboardTrends {
   data: Array<{
     day: string;
-    count: number;
+    stockLevel: number;
+    stockIn: number;
+    stockOut: number;
+    quantitySold: number;
+    turnoverRate: number;
+    daysOfInventory: number;
   }>;
   topProducts: Array<{
     id: string;
@@ -127,11 +132,15 @@ export function InventoryDashboard() {
   const { fetchInventoryDashboard } = useDashboard();
 
   const [selectedShopIds, setSelectedShopIds] = useState<string[]>(() => {
-    if (user?.role !== 'admin' && user?.role !== 'shop_owner') {
-      return availableShops?.[0]?.id ? [availableShops[0].id] : [];
+    // Always select the first available shop by default if there are any shops
+    if (availableShops && availableShops.length > 0) {
+      return [availableShops[0].id];
     }
     return [];
   });
+
+  const [selectedInventoryIds, setSelectedInventoryIds] = useState<string[]>([]);
+  const [inventories, setInventories] = useState<Array<{ id: string, name: string }>>([]);
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: addDays(new Date(), -7),
@@ -140,8 +149,77 @@ export function InventoryDashboard() {
 
   const [currentView, setCurrentView] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
+  const [selectedTrendMetric, setSelectedTrendMetric] = useState('stockLevel');
+
+  // Update selectedShopIds when availableShops changes
+  useEffect(() => {
+    console.log('availableShops changed:', availableShops);
+    if (availableShops && availableShops.length > 0 && selectedShopIds.length === 0) {
+      console.log('Setting selectedShopIds to first available shop:', availableShops[0].id);
+      setSelectedShopIds([availableShops[0].id]);
+    }
+  }, [availableShops]);
+
+  // Fetch available inventories when shops change
+  useEffect(() => {
+    console.log('useEffect for fetchInventories triggered with shopIds:', selectedShopIds);
+    console.log('business?.id:', business?.id);
+    
+    const fetchInventories = async () => {
+      if (!business?.id || selectedShopIds.length === 0) {
+        console.log('Skipping inventory fetch - no business ID or shop IDs');
+        setInventories([]);
+        return;
+      }
+
+      try {
+        console.log('Fetching inventories for shops:', selectedShopIds);
+        
+        // Use the same approach as in AddProduct.tsx
+        const response = await safeIpcInvoke<{
+          success: boolean;
+          data: {
+            items: Array<{ id: string, name: string, level: number, value: number, status: string }>;
+            pagination: any;
+          };
+          message?: string;
+        }>('inventory:get-by-shop', {
+          shopIds: selectedShopIds,
+          isAdmin: user?.role === 'admin' || user?.role === 'shop_owner',
+          pagination: {
+            page: 1,
+            limit: 100
+          }
+        });
+
+        console.log('Inventory response:', response);
+        
+        if (response?.success && response.data && response.data.items) {
+          // Extract just the id and name from each inventory
+          const simplifiedInventories = response.data.items.map(inv => ({
+            id: inv.id,
+            name: inv.name
+          }));
+          
+          console.log('Simplified inventories:', simplifiedInventories);
+          setInventories(simplifiedInventories);
+          // If we have inventories but none selected, select all by default
+          if (simplifiedInventories.length > 0 && selectedInventoryIds.length === 0) {
+            setSelectedInventoryIds(simplifiedInventories.map(inv => inv.id));
+          }
+        } else {
+          console.log('No inventory data found or invalid response format');
+        }
+      } catch (error) {
+        console.error('Error fetching inventories:', error);
+      }
+    };
+
+    fetchInventories();
+  }, [business?.id, selectedShopIds, user?.role]);
+
   const { data: dashboardData, isLoading, error } = useQuery<DashboardData>({
-    queryKey: ['inventory-dashboard', business?.id, selectedShopIds, dateRange, currentView],
+    queryKey: ['inventory-dashboard', business?.id, selectedShopIds, selectedInventoryIds, dateRange, currentView],
     queryFn: async () => {
       if (!business?.id) {
         throw new Error('No business ID available');
@@ -152,6 +230,7 @@ export function InventoryDashboard() {
         {
           businessId: business.id,
           shopIds: selectedShopIds,
+          inventoryIds: selectedInventoryIds.length > 0 ? selectedInventoryIds : undefined,
           dateRange: dateRange ? {
             start: dateRange.from?.toISOString(),
             end: dateRange.to?.toISOString()
@@ -167,10 +246,26 @@ export function InventoryDashboard() {
 
       return response.data;
     },
-    enabled: !!business?.id,
+    enabled: !!business?.id && (selectedInventoryIds.length > 0 || inventories.length === 0),
     staleTime: 1000 * 60 * 5, // 5 minutes
     retry: 2
   });
+
+  const handleInventorySelection = (inventoryId: string) => {
+    setSelectedInventoryIds(prev => 
+      prev.includes(inventoryId)
+        ? prev.filter(id => id !== inventoryId)
+        : [...prev, inventoryId]
+    );
+  };
+
+  const handleShopSelection = (shopId: string) => {
+    setSelectedShopIds(prev => 
+      prev.includes(shopId)
+        ? prev.filter(id => id !== shopId)
+        : [...prev, shopId]
+    );
+  };
 
   if (isLoading) return (
     <div className="p-8 bg-gray-100 min-h-screen">
@@ -196,14 +291,6 @@ export function InventoryDashboard() {
   const inventoryValue = dashboardData?.stats?.inventoryValue 
     ? formatNumber(dashboardData.stats.inventoryValue) + ' XAF'
     : '--';
-
-  const handleShopSelection = (shopId: string) => {
-    setSelectedShopIds(prev => 
-      prev.includes(shopId)
-        ? prev.filter(id => id !== shopId)
-        : [...prev, shopId]
-    );
-  };
 
   return (
     <div className="p-8 bg-gray-100 min-h-screen">
@@ -262,6 +349,58 @@ export function InventoryDashboard() {
             </PopoverContent>
           </Popover>
         )}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="min-w-[200px] justify-start">
+              <Package className="mr-2 h-4 w-4" />
+              {selectedInventoryIds.length === 0 
+                ? "All Inventories" 
+                : selectedInventoryIds.length === inventories.length 
+                  ? "All Inventories" 
+                  : `${selectedInventoryIds.length} selected`}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[240px] p-0">
+            <Command>
+              <CommandInput placeholder="Filter inventories..." />
+              <CommandList>
+                <CommandGroup>
+                  {inventories.length > 0 && (
+                    <CommandItem
+                      value="select-all"
+                      onSelect={() => {
+                        if (selectedInventoryIds.length === inventories.length) {
+                          setSelectedInventoryIds([]);
+                        } else {
+                          setSelectedInventoryIds(inventories.map(inv => inv.id));
+                        }
+                      }}
+                    >
+                      <Checkbox
+                        checked={selectedInventoryIds.length === inventories.length && inventories.length > 0}
+                        className="mr-2"
+                      />
+                      Select All
+                    </CommandItem>
+                  )}
+                  {inventories.map((inventory) => (
+                    <CommandItem
+                      key={inventory.id}
+                      value={inventory.id}
+                      onSelect={() => handleInventorySelection(inventory.id)}
+                    >
+                      <Checkbox
+                        checked={selectedInventoryIds.includes(inventory.id)}
+                        className="mr-2"
+                      />
+                      {inventory.name || 'Unnamed Inventory'}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
@@ -328,14 +467,79 @@ export function InventoryDashboard() {
             <CardTitle>Inventory Trends</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-4">
+              <Select
+                value={selectedTrendMetric}
+                onValueChange={(value) => setSelectedTrendMetric(value)}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Select metric" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="stockLevel">Stock Levels</SelectItem>
+                  <SelectItem value="stockMovement">Stock Movement (In/Out)</SelectItem>
+                  <SelectItem value="quantitySold">Quantity Sold</SelectItem>
+                  <SelectItem value="turnoverRate">Inventory Turnover Rate</SelectItem>
+                  <SelectItem value="daysOfInventory">Days of Inventory</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={trends?.data || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} />
-              </BarChart>
+              {selectedTrendMetric === 'stockMovement' ? (
+                <BarChart data={trends?.data || []}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="day" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="stockIn" name="Stock In" fill="#10B981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="stockOut" name="Stock Out" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              ) : (
+                <LineChart data={trends?.data || []}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="day" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  {selectedTrendMetric === 'stockLevel' && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="stockLevel" 
+                      name="Stock Level" 
+                      stroke="#10B981" 
+                      activeDot={{ r: 8 }} 
+                    />
+                  )}
+                  {selectedTrendMetric === 'quantitySold' && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="quantitySold" 
+                      name="Quantity Sold" 
+                      stroke="#8884d8" 
+                      activeDot={{ r: 8 }} 
+                    />
+                  )}
+                  {selectedTrendMetric === 'turnoverRate' && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="turnoverRate" 
+                      name="Turnover Rate (%)" 
+                      stroke="#FF9800" 
+                      activeDot={{ r: 8 }} 
+                    />
+                  )}
+                  {selectedTrendMetric === 'daysOfInventory' && (
+                    <Line 
+                      type="monotone" 
+                      dataKey="daysOfInventory" 
+                      name="Days of Inventory" 
+                      stroke="#0088FE" 
+                      activeDot={{ r: 8 }} 
+                    />
+                  )}
+                </LineChart>
+              )}
             </ResponsiveContainer>
           </CardContent>
         </Card>

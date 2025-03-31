@@ -26,7 +26,25 @@ interface InventoryStatsResult {
   out_of_stock_items: number;
 }
 
-async function getInventoryStats(shopIds: string[]): Promise<InventoryStatsResult> {
+async function getInventoryStats(shopIds: string[], inventoryIds: string[]): Promise<InventoryStatsResult> {
+  // Ensure arrays are valid
+  shopIds = shopIds || [];
+  inventoryIds = inventoryIds || [];
+
+  // Build the where clause for the inventory include
+  const inventoryWhere: any = {
+    shopId: {
+      [Op.in]: shopIds
+    }
+  };
+  
+  // Only add the id condition if inventoryIds has items
+  if (inventoryIds.length > 0) {
+    inventoryWhere.id = {
+      [Op.in]: inventoryIds
+    };
+  }
+
   const result = await InventoryItem.findAll({
     attributes: [
       [fn('COUNT', col('product_id')), 'total_products'],
@@ -39,11 +57,7 @@ async function getInventoryStats(shopIds: string[]): Promise<InventoryStatsResul
       model: Inventory,
       as: 'inventory',
       attributes: [],
-      where: {
-        shopId: {
-          [Op.in]: shopIds
-        }
-      }
+      where: inventoryWhere
     }],
     raw: true
   });
@@ -59,12 +73,49 @@ async function getInventoryStats(shopIds: string[]): Promise<InventoryStatsResul
 }
 
 // Function to calculate total items sold based on Orders
-async function getTotalItemsSoldFromOrders(shopIds: string[], startDate: Date, endDate: Date): Promise<number> {
+async function getTotalItemsSoldFromOrders(shopIds: string[], startDate: Date, endDate: Date, inventoryIds: string[]): Promise<number> {
+  // Ensure arrays are valid
+  shopIds = shopIds || [];
+  inventoryIds = inventoryIds || [];
+
+  // If we have inventory IDs, we need to get the product IDs first
+  let productFilter: any = {};
+  
+  if (inventoryIds.length > 0) {
+    // Get product IDs from inventory items
+    const inventoryItems = await InventoryItem.findAll({
+      attributes: ['product_id'],
+      where: {
+        inventory_id: {
+          [Op.in]: inventoryIds
+        }
+      },
+      raw: true
+    });
+    
+    // Extract product IDs
+    const productIds = inventoryItems.map(item => item.product_id);
+    
+    // If we have product IDs, add them to the filter
+    if (productIds.length > 0) {
+      productFilter = {
+        product_id: {
+          [Op.in]: productIds
+        }
+      };
+    } else {
+      // If no products found in the specified inventories, return 0
+      return 0;
+    }
+  }
+
+  // Build the query with the product filter
   const result = await Order.findOne({
     attributes: [
       // Ensure we specify Order.quantity to avoid ambiguity if Sales also had quantity
       [fn('SUM', col('Order.quantity')), 'totalSold']
     ],
+    where: productFilter, // Apply the product filter directly to the Order model
     include: [{
       model: Sales,
       as: 'sale',
@@ -87,19 +138,33 @@ async function getTotalItemsSoldFromOrders(shopIds: string[], startDate: Date, e
 }
 
 
-async function getWeeklyTrends(businessId: string, startDate: Date, endDate: Date) {
-  // Note: This trend calculation might also be affected by ambiguous 'quantity' if StockMovement has quantity.
-  // Consider specifying `StockMovement.quantity` if errors occur here later.
-  const movements = await StockMovement.findAll({
-    where: {
-      createdAt: {
-        [Op.between]: [startDate, endDate]
-      },
-      '$inventoryItem.inventory.shop.businessId$': businessId
+async function getWeeklyTrends(businessId: string, startDate: Date, endDate: Date, inventoryIds: string[]) {
+  // Ensure inventoryIds is an array
+  inventoryIds = inventoryIds || [];
+
+  // Build where clauses that conditionally include inventoryIds
+  const stockMovementWhere: any = {
+    createdAt: {
+      [Op.between]: [startDate, endDate]
     },
+    '$inventoryItem.inventory.shop.businessId$': businessId
+  };
+
+  // Only add inventory_id condition if inventoryIds has items
+  if (inventoryIds.length > 0) {
+    stockMovementWhere['$inventoryItem.inventory_id$'] = {
+      [Op.in]: inventoryIds
+    };
+  }
+
+  // Get stock movement data (in/out)
+  const movements = await StockMovement.findAll({
+    where: stockMovementWhere,
     attributes: [
       [fn('DATE', col('StockMovement.createdAt')), 'day'],
-      [fn('SUM', col('StockMovement.quantity')), 'count']
+      [fn('SUM', col('StockMovement.quantity')), 'movement'],
+      [literal('CASE WHEN StockMovement.direction = "inbound" THEN SUM(StockMovement.quantity) ELSE 0 END'), 'stockIn'],
+      [literal('CASE WHEN StockMovement.direction = "outbound" THEN SUM(StockMovement.quantity) ELSE 0 END'), 'stockOut']
     ],
     include: [{
       model: InventoryItem,
@@ -116,14 +181,188 @@ async function getWeeklyTrends(businessId: string, startDate: Date, endDate: Dat
         }]
       }]
     }],
-    group: [fn('DATE', col('StockMovement.createdAt'))],
+    group: [fn('DATE', col('StockMovement.createdAt')), 'StockMovement.direction'],
     raw: true
   });
 
-  return movements;
+  // Build where clause for inventory items
+  const inventoryItemWhere: any = {
+    updatedAt: {
+      [Op.between]: [startDate, endDate]
+    }
+  };
+
+  // Only add inventory_id condition if inventoryIds has items
+  if (inventoryIds.length > 0) {
+    inventoryItemWhere.inventory_id = {
+      [Op.in]: inventoryIds
+    };
+  }
+
+  // Get daily stock levels
+  const stockLevels = await InventoryItem.findAll({
+    attributes: [
+      [fn('DATE', col('InventoryItem.updatedAt')), 'day'],
+      [fn('SUM', col('InventoryItem.quantity')), 'stockLevel']
+    ],
+    include: [{
+      model: Inventory,
+      as: 'inventory',
+      attributes: [],
+      include: [{
+        model: Shop,
+        as: 'shop',
+        where: {
+          businessId
+        },
+        attributes: []
+      }]
+    }],
+    where: inventoryItemWhere,
+    group: [fn('DATE', col('InventoryItem.updatedAt'))],
+    raw: true
+  });
+
+  // Get daily sales data for turnover calculation
+  const sales = await Order.findAll({
+    attributes: [
+      [fn('DATE', col('sale.createdAt')), 'day'],
+      [fn('SUM', col('Order.quantity')), 'quantitySold']
+    ],
+    include: [{
+      model: Sales,
+      as: 'sale',
+      attributes: [],
+      where: {
+        createdAt: {
+          [Op.between]: [startDate, endDate]
+        },
+        '$sale.shop.businessId$': businessId
+      },
+      include: [{
+        model: Shop,
+        as: 'shop',
+        attributes: []
+      }]
+    }],
+    group: [fn('DATE', col('sale.createdAt'))],
+    raw: true
+  });
+
+  // Get total inventory at beginning of period for turnover calculations
+  const [initialInventory] = await InventoryItem.findAll({
+    attributes: [
+      [fn('SUM', col('InventoryItem.quantity')), 'totalQuantity']
+    ],
+    include: [{
+      model: Inventory,
+      as: 'inventory',
+      attributes: [],
+      include: [{
+        model: Shop,
+        as: 'shop',
+        where: {
+          businessId
+        },
+        attributes: []
+      }]
+    }],
+    where: {
+      updatedAt: {
+        [Op.lt]: startDate
+      },
+      inventory_id: {
+        [Op.in]: inventoryIds
+      }
+    },
+    raw: true
+  }) as any[];
+
+  const initialStock = Number(initialInventory?.totalQuantity) || 0;
+
+  // Combine all data by date
+  const dateMap = new Map();
+  
+  // Process all dates in range
+  const currentDate = new Date(startDate);
+  while (currentDate <= endDate) {
+    const dateStr = currentDate.toISOString().split('T')[0];
+    dateMap.set(dateStr, {
+      day: dateStr,
+      stockLevel: 0,
+      stockIn: 0,
+      stockOut: 0,
+      quantitySold: 0,
+      turnoverRate: 0,
+      daysOfInventory: 0
+    });
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  // Add stock levels
+  stockLevels.forEach((item: any) => {
+    const day = item.day;
+    if (dateMap.has(day)) {
+      const data = dateMap.get(day);
+      data.stockLevel = Number(item.stockLevel) || 0;
+      dateMap.set(day, data);
+    }
+  });
+
+  // Add stock movements
+  movements.forEach((item: any) => {
+    const day = item.day;
+    if (dateMap.has(day)) {
+      const data = dateMap.get(day);
+      data.stockIn = Number(item.stockIn) || 0;
+      data.stockOut = Number(item.stockOut) || 0;
+      dateMap.set(day, data);
+    }
+  });
+
+  // Add sales data and calculate metrics
+  sales.forEach((item: any) => {
+    const day = item.day;
+    if (dateMap.has(day)) {
+      const data = dateMap.get(day);
+      data.quantitySold = Number(item.quantitySold) || 0;
+      
+      // Calculate turnover rate (daily sales / average inventory)
+      const averageInventory = (initialStock + data.stockLevel) / 2;
+      data.turnoverRate = averageInventory > 0 ? (data.quantitySold / averageInventory) * 100 : 0;
+      
+      // Calculate days of inventory (average inventory / daily sales)
+      data.daysOfInventory = data.quantitySold > 0 ? averageInventory / data.quantitySold : 0;
+      
+      dateMap.set(day, data);
+    }
+  });
+
+  // Convert map to array and sort by date
+  return Array.from(dateMap.values()).sort((a, b) => 
+    new Date(a.day).getTime() - new Date(b.day).getTime()
+  );
 }
 
-async function getTopProducts(shopIds: string[], limit = 5) {
+async function getTopProducts(shopIds: string[], limit = 5, inventoryIds: string[]) {
+  // Ensure arrays are valid
+  shopIds = shopIds || [];
+  inventoryIds = inventoryIds || [];
+
+  // Build the where clause for the inventory include
+  const inventoryWhere: any = {
+    shopId: {
+      [Op.in]: shopIds
+    }
+  };
+  
+  // Only add the id condition if inventoryIds has items
+  if (inventoryIds.length > 0) {
+    inventoryWhere.id = {
+      [Op.in]: inventoryIds
+    };
+  }
+
   return await InventoryItem.findAll({
     attributes: [
       'id',
@@ -140,11 +379,7 @@ async function getTopProducts(shopIds: string[], limit = 5) {
       model: Inventory,
       as: 'inventory',
       attributes: [],
-      where: {
-        shopId: {
-          [Op.in]: shopIds
-        }
-      }
+      where: inventoryWhere
     }],
     order: [[literal('total_value'), 'DESC']],
     limit,
@@ -158,7 +393,41 @@ interface SupplierWithAggregates extends Supplier {
   items: number;
 }
 
-async function getTopSuppliers(businessId: string) {
+async function getTopSuppliers(businessId: string, inventoryIds: string[]) {
+  // Ensure inventoryIds is an array
+  inventoryIds = inventoryIds || [];
+
+  // First, if we have inventory IDs, get the product IDs from those inventory items
+  let productFilter: any = {};
+  
+  if (inventoryIds.length > 0) {
+    // Get product IDs from inventory items
+    const inventoryItems = await InventoryItem.findAll({
+      attributes: ['product_id'],
+      where: {
+        inventory_id: {
+          [Op.in]: inventoryIds
+        }
+      },
+      raw: true
+    });
+    
+    // Extract product IDs
+    const productIds = inventoryItems.map(item => item.product_id);
+    
+    // If we have product IDs, add them to the filter
+    if (productIds.length > 0) {
+      productFilter = {
+        id: {
+          [Op.in]: productIds
+        }
+      };
+    } else {
+      // If no products found in the specified inventories, return empty array
+      return [];
+    }
+  }
+
   const suppliers = await Supplier.findAll({
     where: {
       businessId
@@ -174,6 +443,7 @@ async function getTopSuppliers(businessId: string) {
       as: 'supplierProducts',
       attributes: [],
       required: true,
+      where: productFilter,
       through: {
         attributes: []
       }
@@ -189,7 +459,6 @@ async function getTopSuppliers(businessId: string) {
     name: supplier.name,
     value: Number(supplier.value) || 0,
     items: Number(supplier.items) || 0,
-    color: '#' + Math.floor(Math.random()*16777215).toString(16)
   }));
 }
 // Add this interface near the top
@@ -211,7 +480,7 @@ interface CategoryBreakdownResult {
 }
 
 export function registerInventoryDashboardHandlers() {
-  ipcMain.handle(IPC_CHANNELS.GET_INVENTORY_DASHBOARD, async (event, { businessId, shopIds, dateRange, view }) => {
+  ipcMain.handle(IPC_CHANNELS.GET_INVENTORY_DASHBOARD, async (event, { businessId, shopIds, inventoryIds, dateRange, view }) => {
     try {
       // If no shopIds provided, get all shops for the business
       if (!shopIds?.length) {
@@ -222,13 +491,32 @@ export function registerInventoryDashboardHandlers() {
         shopIds = shops.map(shop => shop.id);
       }
 
+      // Ensure inventoryIds is always an array
+      if (!inventoryIds || !Array.isArray(inventoryIds)) {
+        inventoryIds = [];
+      }
+
+      // If no inventoryIds provided, get all inventories for the shops
+      if (inventoryIds.length === 0 && shopIds.length > 0) {
+        const inventories = await Inventory.findAll({
+          where: {
+            shopId: {
+              [Op.in]: shopIds
+            }
+          },
+          attributes: ['id']
+        });
+        inventoryIds = inventories.map(inventory => inventory.id);
+        console.log(`Fetched ${inventoryIds.length} inventories for shops:`, shopIds);
+      }
+
       // Get inventory summary
-      const summary = await getInventoryStats(shopIds);
+      const summary = await getInventoryStats(shopIds, inventoryIds);
 
       // Get shop-specific stats
       const shopStats: Record<string, typeof summary> = {};
       for (const shopId of shopIds) {
-        const shopSummary = await getInventoryStats([shopId]);
+        const shopSummary = await getInventoryStats([shopId], inventoryIds);
         shopStats[shopId] = shopSummary;
       }
 
@@ -236,11 +524,11 @@ export function registerInventoryDashboardHandlers() {
       const startDate = dateRange?.start ? new Date(dateRange.start) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const endDate = dateRange?.end ? new Date(dateRange.end) : new Date();
 
-      const trends = await getWeeklyTrends(businessId, startDate, endDate);
-      const topProducts = await getTopProducts(shopIds);
-      const topSuppliers = await getTopSuppliers(businessId);
-      const categoryBreakdown = await getCategoryBreakdown(shopIds);
-      const itemsSold = await getTotalItemsSoldFromOrders(shopIds, startDate, endDate); // <-- Use the new function
+      const trends = await getWeeklyTrends(businessId, startDate, endDate, inventoryIds);
+      const topProducts = await getTopProducts(shopIds, 5, inventoryIds);
+      const topSuppliers = await getTopSuppliers(businessId, inventoryIds);
+      const categoryBreakdown = await getCategoryBreakdown(shopIds, inventoryIds);
+      const itemsSold = await getTotalItemsSoldFromOrders(shopIds, startDate, endDate, inventoryIds); // <-- Use the new function
       
       // Reset inventoryValueChange calculation for now
       const inventoryValueChange = 0; // Placeholder - Accurate calculation needs historical data/logic
@@ -269,7 +557,25 @@ export function registerInventoryDashboardHandlers() {
   });
 }
 
-async function getCategoryBreakdown(shopIds: string[]) {
+async function getCategoryBreakdown(shopIds: string[], inventoryIds: string[]) {
+  // Ensure arrays are valid
+  shopIds = shopIds || [];
+  inventoryIds = inventoryIds || [];
+
+  // Build the where clause for the inventory include
+  const inventoryWhere: any = {
+    shopId: {
+      [Op.in]: shopIds
+    }
+  };
+  
+  // Only add the id condition if inventoryIds has items
+  if (inventoryIds.length > 0) {
+    inventoryWhere.id = {
+      [Op.in]: inventoryIds
+    };
+  }
+
   const categoryBreakdown = await InventoryItem.findAll({
     attributes: [
       [fn('SUM', literal('`InventoryItem`.`quantity` * `InventoryItem`.`unit_cost`')), 'total_value'],
@@ -289,11 +595,7 @@ async function getCategoryBreakdown(shopIds: string[]) {
       model: Inventory,
       as: 'inventory',
       attributes: [],
-      where: {
-        shopId: {
-          [Op.in]: shopIds
-        }
-      }
+      where: inventoryWhere
     }],
     group: ['product.category.id', 'product.category.name'],
     raw: true,
