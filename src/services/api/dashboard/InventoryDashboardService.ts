@@ -428,6 +428,7 @@ async function getTopSuppliers(businessId: string, inventoryIds: string[]) {
     }
   }
 
+  // Get suppliers with their inventory items
   const suppliers = await Supplier.findAll({
     where: {
       businessId
@@ -435,18 +436,20 @@ async function getTopSuppliers(businessId: string, inventoryIds: string[]) {
     attributes: [
       'id',
       'name',
-      [literal('COUNT(DISTINCT `supplierProducts`.`id`)'), 'items'],
-      [literal('SUM(`supplierProducts`.`purchasePrice`)'), 'value']
+      [literal('COUNT(DISTINCT `inventoryItems`.`product_id`)'), 'items'],
+      [literal('SUM(`inventoryItems`.`cost_price` * `inventoryItems`.`quantity_supplied`)'), 'value']
     ],
     include: [{
-      model: Product,
-      as: 'supplierProducts',
+      model: InventoryItem,
+      as: 'inventoryItems',
       attributes: [],
       required: true,
-      where: productFilter,
-      through: {
-        attributes: []
-      }
+      include: [{
+        model: Product,
+        as: 'product',
+        attributes: [],
+        where: productFilter
+      }]
     }],
     group: ['Supplier.id', 'Supplier.name'],
     order: [[literal('value'), 'DESC']],

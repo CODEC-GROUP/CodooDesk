@@ -15,6 +15,7 @@ export interface InventoryAttributes {
   value: number;
   description?: string;
   shopId?: string | null;
+  product_id?: string;
   status?: 'Low' | 'Medium' | 'High';
 }
 
@@ -25,6 +26,7 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
   public value!: number;
   public description!: string;
   public shopId!: string | null;
+  public product_id?: string;
   public status!: 'Low' | 'Medium' | 'High';
 
   // Timestamps
@@ -63,6 +65,14 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
             key: 'id',
           },
         },
+        product_id: {
+          type: DataTypes.UUID,
+          allowNull: true,
+          references: {
+            model: 'Products',
+            key: 'id',
+          },
+        },
         status: {
           type: DataTypes.STRING,
           allowNull: true,
@@ -80,13 +90,8 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
 
   static associate(models: any) {
     this.belongsTo(models.Shop, { foreignKey: 'shopId', as: 'shop' });
+    this.belongsTo(models.Product, { foreignKey: 'product_id', as: 'product' });
     this.hasMany(models.InventoryItem, { foreignKey: 'inventory_id', as: 'inventoryItems' });
-    this.belongsToMany(models.Product, {
-      through: models.InventoryItem,
-      foreignKey: 'inventory_id',
-      otherKey: 'product_id',
-      as: 'products'
-    });
     this.hasMany(models.StockMovement, {
       foreignKey: 'source_inventory_id',
       as: 'sourceMovements'
@@ -118,7 +123,7 @@ class Inventory extends Model<InventoryAttributes> implements InventoryAttribute
 
     this.value = items.reduce((sum, item) => {
       const productValue = item.product?.purchasePrice 
-        ? item.product.purchasePrice * item.quantity
+        ? item.product.purchasePrice * item.quantity_supplied
         : 0;
       return sum + productValue;
     }, 0);

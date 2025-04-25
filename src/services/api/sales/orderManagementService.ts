@@ -24,8 +24,8 @@ interface OrderItem {
   productName: string;
   quantity: number;
   sellingPrice: number;
-  inventoryId?: string | null; // Add inventory ID to track which inventory item to update
-  warehouseId?: string | null; // For backward compatibility
+  inventoryItemId?: string | null; // Renamed from inventoryId for clarity - this is the InventoryItem record ID
+  warehouseId?: string | null; // For backward compatibility - this is the Inventory ID
 }
 
 interface OrderTotals {
@@ -96,6 +96,7 @@ export function registerOrderManagementHandlers() {
         const order = await Order.create({
           saleId: sale.id,
           product_id: item.productId as string | undefined,
+          inventory_item_id: item.inventoryItemId as string | undefined,
           productName: item.productName,
           quantity: item.quantity,
           sellingPrice: item.sellingPrice,
@@ -119,21 +120,21 @@ export function registerOrderManagementHandlers() {
             transaction: t
           });
 
-          // If an inventory ID is provided, update that specific inventory item's quantity
-          if (item.inventoryId) {
-            console.log(`Processing inventory update for product ${item.productId}, inventory ID: ${item.inventoryId}`);
+          // If an inventory item ID is provided, update that specific inventory item's quantity
+          if (item.inventoryItemId) {
+            console.log(`Processing inventory update for product ${item.productId}, inventory item ID: ${item.inventoryItemId}`);
             
             // Find the inventory item - use the inventoryItemId directly if available
             const inventoryItemQuery = {
               where: item.warehouseId ? 
-                // If we have a warehouseId/inventoryId (which is the inventory_id), use that
+                // If we have a warehouseId (inventory_id), use that with product_id
                 {
-                  inventory_id: item.inventoryId,
+                  inventory_id: item.warehouseId,
                   product_id: item.productId
                 } :
                 // Otherwise, try to find by the inventory item's own ID
                 {
-                  id: item.inventoryId,
+                  id: item.inventoryItemId,
                   product_id: item.productId
                 },
               transaction: t
@@ -144,12 +145,12 @@ export function registerOrderManagementHandlers() {
 
             if (inventoryItem) {
               // Check if there's enough quantity in this specific inventory
-              if (inventoryItem.quantity < item.quantity) {
+              if (inventoryItem.quantity_left < item.quantity) {
                 throw new Error(`Insufficient stock for product ${product.name} in the selected inventory`);
               }
 
               // Update inventory item quantity
-              await inventoryItem.decrement('quantity', {
+              await inventoryItem.decrement('quantity_left', {
                 by: item.quantity,
                 transaction: t
               });
@@ -158,8 +159,8 @@ export function registerOrderManagementHandlers() {
               const updatedInventoryItem = await InventoryItem.findOne(inventoryItemQuery);
 
               if (updatedInventoryItem) {
-                const newStatus = updatedInventoryItem.quantity <= 0 ? 'out_of_stock' :
-                                updatedInventoryItem.quantity <= (updatedInventoryItem.reorder_point ?? 10) ? 'low_stock' :
+                const newStatus = updatedInventoryItem.quantity_left <= 0 ? 'out_of_stock' :
+                                updatedInventoryItem.quantity_left <= (updatedInventoryItem.reorder_point ?? 10) ? 'low_stock' :
                                 'in_stock';
                 
                 await updatedInventoryItem.update({ 

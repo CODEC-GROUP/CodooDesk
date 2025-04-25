@@ -6,23 +6,23 @@ import Inventory from './Inventory.js';
 
 export interface InventoryItemAttributes {
   id?: string;
+  item_number: string;
   product_id: string;
   inventory_id: string;
   supplier_id?: string;
-  quantity: number;
-  minimum_quantity: number;
-  maximum_quantity: number;
+  quantity_supplied: number;
+  cost_price: number;
+  selling_price: number;
+  quantity_sold: number;
+  returned_to_shop: number;
+  returned_to_supplier: number;
+  quantity_left: number;
+  amount_sold: number;
   reorder_point: number;
   unit_cost: number;
-  selling_price: number;
   status: 'in_stock' | 'low_stock' | 'out_of_stock';
-  last_restock_date?: Date;
   last_stocktake_date?: Date;
-  value: number;
-  batch_number?: string;
   expiry_date?: Date;
-  location?: string;
-  stock_type: 'purchase' | 'production' | 'return' | 'transfer';
   unit_type: 'piece' | 'kg' | 'liter' | 'meter';
   createdAt?: Date;
   updatedAt?: Date;
@@ -30,23 +30,23 @@ export interface InventoryItemAttributes {
 
 class InventoryItem extends Model<InventoryItemAttributes> implements InventoryItemAttributes {
   public id!: string;
+  public item_number!: string;
   public product_id!: string;
   public inventory_id!: string;
   public supplier_id?: string;
-  public quantity!: number;
-  public minimum_quantity!: number;
-  public maximum_quantity!: number;
+  public quantity_supplied!: number;
+  public cost_price!: number;
+  public selling_price!: number;
+  public quantity_sold!: number;
+  public returned_to_shop!: number;
+  public returned_to_supplier!: number;
+  public quantity_left!: number;
+  public amount_sold!: number;
   public reorder_point!: number;
   public unit_cost!: number;
-  public selling_price!: number;
   public status!: 'in_stock' | 'low_stock' | 'out_of_stock';
-  public last_restock_date?: Date;
   public last_stocktake_date?: Date;
-  public value!: number;
-  public batch_number!: string;
   public expiry_date!: Date;
-  public location!: string;
-  public stock_type!: 'purchase' | 'production' | 'return' | 'transfer';
   public unit_type!: 'piece' | 'kg' | 'liter' | 'meter';
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -59,6 +59,11 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
           type: DataTypes.UUID,
           defaultValue: DataTypes.UUIDV4,
           primaryKey: true,
+        },
+        item_number: {
+          type: DataTypes.STRING,
+          allowNull: false,
+          unique: false,
         },
         product_id: {
           type: DataTypes.UUID,
@@ -84,20 +89,45 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
             key: 'id',
           },
         },
-        quantity: {
+        quantity_supplied: {
           type: DataTypes.INTEGER,
           allowNull: false,
           defaultValue: 0
         },
-        minimum_quantity: {
-          type: DataTypes.INTEGER,
+        cost_price: {
+          type: DataTypes.DECIMAL(10, 2),
           allowNull: false,
-          defaultValue: 0,
+          defaultValue: 0
         },
-        maximum_quantity: {
+        selling_price: {
+          type: DataTypes.DECIMAL(10, 2),
+          allowNull: false,
+          defaultValue: 0
+        },
+        quantity_sold: {
           type: DataTypes.INTEGER,
           allowNull: false,
-          defaultValue: 0,
+          defaultValue: 0
+        },
+        returned_to_shop: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 0
+        },
+        returned_to_supplier: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 0
+        },
+        quantity_left: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 0
+        },
+        amount_sold: {
+          type: DataTypes.DECIMAL(10, 2),
+          allowNull: false,
+          defaultValue: 0
         },
         reorder_point: {
           type: DataTypes.INTEGER,
@@ -109,45 +139,18 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
           allowNull: false,
           defaultValue: 0,
         },
-        selling_price: {
-          type: DataTypes.DECIMAL(10, 2),
-          allowNull: false,
-          defaultValue: 0,
-        },
         status: {
           type: DataTypes.ENUM('in_stock', 'low_stock', 'out_of_stock'),
           allowNull: false,
           defaultValue: 'out_of_stock',
         },
-        last_restock_date: {
-          type: DataTypes.DATE,
-          allowNull: true,
-        },
         last_stocktake_date: {
           type: DataTypes.DATE,
           allowNull: true,
         },
-        value: {
-          type: DataTypes.FLOAT,
-          allowNull: false,
-          defaultValue: 0
-        },
-        batch_number: {
-          type: DataTypes.STRING,
-          allowNull: true
-        },
         expiry_date: {
           type: DataTypes.DATE,
           allowNull: true
-        },
-        location: {
-          type: DataTypes.STRING,
-          allowNull: true
-        },
-        stock_type: {
-          type: DataTypes.ENUM('purchase', 'production', 'return', 'transfer'),
-          allowNull: false,
-          defaultValue: 'purchase'
         },
         unit_type: {
           type: DataTypes.ENUM('piece', 'kg', 'liter', 'meter'),
@@ -159,21 +162,6 @@ class InventoryItem extends Model<InventoryItemAttributes> implements InventoryI
         sequelize,
         modelName: 'InventoryItem',
         timestamps: true,
-        hooks: {
-          beforeUpdate: async (item: InventoryItem) => {
-            // Check if quantity has changed
-            const changes = item.changed();
-            if (changes && changes.includes('quantity')) {
-              item.last_restock_date = new Date();
-            }
-          },
-          beforeCreate: async (item: InventoryItem) => {
-            // Set initial last_restock_date when creating with quantity
-            if (item.quantity > 0) {
-              item.last_restock_date = new Date();
-            }
-          }
-        }
       }
     );
   }

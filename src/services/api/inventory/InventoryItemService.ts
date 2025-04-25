@@ -3,7 +3,6 @@ import InventoryItem, { InventoryItemAttributes } from '../../../models/Inventor
 import Inventory from '../../../models/Inventory.js';
 import Product from '../../../models/Product.js';
 import Supplier from '../../../models/Supplier.js';
-import SupplierProducts from '../../../models/SupplierProducts.js';
 import { Op, Sequelize } from 'sequelize';
 import StockMovement from '../../../models/StockMovement.js';
 import { sequelize } from '../../database/index.js';
@@ -90,7 +89,7 @@ export function registerInventoryItemHandlers() {
       // Calculate total value using selling_price for consistency
       const totalValue = items.reduce((sum, item) => {
         const price = Number(item.selling_price) || 0;
-        const qty = Number(item.quantity) || 0;
+        const qty = Number(item.quantity_left) || 0;
         return sum + (qty * price);
       }, 0);
 
@@ -163,6 +162,7 @@ export function registerInventoryItemHandlers() {
         };
       }
 
+      // Get products from the shop that match the query
       const products = await Product.findAll({
         where: {
           [Op.and]: [
@@ -175,23 +175,52 @@ export function registerInventoryItemHandlers() {
             { shop_id: inventory.shopId }
           ]
         } as any,
-        include: [{
-          model: Supplier,
-          through: { attributes: [] } as any,
-          as: 'suppliers',
-          attributes: ['id', 'name', 'email', 'phone']
-        }],
-        limit: 10,
-        raw: true,
-        nest: true
+        limit: 10
       });
+
+      // Map products to a simpler format
+      const productsWithSuppliers = await Promise.all(
+        products.map(async (product) => {
+          const plainProduct = product.get({ plain: true });
+          
+          // Find suppliers for this product through inventory items
+          const inventoryItems = await InventoryItem.findAll({
+            where: {
+              product_id: product.id
+            },
+            include: [
+              { 
+                model: Supplier, 
+                as: 'supplier',
+                attributes: ['id', 'name', 'email', 'phone']
+              }
+            ]
+          });
+          
+          // Extract unique suppliers
+          const suppliers = [];
+          const supplierIds = new Set();
+          
+          for (const item of inventoryItems) {
+            const plainItem = item.get({ plain: true });
+            // Type assertion to access supplier property safely
+            const itemWithSupplier = plainItem as any;
+            if (itemWithSupplier.supplier && !supplierIds.has(itemWithSupplier.supplier.id)) {
+              supplierIds.add(itemWithSupplier.supplier.id);
+              suppliers.push(itemWithSupplier.supplier);
+            }
+          }
+          
+          return {
+            ...plainProduct,
+            suppliers
+          };
+        })
+      );
 
       return { 
         success: true, 
-        products: products.map(p => ({
-          ...p,
-          suppliers: (Array.isArray(p.suppliers) ? p.suppliers : []).map(s => ({...s}))
-        }))
+        products: productsWithSuppliers
       };
       
     } catch (error) {

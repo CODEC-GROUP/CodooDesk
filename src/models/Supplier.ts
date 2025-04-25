@@ -2,7 +2,6 @@ import { Model, DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../services/database/index.js';
 import Location from './Location.js';
 import InventoryItem from './InventoryItem.js';
-import Product from './Product.js';
 
 export interface SupplierAttributes {
   id?: string;
@@ -14,12 +13,6 @@ export interface SupplierAttributes {
   region: string | null;
   country: string;
   businessId: string;
-  supplierProducts?: {
-    id: string;
-    name: string;
-    productCount?: number;
-    totalValue?: number;
-  }[];
   shopId: string;
 }
 
@@ -96,11 +89,9 @@ class Supplier extends Model<SupplierAttributes> implements SupplierAttributes {
 
   static associate(models: any) {
     this.belongsTo(models.BusinessInformation, { foreignKey: 'businessId', as: 'business' });
-    this.belongsToMany(models.Product, { 
-      through: models.SupplierProducts,
+    this.hasMany(models.InventoryItem, {
       foreignKey: 'supplier_id',
-      otherKey: 'product_id',
-      as: 'supplierProducts'
+      as: 'inventoryItems'
     });
   }
 }

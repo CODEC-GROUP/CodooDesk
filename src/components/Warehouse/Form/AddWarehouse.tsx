@@ -1,21 +1,48 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/Shared/ui/button"
 import { Input } from "@/components/Shared/ui/input"
 import { Label } from "@/components/Shared/ui/label"
 import { Textarea } from "@/components/Shared/ui/textarea"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/Shared/ui/card"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, ChevronDown } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { toast } from '@/hooks/use-toast'
 import { safeIpcInvoke } from "@/lib/ipc"
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { InventoryAttributes } from "@/models/Inventory"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandGroup,
+  CommandItem
+} from "@/components/ui/command"
 
 interface AddWarehouseProps {
   onBack: () => void;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  sellingPrice: number;
+  quantity: number;
+  sku: string;
+  status?: string;
+}
+
+interface ProductResponse {
+  success: boolean;
+  products?: Product[];
+  message?: string;
 }
 
 const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
@@ -28,6 +55,47 @@ const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
     value: 0
   })
   const { business, currentShopId } = useAuthLayout()
+  const [products, setProducts] = useState<Product[]>([])
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [isProductSearchFocused, setIsProductSearchFocused] = useState(false)
+
+  // Get shop IDs based on user role
+  const shopIds = business?.shops?.map(shop => shop.id) || []
+
+  useEffect(() => {
+    fetchProducts()
+  }, [])
+
+  const fetchProducts = async () => {
+    try {
+      setIsLoading(true)
+      
+      const response = await safeIpcInvoke<ProductResponse>('inventory:product:get-all-with-inventories', {
+        shopIds,
+        businessId: business?.id,
+        includeInventories: true
+      }, {
+        success: false,
+        products: []
+      });
+
+      if (!response?.success) {
+        throw new Error(response?.message || 'Failed to fetch products')
+      }
+
+      setProducts(response.products || [])
+    } catch (error) {
+      console.error('Error fetching products:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load products. Please try refreshing the page.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleInputChange = (field: keyof typeof formData, value: string | number) => {
     setFormData(prev => ({
@@ -82,6 +150,46 @@ const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
     }
   };
 
+  const filteredProducts = searchTerm
+    ? products.filter(p =>
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase())) &&
+      p.status !== 'out_of_stock'
+    ).slice(0, 6) // Limit to 6 suggestions
+    : [];
+
+  // Function to highlight matching text in search results
+  const highlightMatchingText = (text: string, query: string) => {
+    if (!query) return text;
+    
+    try {
+      const regex = new RegExp(`(${query})`, 'gi');
+      const parts = text.split(regex);
+      
+      return (
+        <>
+          {parts.map((part, i) => 
+            regex.test(part) ? 
+              <span key={i} className="bg-yellow-100">{part}</span> : 
+              <span key={i}>{part}</span>
+          )}
+        </>
+      );
+    } catch (e) {
+      // If regex fails (e.g., with special characters), return the original text
+      return text;
+    }
+  };
+
+  const handleSelectProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setSearchTerm("");
+    setIsProductSearchFocused(false);
+    
+    // Automatically set the warehouse name to the product name
+    handleInputChange('name', product.name);
+  };
+
   return (
     <div className="container mx-auto py-10">
       <Button 
@@ -100,6 +208,61 @@ const AddWarehouse: React.FC<AddWarehouseProps> = ({ onBack }) => {
         </CardHeader>
         
         <CardContent className="space-y-6">
+          {/* Product Selection */}
+          <div className="space-y-2">
+            <Label htmlFor="product-search">Select Product</Label>
+            <Popover open={isProductSearchFocused} onOpenChange={setIsProductSearchFocused}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={isProductSearchFocused}
+                  className="w-full justify-between"
+                  disabled={isLoading}
+                >
+                  {selectedProduct ? selectedProduct.name : "Select a product..."}
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full p-0" align="start">
+                <Command>
+                  <CommandInput 
+                    placeholder="Search products..." 
+                    value={searchTerm}
+                    onValueChange={setSearchTerm}
+                    onFocus={() => setIsProductSearchFocused(true)}
+                    className="h-9"
+                  />
+                  <CommandList>
+                    <CommandGroup>
+                      {filteredProducts.length > 0 ? (
+                        filteredProducts.map((product) => (
+                          <CommandItem
+                            key={product.id}
+                            value={product.id}
+                            onSelect={() => handleSelectProduct(product)}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex flex-col">
+                              <span className="font-medium">
+                                {highlightMatchingText(product.name, searchTerm)}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                SKU: {product.sku} | Price: ${product.sellingPrice.toFixed(2)} | Qty: {product.quantity}
+                              </span>
+                            </div>
+                          </CommandItem>
+                        ))
+                      ) : (
+                        <CommandItem disabled>No products found</CommandItem>
+                      )}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="warehouse-name">Warehouse Name</Label>
             <Input

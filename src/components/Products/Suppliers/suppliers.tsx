@@ -31,11 +31,17 @@ interface Supplier {
   country: string;
   shopId: string;
   businessId: string;
-  supplierProducts: {
+  inventoryItems: {
     id: string;
-    name: string;
-    productCount: number;
-    totalValue: number;
+    product_id: string;
+    quantity_supplied: number;
+    cost_price: number;
+    selling_price: number;
+    quantity_left: number;
+    product?: {
+      id: string;
+      name: string;
+    };
   }[];
   createdAt: Date;
   updatedAt: Date;
@@ -109,10 +115,12 @@ const Suppliers = () => {
             ...supplier,
             createdAt: new Date(supplier.createdAt),
             updatedAt: new Date(supplier.updatedAt),
-            supplierProducts: supplier.supplierProducts?.map(p => ({
-              ...p,
-              productCount: Number(p.productCount) || 0,
-              totalValue: Number(p.totalValue) || 0
+            inventoryItems: supplier.inventoryItems?.map(item => ({
+              ...item,
+              quantity_supplied: Number(item.quantity_supplied) || 0,
+              cost_price: Number(item.cost_price) || 0,
+              selling_price: Number(item.selling_price) || 0,
+              quantity_left: Number(item.quantity_left) || 0
             })) || []
           }));
           
@@ -135,11 +143,13 @@ const Suppliers = () => {
   }, [business, user?.role]);
 
   const calculateSupplierSales = (supplier: Supplier) => {
-    return supplier.supplierProducts?.reduce((total, product) => total + product.totalValue, 0) || 0;
+    return supplier.inventoryItems?.reduce((total, item) => {
+      return total + (item.cost_price * item.quantity_supplied);
+    }, 0) || 0;
   };
 
   const calculateTotalItems = (supplier: Supplier) => {
-    return supplier.supplierProducts?.reduce((total, product) => total + product.productCount, 0) || 0;
+    return supplier.inventoryItems?.length || 0;
   };
 
   const filteredSuppliers = suppliers.filter((supplier: Supplier) => {

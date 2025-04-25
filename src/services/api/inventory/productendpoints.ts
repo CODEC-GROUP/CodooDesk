@@ -3,7 +3,6 @@ import { Op } from 'sequelize';
 import Product, { ProductAttributes, ProductInstance } from '../../../models/Product.js';
 import Shop from '../../../models/Shop.js';
 import Category from '../../../models/Category.js';
-import Supplier from '../../../models/Supplier.js';
 import ProductVariant from '../../../models/ProductVariant.js';
 import PriceHistory from '../../../models/PriceHistory.js';
 import User from '../../../models/User.js';
@@ -29,36 +28,25 @@ const IPC_CHANNELS = {
 };
 
 // Types for sanitized data
-interface SanitizedSupplier {
-  id: string;
-  name: string;
-}
-
 interface SanitizedCategory {
   id: string;
   name: string;
-  description: string | null;
-  image: string | null;
-  businessId: string;
 }
 
 interface SanitizedShop {
   id: string;
   name: string;
-  businessId: string;
-  locationId: string;
-  status: string;
-  type: string;
-  contactInfo: {
-    email: string;
-    [key: string]: any;
-  };
 }
 
-interface SanitizedProduct extends Omit<ProductAttributes, 'category' | 'shop' | 'suppliers'> {
-  suppliers: SanitizedSupplier[];
-  category: SanitizedCategory | null;
-  shop: SanitizedShop | null;
+interface SanitizedProduct extends Omit<ProductAttributes, 'category' | 'shop'> {
+  category?: {
+    id: number;
+    name: string;
+  } | null;
+  shop?: {
+    id: number;
+    name: string;
+  } | null;
 }
 
 // Helper function to sanitize a product
@@ -67,25 +55,13 @@ function sanitizeProduct(product: any): SanitizedProduct {
   
   return {
     ...plain,
-    suppliers: plain?.suppliers?.map((supplier: any) => ({
-      id: supplier.id,
-      name: supplier.name
-    })) || [],
     category: plain?.category ? {
       id: plain.category.id,
       name: plain.category.name,
-      description: plain.category.description ?? null,
-      image: plain.category.image ?? null,
-      businessId: plain.category.businessId
     } : null,
     shop: plain?.shop ? {
       id: plain.shop.id,
       name: plain.shop.name,
-      businessId: plain.shop.businessId ?? '',
-      locationId: plain.shop.locationId ?? '',
-      status: plain.shop.status ?? 'inactive',
-      type: plain.shop.type ?? '',
-      contactInfo: plain.shop.contactInfo ?? { email: '' }
     } : null
   };
 }
@@ -132,46 +108,25 @@ export function registerProductHandlers() {
       // Create the product with sanitized data
       const product = await Product.create(sanitizedData, { transaction: t });
 
-      // Handle supplier associations with array validation
-      if (data.suppliers && Array.isArray(data.suppliers) && data.suppliers.length > 0) {
-        // Validate supplier IDs exist
-        const existingSuppliers = await Supplier.findAll({
-          where: { id: data.suppliers },
-          transaction: t
-        });
-
-        if (existingSuppliers.length !== data.suppliers.length) {
-          const invalidIds = data.suppliers.filter((id: string) => 
-            !existingSuppliers.some(s => s.id === id)
-          );
-          throw new Error(`Invalid supplier IDs: ${invalidIds.join(', ')}`);
-        }
-
-        // Create supplier associations directly instead of using setSuppliers
-        const supplierProducts = data.suppliers.map((supplierId: string) => ({
-          supplier_id: supplierId,
-          product_id: product.id
-        }));
-
-        await sequelize.models.SupplierProducts.bulkCreate(supplierProducts, { transaction: t });
-      }
-
       // Create inventory item if warehouse is specified
       if (data.warehouseId) {
         // Create inventory item
         const inventoryItem = await InventoryItem.create({
           product_id: product.id,
           inventory_id: data.warehouseId,
-          quantity: Number(data.quantity) || 0,
-          unit_cost: Number(data.purchasePrice) || 0,
+          item_number: `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          quantity_supplied: Number(data.quantity) || 0,
+          cost_price: Number(data.purchasePrice) || 0,
           selling_price: Number(data.sellingPrice) || 0,
-          minimum_quantity: Number(data.reorderPoint) || 0,
+          quantity_sold: 0,
+          returned_to_shop: 0,
+          returned_to_supplier: 0,
+          quantity_left: Number(data.quantity) || 0,
+          amount_sold: 0,
           reorder_point: Number(data.reorderPoint) || 0,
-          maximum_quantity: Number(data.quantity) * 2, // Set a reasonable maximum
+          unit_cost: Number(data.purchasePrice) || 0,
           status: 'in_stock',
-          stock_type: 'purchase',
-          unit_type: 'piece',
-          value: (Number(data.quantity) || 0) * (Number(data.purchasePrice) || 0)
+          unit_type: 'piece'
         }, { transaction: t });
 
         // Create stock movement record
@@ -245,6 +200,8 @@ export function registerProductHandlers() {
         performedAt: new Date()
       }, { transaction: t });
 
+      /* 
+      // Removing automatic expense creation as requested
       // Calculate total expense amount
       const totalExpenseAmount = Number(data.purchasePrice) * Number(data.quantity);
 
@@ -272,6 +229,7 @@ export function registerProductHandlers() {
           }, { transaction: t });
         }
       }
+      */
 
       await t.commit();
 
@@ -312,12 +270,6 @@ export function registerProductHandlers() {
             as: 'category',
             attributes: ['id', 'name', 'description', 'image', 'businessId']
           },
-          {
-            model: Supplier,
-            as: 'suppliers',
-            through: { attributes: [] },
-            attributes: ['id', 'name']
-          }
         ],
         order: [['createdAt', 'DESC']]
       });
@@ -365,10 +317,6 @@ export function registerProductHandlers() {
             const productWithRelations = product as unknown as ProductInstance;
             const sanitizedProduct = {
               ...product,
-              suppliers: product.suppliers?.map((supplier: any) => ({
-                id: supplier.id,
-                name: supplier.name
-              })) || [],
               category: (productWithRelations as ProductInstance).category ? {
                 id: (productWithRelations as ProductInstance).category!.id,
                 name: (productWithRelations as ProductInstance).category!.name,
@@ -405,10 +353,6 @@ export function registerProductHandlers() {
         success: true,
         products: plainProducts.map(product => ({
           ...product,
-          suppliers: product.suppliers?.map((supplier: any) => ({
-            id: supplier.id,
-            name: supplier.name
-          })) || [],
           category: (product as ProductInstance).category ? {
             id: (product as ProductInstance).category!.id,
             name: (product as ProductInstance).category!.name,
@@ -458,12 +402,6 @@ export function registerProductHandlers() {
             as: 'category',
             attributes: ['id', 'name', 'description', 'image', 'businessId']
           },
-          {
-            model: Supplier,
-            as: 'suppliers',
-            through: { attributes: [] },
-            attributes: ['id', 'name']
-          }
         ],
         order: [['createdAt', 'DESC']]
       });
@@ -527,48 +465,14 @@ export function registerProductHandlers() {
         }, { transaction: t });
       }
 
-      // Handle supplier updates if provided
-      if (updates.suppliers && Array.isArray(updates.suppliers)) {
-        // First delete existing associations
-        await sequelize.models.SupplierProducts.destroy({
-          where: { product_id: id },
-          transaction: t
-        });
-
-        // Then create new associations if there are suppliers
-        if (updates.suppliers.length > 0) {
-          // Validate supplier IDs exist
-          const existingSuppliers = await Supplier.findAll({
-            where: { id: updates.suppliers },
-            transaction: t
-          });
-
-          if (existingSuppliers.length !== updates.suppliers.length) {
-            const invalidIds = updates.suppliers.filter((supplierId: string) => 
-              !existingSuppliers.some(s => s.id === supplierId)
-            );
-            throw new Error(`Invalid supplier IDs: ${invalidIds.join(', ')}`);
-          }
-
-          // Create new supplier associations
-          const supplierProducts = updates.suppliers.map((supplierId: string) => ({
-            supplier_id: supplierId,
-            product_id: id
-          }));
-
-          await sequelize.models.SupplierProducts.bulkCreate(supplierProducts, { transaction: t });
-        }
-
-        // Remove suppliers from updates to prevent double processing
-        delete updates.suppliers;
-      }
-
       // Check if quantity is being increased
       if (updates.quantity !== undefined && updates.quantity > product.quantity) {
         const quantityIncrease = updates.quantity - product.quantity;
         const purchasePrice = updates.purchasePrice !== undefined ? updates.purchasePrice : product.purchasePrice;
         const expenseAmount = purchasePrice * quantityIncrease;
 
+        /* 
+        // Removing automatic expense creation as requested
         // Only create expense if there's an actual increase in quantity
         if (quantityIncrease > 0 && expenseAmount > 0) {
           // Fetch the OHADA code for inventory purchases
@@ -593,6 +497,7 @@ export function registerProductHandlers() {
             console.warn('Inventory purchase OHADA code not found, expense record not created');
           }
         }
+        */
       }
 
       await product.update(updates, { transaction: t });
@@ -636,7 +541,6 @@ export function registerProductHandlers() {
         include: [
           { model: Category, as: 'category' },
           { model: Shop, as: 'shop' },
-          { model: Supplier, as: 'suppliers' },
           { 
             model: ProductVariant,
             as: 'variants',
@@ -758,8 +662,6 @@ export function registerProductHandlers() {
 
       // Remove all associations first
       await Promise.all([
-        // Clear supplier associations
-        product.setSuppliers([]),
         // Add other association clearings here if needed
       ]);
       

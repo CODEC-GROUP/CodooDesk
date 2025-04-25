@@ -41,10 +41,11 @@ import { useToast } from "@/components/Shared/ui/use-toast"
 import { safeIpcInvoke } from "@/lib/ipc"
 
 interface InventoryListProps {
-  warehouseId: string;
+  warehouseId?: string;
+  productId?: string;
   onBack: () => void;
-  warehouseName: string;
-  parentView?: 'inventory' | 'warehouse';
+  warehouseName?: string;
+  parentView?: 'inventory' | 'warehouse' | 'product';
 }
 
 interface ProductDetails {
@@ -55,20 +56,29 @@ interface ProductDetails {
   reorderPoint: number;
 }
 
-interface InventoryItemWithProduct extends InventoryItemWithDetails {
+// Define a type for inventory items that includes all possible fields
+interface InventoryItem extends InventoryItemWithDetails {
   product: ProductDetails;
+  supplier_name?: string; 
+  qty_supplied?: number;
+  sold?: number;
+  returned_shop?: number;
+  returned_supplier?: number;
+  qty_left?: number;
+  amount?: number;
 }
 
-export function InventoryList({ warehouseId, onBack, warehouseName, parentView = 'warehouse' }: InventoryListProps) {
-  const [inventory, setInventory] = useState<InventoryItemWithProduct[]>([])
+export function InventoryList({ warehouseId, productId, onBack, warehouseName, parentView = 'warehouse' }: InventoryListProps) {
+  const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<string | null>(null)
-  const [selectedItem, setSelectedItem] = useState<InventoryItemWithProduct | null>(null)
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
   const [showAddInventory, setShowAddInventory] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [productName, setProductName] = useState<string>("")
   const [columnVisibility, setColumnVisibility] = useState({
     name: true,
     sku: true,
@@ -78,10 +88,13 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
     sellingPrice: true,
     totalValue: true,
     status: true,
-    productsSold: true,
-    productsLeft: true,
-    returnsToShop: true,
-    returnsToSupplier: true
+    supplier: parentView === 'product',
+    qtySupplied: parentView === 'product',
+    sold: parentView === 'product',
+    returnedShop: parentView === 'product',
+    returnedSupplier: parentView === 'product',
+    qtyLeft: parentView === 'product',
+    amount: parentView === 'product'
   });
   const { toast } = useToast()
   const [totalItems, setTotalItems] = useState(0);
@@ -91,22 +104,65 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
     setLoading(true);
     setError(null);
     try {
-      const data = await safeIpcInvoke<{ items: InventoryItemWithProduct[], totalItems: number, totalValue: number }>(
-        'inventory:item:get-all-by-inventory-id',
-        { inventoryId: warehouseId },
-        { items: [], totalItems: 0, totalValue: 0 }
-      );
-      
-      if (data) {
-        setInventory(Array.isArray(data.items) ? data.items : []);
-        setTotalItems(data.totalItems);
-        setTotalValue(data.totalValue);
-      } else {
-        setInventory([]);
-        setTotalItems(0);
-        setTotalValue(0);
+      if (productId) {
+        // Load inventory items for a specific product
+        const data = await safeIpcInvoke<{ items: any[], productName: string, totalItems: number, totalValue: number }>(
+          'inventory:item:get-by-product-id',
+          { productId },
+          { items: [], productName: "", totalItems: 0, totalValue: 0 }
+        );
+        
+        if (data) {
+          // Transform API response to match our expected format
+          const transformedItems = Array.isArray(data.items) ? data.items.map(item => ({
+            ...item,
+            // Safely access reorderPoint using optional chaining and nullish coalescing
+            product: {
+              ...item.product,
+              reorderPoint: item.product.reorderPoint
+            },
+            // Rename supplier to supplier_name if it exists
+            supplier_name: item.supplier?.name || 'N/A',
+            // Make sure supplier is correct format for InventoryItemWithDetails
+            supplier: item.supplier || { id: '', name: '', contact: '' }
+          })) : [];
+          
+          setInventory(transformedItems);
+          setProductName(data.productName || "Unknown Product");
+          setTotalItems(data.totalItems);
+          setTotalValue(data.totalValue);
+        } else {
+          setInventory([]);
+          setTotalItems(0);
+          setTotalValue(0);
+        }
+      } else if (warehouseId) {
+        // Load inventory items for a warehouse
+        const data = await safeIpcInvoke<{ items: InventoryItemWithDetails[], totalItems: number, totalValue: number }>(
+          'inventory:item:get-all-by-inventory-id',
+          { inventoryId: warehouseId },
+          { items: [], totalItems: 0, totalValue: 0 }
+        );
+        
+        if (data) {
+          const transformedItems = Array.isArray(data.items) ? data.items.map(item => ({
+            ...item,
+            // Safely access reorderPoint using optional chaining and nullish coalescing
+            product: {
+              ...item.product,
+              reorderPoint: item.product.reorderPoint
+            }
+          })) : [];
+          
+          setInventory(transformedItems);
+          setTotalItems(data.totalItems);
+          setTotalValue(data.totalValue);
+        } else {
+          setInventory([]);
+          setTotalItems(0);
+          setTotalValue(0);
+        }
       }
-      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load inventory');
       setInventory([]);
@@ -122,7 +178,7 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
 
   useEffect(() => {
     loadInventory();
-  }, [warehouseId, refreshTrigger]);
+  }, [warehouseId, productId, refreshTrigger]);
 
   const toggleItemSelection = (itemId: string) => {
     setSelectedItems(prev =>
@@ -168,7 +224,7 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
     }
   };
 
-  const openOverlay = (item: InventoryItemWithProduct) => {
+  const openOverlay = (item: InventoryItem) => {
     setSelectedItem(item);
   }
 
@@ -214,8 +270,16 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
         item={selectedItem}
         onBack={() => setSelectedItem(null)}
         onItemUpdated={(updatedItem) => {
+          const updated = {
+            ...updatedItem,
+            product: {
+              ...updatedItem.product,
+              reorderPoint: updatedItem.product.reorderPoint
+            }
+          } as InventoryItem;
+          
           setInventory(prev => prev.map(item => 
-            item.id === updatedItem.id ? updatedItem as InventoryItemWithProduct : item
+            item.id === updatedItem.id ? updated : item
           ));
           setSelectedItem(null);
         }}
@@ -226,7 +290,7 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
   if (showAddInventory) {
     return <AddInventory 
       onBack={handleBackToList} 
-      warehouseId={warehouseId}
+      warehouseId={warehouseId || ""}
       onSuccess={handleAddItemSuccess}
       parentView="inventory"
     />
@@ -268,7 +332,9 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
           Back
         </Button>
         <h1 className="text-3xl font-bold flex-1">
-          {warehouseName} - Inventory Items
+          {productId 
+            ? `${productName} - Inventory History` 
+            : `${warehouseName} - Inventory Items`}
         </h1>
         <div className="text-sm text-gray-500">
           Total Items: {totalItems} | Total Value: {totalValue.toLocaleString()} FCFA
@@ -283,9 +349,11 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
               Delete Selected ({selectedItems.length})
             </Button>
           )}
-          <Button onClick={() => setShowAddInventory(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Add Item
-          </Button>
+          {!productId && (
+            <Button onClick={() => setShowAddInventory(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Add Item
+            </Button>
+          )}
         </div>
       </div>
       <Card>
@@ -306,28 +374,51 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
                       }}
                     />
                   </TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Reorder Point</TableHead>
-                  <TableHead>Unit Cost</TableHead>
-                  <TableHead>Selling Price</TableHead>
-                  <TableHead>Total Value</TableHead>
-                  <TableHead>Last Restocked</TableHead>
+                  
+                  {parentView === 'product' ? (
+                    // Product inventory view columns
+                    <>
+                      <TableHead>Inv #</TableHead>
+                      <TableHead>Qty Supplied</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Cost Price</TableHead>
+                      <TableHead>Selling Price</TableHead>
+                      <TableHead>Sold</TableHead>
+                      <TableHead>Returned (Shop)</TableHead>
+                      <TableHead>Returned (Supplier)</TableHead>
+                      <TableHead>Qty Left</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Last Updated</TableHead>
+                    </>
+                  ) : (
+                    // Warehouse inventory view columns
+                    <>
+                      <TableHead>Inv #</TableHead>
+                      <TableHead>Qty Supplied</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Cost Price</TableHead>
+                      <TableHead>Selling Price</TableHead>
+                      <TableHead>Sold</TableHead>
+                      <TableHead>Returned (Shop)</TableHead>
+                      <TableHead>Returned (Supplier)</TableHead>
+                      <TableHead>Qty Left</TableHead>
+                      <TableHead>Amount</TableHead>
+                    </>
+                  )}
+                  
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-10">
+                    <TableCell colSpan={parentView === 'product' ? 12 : 11} className="text-center py-10">
                       <LoadingSpinner />
                     </TableCell>
                   </TableRow>
                 ) : inventory.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-10">
+                    <TableCell colSpan={parentView === 'product' ? 12 : 11} className="text-center py-10">
                       No inventory items found
                     </TableCell>
                   </TableRow>
@@ -350,23 +441,38 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
                           }}
                         />
                       </TableCell>
-                      <TableCell>{item.product.name}</TableCell>
-                      <TableCell>{item.product.sku}</TableCell>
-                      <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(
-                          item.quantity > item.product.reorderPoint ? 'in_stock' :
-                          item.quantity > 0 ? 'low_stock' : 'out_of_stock'
-                        )}`}>
-                          {(item.quantity > item.product.reorderPoint ? 'In Stock' :
-                           item.quantity > 0 ? 'Low Stock' : 'Out of Stock')}
-                        </span>
-                      </TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{item.product.reorderPoint}</TableCell>
-                      <TableCell>{item.unit_cost.toLocaleString()} FCFA</TableCell>
-                      <TableCell>{item.selling_price.toLocaleString()} FCFA</TableCell>
-                      <TableCell>{calculateTotalValue(item.quantity, item.selling_price)}</TableCell>
-                      <TableCell>{item.last_restock_date ? item.last_restock_date.toISOString().split('T')[0] : 'N/A'}</TableCell>
+                      
+                      {parentView === 'product' ? (
+                        // Product inventory view row cells
+                        <>
+                          <TableCell>{item.id.substring(0, 8)}</TableCell>
+                          <TableCell>{item.qty_supplied}</TableCell>
+                          <TableCell>{item.supplier_name || 'N/A'}</TableCell>
+                          <TableCell>{item.unit_cost != null ? item.unit_cost.toLocaleString() : 'N/A'} FCFA</TableCell>
+                          <TableCell>{item.selling_price != null ? item.selling_price.toLocaleString() : 'N/A'} FCFA</TableCell>
+                          <TableCell>{item.sold}</TableCell>
+                          <TableCell>{item.returned_shop}</TableCell>
+                          <TableCell>{item.returned_supplier}</TableCell>
+                          <TableCell>{item.qty_left}</TableCell>
+                          <TableCell>{item.amount != null ? item.amount.toLocaleString() : 'N/A'} FCFA</TableCell>
+                          <TableCell>{item.last_restock_date ? new Date(item.last_restock_date).toLocaleDateString() : 'N/A'}</TableCell>
+                        </>
+                      ) : (
+                        // Warehouse inventory view row cells
+                        <>
+                          <TableCell>{item.id.substring(0, 8)}</TableCell>
+                          <TableCell>{item.qty_supplied}</TableCell>
+                          <TableCell>{item.supplier_name || 'N/A'}</TableCell>
+                          <TableCell>{item.unit_cost != null ? item.unit_cost.toLocaleString() : 'N/A'} FCFA</TableCell>
+                          <TableCell>{item.selling_price != null ? item.selling_price.toLocaleString() : 'N/A'} FCFA</TableCell>
+                          <TableCell>{item.sold}</TableCell>
+                          <TableCell>{item.returned_shop}</TableCell>
+                          <TableCell>{item.returned_supplier}</TableCell>
+                          <TableCell>{item.qty_left}</TableCell>
+                          <TableCell>{item.amount != null ? item.amount.toLocaleString() : 'N/A'} FCFA</TableCell>
+                        </>
+                      )}
+                      
                       <TableCell className="text-right">
                         <Button
                           variant="ghost"
@@ -409,31 +515,79 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
               <CardContent className="p-4">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className="font-medium">{item.product.name}</h3>
-                    <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
+                    {parentView === 'product' ? (
+                      <>
+                        <h3 className="font-medium">Inv #{item.id.substring(0, 8)}</h3>
+                        <p className="text-sm text-gray-500">Supplier: {item.supplier_name || 'N/A'}</p>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="font-medium">{item.id.substring(0, 8)}</h3>
+                        <p className="text-sm text-gray-500">Supplier: {item.supplier_name || 'N/A'}</p>
+                      </>
+                    )}
                   </div>
-                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(
-                    item.quantity > item.product.reorderPoint ? 'in_stock' :
-                    item.quantity > 0 ? 'low_stock' : 'out_of_stock'
-                  )}`}>
-                    {(item.quantity > item.product.reorderPoint ? 'In Stock' :
-                     item.quantity > 0 ? 'Low Stock' : 'Out of Stock')}
-                  </span>
+                  {parentView !== 'product' && (
+                    <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(
+                      item.quantity > item.product.reorderPoint ? 'in_stock' :
+                      item.quantity > 0 ? 'low_stock' : 'out_of_stock'
+                    )}`}>
+                      {(item.quantity > item.product.reorderPoint ? 'In Stock' :
+                      item.quantity > 0 ? 'Low Stock' : 'Out of Stock')}
+                    </span>
+                  )}
                 </div>
                 
                 <div className="mt-4 space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Quantity</span>
-                    <span className="text-sm">{item.quantity}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Selling Price</span>
-                    <span className="text-sm">{item.selling_price.toLocaleString()} FCFA</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Total Value</span>
-                    <span className="text-sm">{calculateTotalValue(item.quantity, item.selling_price)}</span>
-                  </div>
+                  {parentView === 'product' ? (
+                    // Product inventory mobile view
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Qty Supplied</span>
+                        <span className="text-sm">{item.qty_supplied}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Sold</span>
+                        <span className="text-sm">{item.sold}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Qty Left</span>
+                        <span className="text-sm">{item.qty_left}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Selling Price</span>
+                        <span className="text-sm">{item.selling_price != null ? item.selling_price.toLocaleString() : 'N/A'} FCFA</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Total Value</span>
+                        <span className="text-sm">{item.amount != null ? item.amount.toLocaleString() : 'N/A'} FCFA</span>
+                      </div>
+                    </>
+                  ) : (
+                    // Warehouse inventory mobile view
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Qty Supplied</span>
+                        <span className="text-sm">{item.qty_supplied}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Sold</span>
+                        <span className="text-sm">{item.sold}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Qty Left</span>
+                        <span className="text-sm">{item.qty_left}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Selling Price</span>
+                        <span className="text-sm">{item.selling_price != null ? item.selling_price.toLocaleString() : 'N/A'} FCFA</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Total Value</span>
+                        <span className="text-sm">{item.amount != null ? item.amount.toLocaleString() : 'N/A'} FCFA</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -452,6 +606,14 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
           </Button>
         </div>
       )}
+      
+      <DeleteConfirmationModal 
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Inventory Item"
+        description="Are you sure you want to delete this item? This action cannot be undone."
+      />
     </div>
   )
 }

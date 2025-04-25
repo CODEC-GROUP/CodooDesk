@@ -1,0 +1,62 @@
+{
+  "${key}": "",
+  "Daily": "",
+  "Dashboard": "",
+  "Hourly": "",
+  "Minutes": "",
+  "Monthly": "",
+  "View": "",
+  "Weekly": "",
+  "back": "",
+  "common": {
+    "actions": {
+      "back": "",
+      "cancel": "",
+      "logo": "",
+      "pay": "",
+      "save": "",
+      "secured": ""
+    }
+  },
+  "error": "",
+  "inventory": {
+    "stockMovement": {
+      "addMovement": "",
+      "date": "",
+      "movementType": "",
+      "performedBy": "",
+      "quantity": "",
+      "reason": "",
+      "title": ""
+    }
+  },
+  "notifications": {
+    "title": ""
+  },
+  "payments": {
+    "momo": {
+      "label": "",
+      "placeholder": ""
+    }
+  },
+  "profile": {
+    "description": "",
+    "title": ""
+  },
+  "security": {
+    "title": ""
+  },
+  "success": "",
+  "units": {
+    "title": ""
+  },
+  "warehouse": {
+    "edit": "",
+    "edit_description": "",
+    "name_required": "",
+    "update": "",
+    "update_failed": "",
+    "updated_successfully": "",
+    "updating": ""
+  }
+}

@@ -15,6 +15,7 @@ interface CartItem {
   price: number;
   quantity: number;
   actualPrice: number;
+  inventoryItemId?: string;
 }
 
 interface POSSaleRequest {
@@ -29,7 +30,7 @@ interface POSSaleRequest {
     name: string;
     quantity: number;
     actualPrice: number;
-    inventoryId?: string | null;
+    inventoryItemId?: string | null;
     warehouseId?: string | null;
   }[];
   paymentMethod: string;
@@ -97,7 +98,8 @@ export function registerPOSHandlers() {
         await Order.create({
           saleId: sale.id,
           product_id: item.id,
-          productName: item.name,  // Add product name
+          inventory_item_id: item.inventoryItemId || undefined,
+          productName: item.name,
           quantity: item.quantity,
           sellingPrice: item.actualPrice,
           paymentStatus: 'paid',
@@ -113,21 +115,21 @@ export function registerPOSHandlers() {
           }
         );
 
-        // If an inventory ID is provided, update that specific inventory item's quantity
-        if (item.inventoryId) {
-          console.log(`Processing inventory update for product ${item.id}, inventory ID: ${item.inventoryId}`);
+        // If an inventory item ID is provided, update that specific inventory item's quantity
+        if (item.inventoryItemId) {
+          console.log(`Processing inventory update for product ${item.id}, inventory item ID: ${item.inventoryItemId}`);
           
           // Find the inventory item - use the inventoryItemId directly if available
           const inventoryItemQuery = {
             where: item.warehouseId ? 
-              // If we have a warehouseId/inventoryId (which is the inventory_id), use that
+              // If we have a warehouseId (inventory_id), use that with product_id
               {
-                inventory_id: item.inventoryId,
+                inventory_id: item.warehouseId,
                 product_id: item.id
               } :
               // Otherwise, try to find by the inventory item's own ID
               {
-                id: item.inventoryId,
+                id: item.inventoryItemId,
                 product_id: item.id
               },
             transaction: t
@@ -141,16 +143,16 @@ export function registerPOSHandlers() {
               id: inventoryItem.id,
               product_id: inventoryItem.product_id,
               inventory_id: inventoryItem.inventory_id,
-              quantity: inventoryItem.quantity
+              quantity: inventoryItem.quantity_left
             })}`);
             
             // Check if there's enough quantity in this specific inventory
-            if (inventoryItem.quantity < item.quantity) {
+            if (inventoryItem.quantity_left < item.quantity) {
               throw new Error(`Insufficient stock for product ${item.name} in the selected inventory`);
             }
 
             // Update inventory item quantity
-            await inventoryItem.decrement('quantity', {
+            await inventoryItem.decrement('quantity_left', {
               by: item.quantity,
               transaction: t
             });
@@ -160,9 +162,9 @@ export function registerPOSHandlers() {
             const updatedInventoryItem = await InventoryItem.findOne(inventoryItemQuery);
 
             if (updatedInventoryItem) {
-              console.log(`Updated inventory item quantity: ${updatedInventoryItem.quantity}`);
-              const newStatus = updatedInventoryItem.quantity <= 0 ? 'out_of_stock' :
-                              updatedInventoryItem.quantity <= (updatedInventoryItem.reorder_point ?? 10) ? 'low_stock' :
+              console.log(`Updated inventory item quantity: ${updatedInventoryItem.quantity_left}`);
+              const newStatus = updatedInventoryItem.quantity_left <= 0 ? 'out_of_stock' :
+                              updatedInventoryItem.quantity_left <= (updatedInventoryItem.reorder_point ?? 10) ? 'low_stock' :
                               'in_stock';
               
               await updatedInventoryItem.update({ 
@@ -173,10 +175,10 @@ export function registerPOSHandlers() {
               console.log(`Could not find updated inventory item after decrement`);
             }
           } else {
-            console.log(`No inventory item found for product ${item.id} with inventory ID ${item.inventoryId}`);
+            console.log(`No inventory item found for product ${item.id} with inventory item ID ${item.inventoryItemId}`);
           }
         } else {
-          console.log(`No inventory ID provided for product ${item.id}`);
+          console.log(`No inventory item ID provided for product ${item.id}`);
         }
 
         const product = await Product.findByPk(item.id, { transaction: t });

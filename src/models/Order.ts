@@ -4,11 +4,13 @@ import Sales from './Sales.js';
 import Return from './Return.js';
 import Inventory from './Inventory.js';
 import Product from './Product.js';
+import InventoryItem from './InventoryItem.js';
 
 export interface OrderAttributes {
   id?: string;
   saleId: string;
   product_id?: string;
+  inventory_item_id?: string;
   productName?: string;
   quantity: number;
   sellingPrice: number;
@@ -19,6 +21,7 @@ class Order extends Model<OrderAttributes> implements OrderAttributes {
   public id!: string;
   public saleId!: string;
   public product_id?: string;
+  public inventory_item_id?: string;
   public productName?: string;
   public quantity!: number;
   public sellingPrice!: number;
@@ -43,6 +46,14 @@ class Order extends Model<OrderAttributes> implements OrderAttributes {
         product_id: {
           type: DataTypes.UUID,
           allowNull: true,
+        },
+        inventory_item_id: {
+          type: DataTypes.UUID,
+          allowNull: true,
+          references: {
+            model: 'InventoryItems',
+            key: 'id',
+          },
         },
         productName: {
           type: DataTypes.STRING,
@@ -72,10 +83,13 @@ class Order extends Model<OrderAttributes> implements OrderAttributes {
   static associate(models: any) {
     this.belongsTo(models.Sales, { foreignKey: 'saleId', as: 'sale' });
     this.hasOne(models.Return, { foreignKey: 'orderId', as: 'return' });
-    this.belongsTo(models.Inventory, { foreignKey: 'inventoryId', as: 'inventory' });
     this.belongsTo(models.Product, {
       foreignKey: 'product_id',
       as: 'product'
+    });
+    this.belongsTo(models.InventoryItem, {
+      foreignKey: 'inventory_item_id',
+      as: 'inventoryItem'
     });
   }
 }

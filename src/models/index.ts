@@ -18,7 +18,6 @@ import Return from './Return.js';
 import Sales from './Sales.js';
 import Shop from './Shop.js';
 import Supplier from './Supplier.js';
-import SupplierProducts from './SupplierProducts.js';
 import User from './User.js';
 import AuditLog from './AuditLog.js';
 import BusinessSettings from './BusinessSettings.js';
@@ -51,7 +50,6 @@ interface Models {
     Sales: typeof Sales;
     Shop: typeof Shop;
     Supplier: typeof Supplier;
-    SupplierProducts: typeof SupplierProducts;
     User: typeof User;
     AuditLog: typeof AuditLog;
     BusinessSettings: typeof BusinessSettings;
@@ -85,7 +83,6 @@ export function initializeModels(sequelize: any): Models {
         Sales: Sales.initModel(sequelize),
         Shop: Shop.initModel(sequelize),
         Supplier: Supplier.initModel(sequelize),
-        SupplierProducts: SupplierProducts.initModel(sequelize),
         User: User.initModel(sequelize),
         AuditLog: AuditLog.initModel(sequelize),
         BusinessSettings: BusinessSettings.initModel(sequelize),

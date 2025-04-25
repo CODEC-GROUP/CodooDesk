@@ -2,7 +2,6 @@ import { Model, DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../services/database/index.js';
 import Category, { CategoryAttributes } from './Category.js';
 import Shop, { ShopAttributes } from './Shop.js';
-import Supplier from './Supplier.js';
 
 export interface ProductAttributes {
   id?: string;
@@ -24,13 +23,11 @@ export interface ProductAttributes {
   valuationMethod: 'FIFO' | 'LIFO' | 'AVERAGE_COST';
   hasExpiryDate: boolean;
   hasBatchTracking: boolean;
-  suppliers?: Array<{ id: string, name: string }>;
   createdAt?: Date;
   updatedAt?: Date;  
 }
 
 export interface ProductInstance extends Model<ProductAttributes>, ProductAttributes {
-  suppliers?: Array<{id: string, name: string}>;
   category?: CategoryAttributes | null;
   shop?: ShopAttributes | null;
 }
@@ -55,14 +52,8 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
   public valuationMethod!: 'FIFO' | 'LIFO' | 'AVERAGE_COST';
   public hasExpiryDate!: boolean;
   public hasBatchTracking!: boolean;
-  public suppliers?: Array<{ id: string, name: string }>;
   public createdAt!: Date;
   public updatedAt!: Date;
-
-  public addSuppliers!: (supplierIds: string[]) => Promise<void>;
-  public getSuppliers!: () => Promise<any[]>;
-  public setSuppliers!: (supplierIds: string[]) => Promise<void>;
-  public removeSuppliers!: (supplierIds: string[]) => Promise<void>;
 
   static initModel(sequelize: Sequelize): typeof Product {
     return this.init(
@@ -204,12 +195,6 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
       foreignKey: 'product_id',
       as: 'orders'
     });
-    this.belongsToMany(models.Supplier, {
-      through: models.SupplierProducts,
-      foreignKey: 'product_id',
-      otherKey: 'supplier_id',
-      as: 'suppliers'
-    });
     this.hasMany(models.ProductVariant, { foreignKey: 'product_id', as: 'variants' });
     this.hasMany(models.BatchTracking, { foreignKey: 'product_id', as: 'batches' });
     this.hasMany(models.PriceHistory, { foreignKey: 'product_id', as: 'priceHistory' });
@@ -217,6 +202,10 @@ class Product extends Model<ProductAttributes> implements ProductAttributes {
       foreignKey: 'productId', 
       as: 'returns',
       constraints: false // Don't enforce foreign key constraints
+    });
+    this.hasMany(models.Inventory, {
+      foreignKey: 'product_id',
+      as: 'inventories'
     });
   }
 }

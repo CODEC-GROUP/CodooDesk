@@ -37,7 +37,8 @@
     "release:beta": "npm run version:beta && npm run dist",
     "version:prod": "npm version patch --no-git-tag-version",
     "version:prod:minor": "npm version minor --no-git-tag-version",
-    "version:prod:major": "npm version major --no-git-tag-version"
+    "version:prod:major": "npm version major --no-git-tag-version",
+    "i18n:extract": "i18next-scanner"
   },
   "dependencies": {
     "@electron/remote": "^2.1.2",
@@ -124,6 +125,7 @@
     "eslint": "^8",
     "eslint-config-next": "15.0.3",
     "glob": "^10.0.0",
+    "i18next-scanner": "^4.6.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "postcss": "^8",

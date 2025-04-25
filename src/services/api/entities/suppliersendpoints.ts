@@ -5,6 +5,13 @@ import { Sequelize } from 'sequelize';
 import Order from '../../../models/Order.js';
 import { sequelize } from '../../database/index.js';
 import { Op } from 'sequelize';
+import InventoryItem from '../../../models/InventoryItem.js';
+import Inventory from '../../../models/Inventory.js';
+
+// Extend SupplierAttributes to include the inventoryItems property
+interface ExtendedSupplierAttributes extends SupplierAttributes {
+  inventoryItems?: any[];
+}
 
 // IPC Channel names
 const IPC_CHANNELS = {
@@ -47,22 +54,29 @@ export function registerSupplierHandlers() {
         },
         include: [
           {
-            model: Product,
-            as: 'supplierProducts',
+            model: InventoryItem,
+            as: 'inventoryItems',
             attributes: [
               'id',
-              'name',
-              'createdAt',
-              'updatedAt',
-              [Sequelize.fn('COUNT', Sequelize.col('supplierProducts.id')), 'productCount'],
-              [Sequelize.fn('SUM', Sequelize.col('supplierProducts.purchasePrice')), 'totalValue']
+              'quantity_supplied',
+              'cost_price',
+              'selling_price',
+              'quantity_left',
+              [Sequelize.fn('COUNT', Sequelize.col('inventoryItems.id')), 'itemCount'],
+              [Sequelize.fn('SUM', Sequelize.col('inventoryItems.cost_price')), 'totalValue']
             ],
-            include: [{
-              model: Order,
-              as: 'orders',
-              attributes: [],
-              foreignKey: 'product_id'
-            }],
+            include: [
+              {
+                model: Product,
+                as: 'product',
+                attributes: ['id', 'name', 'createdAt', 'updatedAt']
+              },
+              {
+                model: Inventory,
+                as: 'inventory',
+                attributes: ['id', 'name']
+              }
+            ],
             through: { attributes: [] }
           }
         ],
@@ -71,9 +85,9 @@ export function registerSupplierHandlers() {
       
       // Convert Sequelize models to plain objects
       const plainSuppliers = suppliers.map(supplier => {
-        const plainSupplier = supplier.get({ plain: true });
-        // Ensure supplierProducts is always an array
-        plainSupplier.supplierProducts = plainSupplier.supplierProducts || [];
+        const plainSupplier = supplier.get({ plain: true }) as ExtendedSupplierAttributes;
+        // Ensure inventoryItems is always an array
+        plainSupplier.inventoryItems = plainSupplier.inventoryItems || [];
         return plainSupplier;
       });
 
@@ -89,7 +103,22 @@ export function registerSupplierHandlers() {
   ipcMain.handle(IPC_CHANNELS.GET_SUPPLIER, async (event, { id }) => {
     try {
       const supplier = await Supplier.findByPk(id, {
-        include: ['location', 'inventoryItems'],
+        include: [
+          {
+            model: InventoryItem,
+            as: 'inventoryItems',
+            include: [
+              {
+                model: Product,
+                as: 'product'
+              },
+              {
+                model: Inventory,
+                as: 'inventory'
+              }
+            ]
+          }
+        ],
       });
       if (!supplier) {
         return { success: false, message: 'Supplier not found' };
@@ -144,6 +173,15 @@ export function registerSupplierHandlers() {
         await t.rollback();
         return { success: false, message: 'Supplier not found' };
       }
+
+      // Update inventory items to remove supplier reference instead of deleting them
+      await InventoryItem.update(
+        { supplier_id: undefined },
+        { 
+          where: { supplier_id: id },
+          transaction: t 
+        }
+      );
 
       await supplier.destroy({ transaction: t });
       await t.commit();

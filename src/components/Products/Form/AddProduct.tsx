@@ -15,7 +15,7 @@ import Image from 'next/image'
 import { useAuthLayout } from "@/components/Shared/Layout/AuthLayout"
 import { safeIpcInvoke } from '@/lib/ipc';
 import { toast } from '@/hooks/use-toast';
-import { Category, Supplier, fetchProductDependencies } from '../utils/productUtils';
+import { Category, fetchProductDependencies } from '../utils/productUtils';
 import Shop from '@/models/Shop';
 import type { ProductAttributes } from '@/models/Product'
 import { fileStorage } from '@/services/fileStorage';
@@ -48,7 +48,6 @@ interface ProductData {
   status: 'active' | 'inactive';
   quantity: number;
   reorderPoint: number;
-  suppliers: any[];
   purchasePrice: number;
 }
 
@@ -68,18 +67,6 @@ interface ShopResponse {
   success: boolean;
   data?: Shop[];
   message?: string;
-}
-
-interface Warehouse {
-  id: string;
-  name: string;
-  businessId: string;
-}
-
-interface WarehouseResponse {
-  success: boolean;
-  warehouses: Warehouse[];
-  error?: string;
 }
 
 interface FormData {
@@ -168,10 +155,6 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
   const [additionalImagePreviews, setAdditionalImagePreviews] = useState<string[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -187,28 +170,6 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
 
         const result = await fetchProductDependencies(business.id, shopIds);
         setCategories(result?.categories ?? []);
-        setSuppliers(result?.suppliers ?? []);
-
-        // Fetch warehouses
-        const warehousesResponse = await safeIpcInvoke<{
-          success: boolean;
-          data: {
-            items: Warehouse[];
-            pagination: any;
-          };
-          message?: string;
-        }>('inventory:get-by-shop', {
-          shopId: business.shops?.[0]?.id || '',
-          isAdmin: true,
-          pagination: {
-            page: 1,
-            limit: 100
-          }
-        });
-
-        if (warehousesResponse?.success) {
-          setWarehouses(warehousesResponse.data.items);
-        }
       } catch (error) {
         console.error('Error fetching data:', error);
         toast({
@@ -226,7 +187,12 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
 
   useEffect(() => {
     if (editMode && productToEdit) {
-      setSelectedSuppliers(productToEdit.suppliers?.map(supplier => supplier.id) || []);
+      setFormData(prev => ({
+        ...prev,
+        shop_id: defaultShopId || '',
+        businessId: business?.id,
+        userId: user?.id
+      }));
     } else {
       setFormData(prev => ({
         ...prev,
@@ -280,8 +246,6 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
         featuredImage: featuredImagePath,
         additionalImages: additionalImagePaths.length > 0 ? additionalImagePaths : formData.additionalImages,
         businessId: business?.id,
-        suppliers: selectedSuppliers,
-        warehouseId: selectedWarehouse, // Pass the selected warehouse ID
       };
 
       let response;
@@ -583,6 +547,7 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                       onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}
                       className="mt-1"
                     />
+                    <p className="text-sm text-gray-500 mt-1">Default is 0</p>
                   </div>
                   <div>
                     <Label htmlFor="reorderPoint" className="text-sm font-medium text-gray-700">Reorder Point</Label>
@@ -604,7 +569,7 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
           <div className="space-y-6">
             <Card className="shadow-sm">
               <CardContent className="p-6">
-                <h2 className="text-lg font-semibold mb-4 text-gray-800">Shop, Category and Suppliers</h2>
+                <h2 className="text-lg font-semibold mb-4 text-gray-800">Shop and Category</h2>
                 <div className="space-y-4 pt-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -651,52 +616,6 @@ export function AddProduct({ onBack, editMode = false, productToEdit, onEditComp
                           </SelectContent>
                         </Select>
                       </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Warehouse</Label>
-                      <Select
-                        value={selectedWarehouse}
-                        onValueChange={setSelectedWarehouse}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select warehouse" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {warehouses.map((warehouse) => (
-                            <SelectItem key={warehouse.id} value={warehouse.id}>
-                              {warehouse.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Suppliers</Label>
-                    <div className="space-y-2">
-                      {suppliers.map((supplier) => (
-                        <div key={supplier.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`supplier-${supplier.id}`}
-                            checked={selectedSuppliers.includes(supplier.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedSuppliers([...selectedSuppliers, supplier.id]);
-                              } else {
-                                setSelectedSuppliers(selectedSuppliers.filter(id => id !== supplier.id));
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor={`supplier-${supplier.id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            {supplier.name}
-                          </label>
-                        </div>
-                      ))}
                     </div>
                   </div>
                 </div>

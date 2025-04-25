@@ -20,7 +20,18 @@ export interface Supplier {
   region: string;
   country: string;
   businessId: string;
-  supplierProducts?: any[]; // Array of products supplied by this supplier
+  inventoryItems?: Array<{
+    id: string;
+    product_id: string;
+    quantity_supplied: number;
+    cost_price: number;
+    selling_price: number;
+    quantity_left: number;
+    product?: {
+      id: string;
+      name: string;
+    };
+  }>; // Array of inventory items supplied by this supplier
 }
 
 // Function to fetch categories for a business
