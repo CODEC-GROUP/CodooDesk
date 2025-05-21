@@ -1,207 +1,101 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { useState } from 'react'
 import { Button } from "@/components/Shared/ui/button"
-import { Input } from "@/components/Shared/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/Shared/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/Shared/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
-import { PenIcon, TrashIcon, FileDown, Plus, Search, ArrowLeft, Settings2 } from 'lucide-react'
+import { PenIcon, TrashIcon, Plus, ArrowLeft } from 'lucide-react'
 import { DeleteConfirmationModal } from '@/components/Shared/ui/Modal/delete-confrimation-modal'
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/Shared/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/Shared/ui/dialog"
+import { Card, CardContent } from "@/components/Shared/ui/card"
 import AddInventory  from '../add-inventory/add-inventory'
 import InventoryDetails  from '../details/InventoryDetails'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/Shared/ui/dropdown-menu"
-import { Badge } from "@/components/Shared/ui/badge"
 import { LoadingSpinner } from "@/components/Shared/ui/LoadingSpinner"
 import { ErrorAlert } from "@/components/Shared/ui/ErrorAlert"
-import { InventoryItemResponse, InventoryItemWithDetails } from "@/types/inventory"
 import { useToast } from "@/components/Shared/ui/use-toast"
-import { safeIpcInvoke } from "@/lib/ipc"
-
-interface InventoryListProps {
-  warehouseId: string;
-  onBack: () => void;
-  warehouseName: string;
-  parentView?: 'inventory' | 'warehouse';
-}
 
 interface ProductDetails {
   name: string;
   sku: string;
   description: string;
   category: string;
-  reorderPoint: number;
+  reorderPoint?: number;
 }
 
-interface InventoryItemWithProduct extends InventoryItemWithDetails {
+interface InventoryItem {
+  id: string;
   product: ProductDetails;
+  quantity: number;
+  unit_cost: number;
+  selling_price: number;
+  last_restock_date: Date;
+  supplier_name?: string;
+  qty_supplied?: number;
+  sold?: number;
+  returned_shop?: number;
+  returned_supplier?: number;
+  qty_left?: number;
+  amount?: number;
 }
 
-export function InventoryList({ warehouseId, onBack, warehouseName, parentView = 'warehouse' }: InventoryListProps) {
-  const [inventory, setInventory] = useState<InventoryItemWithProduct[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+const DUMMY_INVENTORY: InventoryItem[] = [
+  {
+    id: 'inv001',
+    product: {
+      name: 'Sample Product',
+      sku: 'SKU001',
+      description: 'A sample product',
+      category: 'Category A',
+      reorderPoint: 10,
+    },
+    quantity: 100,
+    unit_cost: 1000,
+    selling_price: 1500,
+    last_restock_date: new Date(),
+    supplier_name: 'Supplier A',
+    qty_supplied: 120,
+    sold: 15,
+    returned_shop: 2,
+    returned_supplier: 1,
+    qty_left: 102,
+    amount: 153000,
+  },
+  {
+    id: 'inv002',
+    product: {
+      name: 'Another Product',
+      sku: 'SKU002',
+      description: 'Another sample',
+      category: 'Category B',
+      reorderPoint: 5,
+    },
+    quantity: 50,
+    unit_cost: 2000,
+    selling_price: 2500,
+    last_restock_date: new Date(),
+    supplier_name: 'Supplier B',
+    qty_supplied: 60,
+    sold: 5,
+    returned_shop: 0,
+    returned_supplier: 0,
+    qty_left: 55,
+    amount: 137500,
+  },
+];
+
+export function InventoryList({ onBack }: { onBack: () => void }) {
+  const [inventory, setInventory] = useState<InventoryItem[]>(DUMMY_INVENTORY)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<string | null>(null)
-  const [selectedItem, setSelectedItem] = useState<InventoryItemWithProduct | null>(null)
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
   const [showAddInventory, setShowAddInventory] = useState(false)
-  const [refreshTrigger, setRefreshTrigger] = useState(0)
-  const [columnVisibility, setColumnVisibility] = useState({
-    name: true,
-    sku: true,
-    category: true,
-    quantity: true,
-    unitPrice: true,
-    sellingPrice: true,
-    totalValue: true,
-    status: true,
-    productsSold: true,
-    productsLeft: true,
-    returnsToShop: true,
-    returnsToSupplier: true
-  });
   const { toast } = useToast()
-  const [totalItems, setTotalItems] = useState(0);
-  const [totalValue, setTotalValue] = useState(0);
 
-  const loadInventory = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await safeIpcInvoke<{ items: InventoryItemWithProduct[], totalItems: number, totalValue: number }>(
-        'inventory:item:get-all-by-inventory-id',
-        { inventoryId: warehouseId },
-        { items: [], totalItems: 0, totalValue: 0 }
-      );
-      
-      if (data) {
-        setInventory(Array.isArray(data.items) ? data.items : []);
-        setTotalItems(data.totalItems);
-        setTotalValue(data.totalValue);
-      } else {
-        setInventory([]);
-        setTotalItems(0);
-        setTotalValue(0);
-      }
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load inventory');
-      setInventory([]);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to load inventory items. Please try again.'
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadInventory();
-  }, [warehouseId, refreshTrigger]);
-
-  const toggleItemSelection = (itemId: string) => {
-    setSelectedItems(prev =>
-      prev.includes(itemId)
-        ? prev.filter(id => id !== itemId)
-        : [...prev, itemId]
-    )
-  }
-
-  const handleDeleteClick = () => {
-    if (selectedItems.length > 0) {
-      setItemToDelete(selectedItems[0])
-      setIsDeleteModalOpen(true)
-    }
-  }
-
-  const handleDeleteConfirm = async () => {
-    if (!itemToDelete) return;
-
-    try {
-      const success = await safeIpcInvoke<boolean>(
-        'inventory:item:delete',
-        { id: itemToDelete },
-        false
-      );
-
-      if (success) {
-        setInventory(prev => prev.filter(item => item.id !== itemToDelete));
-        setSelectedItems(prev => prev.filter(id => id !== itemToDelete));
-        toast({ title: 'Success', description: 'Item deleted successfully' });
-      } else {
-        throw new Error('Failed to delete item');
-      }
-    } catch (err) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: err instanceof Error ? err.message : 'Failed to delete item'
-      });
-    } finally {
-      setIsDeleteModalOpen(false);
-      setItemToDelete(null);
-    }
-  };
-
-  const openOverlay = (item: InventoryItemWithProduct) => {
-    setSelectedItem(item);
-  }
-
-  const closeOverlay = () => {
-    setSelectedItem(null);
-  }
-
-  const handleAddItemClick = () => {
-    setShowAddInventory(true)
-  }
-
-  const handleBackToList = () => {
-    setShowAddInventory(false)
-  }
-
-  const handleAddItemSuccess = () => {
-    setShowAddInventory(false);
-    setRefreshTrigger(prev => prev + 1);
-    toast({
-      title: 'Success',
-      description: 'Item added successfully'
-    });
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case 'low_stock':
-        return 'bg-red-100 text-red-800';
-      case 'in_stock':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
+  const getStatusBadgeColor = (quantity: number, reorderPoint?: number) => {
+    if (quantity > (reorderPoint ?? 0)) return 'bg-green-100 text-green-800';
+    if (quantity > 0) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-red-100 text-red-800';
   };
 
   const calculateTotalValue = (quantity: number, sellingPrice: number) => {
@@ -211,11 +105,11 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
   if (selectedItem) {
     return (
       <InventoryDetails
-        item={selectedItem}
+        item={selectedItem as any}
         onBack={() => setSelectedItem(null)}
         onItemUpdated={(updatedItem) => {
-          setInventory(prev => prev.map(item => 
-            item.id === updatedItem.id ? updatedItem as InventoryItemWithProduct : item
+          setInventory(prev => prev.map(item =>
+            item.id === updatedItem.id ? updatedItem : item
           ));
           setSelectedItem(null);
         }}
@@ -225,35 +119,11 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
 
   if (showAddInventory) {
     return <AddInventory 
-      onBack={handleBackToList} 
-      warehouseId={warehouseId}
-      onSuccess={handleAddItemSuccess}
+      onBack={() => setShowAddInventory(false)} 
+      warehouseId={''}
+      onSuccess={() => setShowAddInventory(false)}
       parentView="inventory"
     />
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <LoadingSpinner />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="container mx-auto py-10">
-        <Button variant="outline" onClick={onBack} className="mb-4">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
-        </Button>
-        <ErrorAlert 
-          message={error}
-          title="Failed to Load Inventory"
-          retry={loadInventory}
-        />
-      </div>
-    );
   }
 
   return (
@@ -268,17 +138,13 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
           Back
         </Button>
         <h1 className="text-3xl font-bold flex-1">
-          {warehouseName} - Inventory Items
+          Product Inventory
         </h1>
-        <div className="text-sm text-gray-500">
-          Total Items: {totalItems} | Total Value: {totalValue.toLocaleString()} FCFA
-        </div>
         <div className="space-x-2">
           {selectedItems.length > 0 && (
             <Button
               variant="destructive"
               onClick={() => setIsDeleteModalOpen(true)}
-              disabled={loading}
             >
               Delete Selected ({selectedItems.length})
             </Button>
@@ -306,28 +172,24 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
                       }}
                     />
                   </TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Reorder Point</TableHead>
-                  <TableHead>Unit Cost</TableHead>
+                  <TableHead>Inv #</TableHead>
+                  <TableHead>Qty Supplied</TableHead>
+                  <TableHead>Supplier</TableHead>
+                  <TableHead>Cost Price</TableHead>
                   <TableHead>Selling Price</TableHead>
-                  <TableHead>Total Value</TableHead>
-                  <TableHead>Last Restocked</TableHead>
+                  <TableHead>Sold</TableHead>
+                  <TableHead>Returned (Shop)</TableHead>
+                  <TableHead>Returned (Supplier)</TableHead>
+                  <TableHead>Qty Left</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Last Updated</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (
+                {inventory.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-10">
-                      <LoadingSpinner />
-                    </TableCell>
-                  </TableRow>
-                ) : inventory.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={11} className="text-center py-10">
+                    <TableCell colSpan={13} className="text-center py-10">
                       No inventory items found
                     </TableCell>
                   </TableRow>
@@ -350,23 +212,17 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
                           }}
                         />
                       </TableCell>
-                      <TableCell>{item.product.name}</TableCell>
-                      <TableCell>{item.product.sku}</TableCell>
-                      <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(
-                          item.quantity > item.product.reorderPoint ? 'in_stock' :
-                          item.quantity > 0 ? 'low_stock' : 'out_of_stock'
-                        )}`}>
-                          {(item.quantity > item.product.reorderPoint ? 'In Stock' :
-                           item.quantity > 0 ? 'Low Stock' : 'Out of Stock')}
-                        </span>
-                      </TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{item.product.reorderPoint}</TableCell>
+                      <TableCell>{item.id.substring(0, 8)}</TableCell>
+                      <TableCell>{item.qty_supplied ?? item.quantity}</TableCell>
+                      <TableCell>{item.supplier_name || 'N/A'}</TableCell>
                       <TableCell>{item.unit_cost.toLocaleString()} FCFA</TableCell>
                       <TableCell>{item.selling_price.toLocaleString()} FCFA</TableCell>
-                      <TableCell>{calculateTotalValue(item.quantity, item.selling_price)}</TableCell>
-                      <TableCell>{item.last_restock_date ? item.last_restock_date.toISOString().split('T')[0] : 'N/A'}</TableCell>
+                      <TableCell>{item.sold ?? 0}</TableCell>
+                      <TableCell>{item.returned_shop ?? 0}</TableCell>
+                      <TableCell>{item.returned_supplier ?? 0}</TableCell>
+                      <TableCell>{item.qty_left ?? item.quantity}</TableCell>
+                      <TableCell>{((item.qty_left ?? item.quantity) * item.selling_price).toLocaleString()} FCFA</TableCell>
+                      <TableCell>{item.last_restock_date ? new Date(item.last_restock_date).toLocaleDateString() : 'N/A'}</TableCell>
                       <TableCell className="text-right">
                         <Button
                           variant="ghost"
@@ -398,60 +254,19 @@ export function InventoryList({ warehouseId, onBack, warehouseName, parentView =
           </div>
         </CardContent>
       </Card>
-
-      {/* Mobile View */}
-      <div className="md:hidden">
-        {inventory.length === 0 ? (
-          <p className="text-center py-8">No inventory items found</p>
-        ) : (
-          inventory.map((item) => (
-            <Card key={item.id} className="mb-4">
-              <CardContent className="p-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-medium">{item.product.name}</h3>
-                    <p className="text-sm text-gray-500">SKU: {item.product.sku}</p>
-                  </div>
-                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadgeColor(
-                    item.quantity > item.product.reorderPoint ? 'in_stock' :
-                    item.quantity > 0 ? 'low_stock' : 'out_of_stock'
-                  )}`}>
-                    {(item.quantity > item.product.reorderPoint ? 'In Stock' :
-                     item.quantity > 0 ? 'Low Stock' : 'Out of Stock')}
-                  </span>
-                </div>
-                
-                <div className="mt-4 space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Quantity</span>
-                    <span className="text-sm">{item.quantity}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Selling Price</span>
-                    <span className="text-sm">{item.selling_price.toLocaleString()} FCFA</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Total Value</span>
-                    <span className="text-sm">{calculateTotalValue(item.quantity, item.selling_price)}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
-
-      {selectedItems.length > 0 && (
-        <div className="flex items-center justify-end space-x-2 py-4">
-          <Button
-            variant="destructive"
-            onClick={() => setIsDeleteModalOpen(true)}
-            disabled={loading}
-          >
-            Delete Selected ({selectedItems.length})
-          </Button>
-        </div>
-      )}
+      <DeleteConfirmationModal 
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={async () => {
+          if (!itemToDelete) return;
+          setInventory(prev => prev.filter(item => item.id !== itemToDelete));
+          setSelectedItems(prev => prev.filter(id => id !== itemToDelete));
+          setIsDeleteModalOpen(false);
+          setItemToDelete(null);
+        }}
+        title="Delete Inventory Item"
+        description="Are you sure you want to delete this item? This action cannot be undone."
+      />
     </div>
   )
 }

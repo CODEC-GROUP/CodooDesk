@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Shared/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/Shared/ui/checkbox"
-import { ListFilter, Pencil, Trash2, AlertCircle, Search, Tags, PlusCircle, Filter, Store } from "lucide-react"
+import { ListFilter, Pencil, Trash2, AlertCircle, Search, Tags, PlusCircle, Filter, Store, BarChart } from "lucide-react"
 import Image from 'next/image'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
@@ -264,6 +264,19 @@ export function ProductList({ onAddProduct }: ProductListProps) {
     initializeData();
   };
 
+  const handleViewInventory = (productId: string | undefined) => {
+    // Only navigate if productId is defined
+    if (productId) {
+      router.push(`/inventory/product/${productId}`);
+    } else {
+      toast({
+        title: "Error",
+        description: "Cannot manage inventory for this product - missing ID",
+        variant: "destructive",
+      });
+    }
+  };
+
   const filteredProducts = products.filter(product => {
     // Search term matching
     const matchesSearch = searchTerm.trim() === '' ? true : (
@@ -493,6 +506,14 @@ export function ProductList({ onAddProduct }: ProductListProps) {
                               onClick={() => handleDeleteClick(product)}
                             >
                               <Trash2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => product.id ? handleViewInventory(product.id) : null}
+                              title="Manage Inventory"
+                            >
+                              <BarChart className="h-4 w-4" />
                             </Button>
                           </div>
                         </TableCell>
