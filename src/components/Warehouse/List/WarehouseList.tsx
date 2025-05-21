@@ -50,6 +50,16 @@ interface PaginationState {
   totalPages: number
 }
 
+const DUMMY_WAREHOUSE: WarehouseItem = {
+  id: 'dummy-warehouse-1',
+  name: 'Demo Warehouse',
+  level: 1,
+  value: 10000,
+  status: 'High',
+  description: 'A dummy warehouse for testing',
+  shopId: null,
+};
+
 export function WarehouseList() {
   const { business, currentShopId, user } = useAuthLayout()
   const [loading, setLoading] = useState(true)
@@ -116,8 +126,12 @@ export function WarehouseList() {
   }
 
   useEffect(() => {
-    fetchWarehouses()
-  }, [pagination.page, pagination.limit, currentShopId])
+    fetchWarehouses().then(() => {
+      setWarehouses(prev =>
+        prev.length === 0 ? [DUMMY_WAREHOUSE] : prev
+      );
+    });
+  }, [pagination.page, pagination.limit, currentShopId]);
 
   const toggleItemSelection = (itemId: string) => {
     setSelectedItems(prev =>
